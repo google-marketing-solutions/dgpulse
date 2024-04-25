@@ -1,0 +1,69 @@
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+CREATE
+OR REPLACE TABLE `{bq_dataset}_bq.campaign_data` AS
+WITH targets_raw AS (
+  SELECT
+    account_id,
+    campaign_id,
+    CASE
+      WHEN campaign_mcv_troas > 0 THEN campaign_mcv_troas
+      WHEN campaign_troas > 0 THEN campaign_troas
+      WHEN bidding_strategy_mcv_troas > 0 THEN bidding_strategy_mcv_troas
+      WHEN bidding_strategy_troas > 0 THEN bidding_strategy_troas
+      ELSE 0
+    END AS troas,
+  CASE
+    WHEN campaign_mc_tcpa > 0 THEN campaign_mc_tcpa
+    WHEN campaign_tcpa > 0 THEN campaign_tcpa
+    WHEN bidding_strategy_mc_tcpa > 0 THEN bidding_strategy_mc_tcpa
+    WHEN bidding_strategy_tcpa > 0 THEN bidding_strategy_tcpa
+    ELSE 0
+  END AS tcpa
+  FROM `{bq_dataset}.campaign_settings`
+),
+targets AS (
+  SELECT
+    account_id,
+    campaign_id,
+    ANY_VALUE(troas) AS troas,
+    ANY_VALUE(tcpa) AS tcpa
+  FROM targets_raw
+  GROUP BY 1, 2
+)
+SELECT
+  C.date,
+  C.account_id,
+  C.account_name,
+  C.campaign_id,
+  C.campaign_name,
+  C.bidding_strategy,
+  C.shopping_disable_product_feed,
+  C.shopping_merchant_id,
+  (C.budget_amount/1e6) AS budget_amount,
+  T.troas,
+  (T.tcpa/1e6) AS tcpa,
+  (C.cost/1e6) AS cost,
+  C.conversions,
+  OCID.ocid
+FROM
+  `{bq_dataset}.campaign_settings` AS C
+LEFT JOIN
+  targets AS T
+  ON C.account_id = T.account_id
+  AND C.campaign_id = T.campaign_id
+LEFT JOIN
+  `{bq_dataset}.ocid_mapping` AS OCID
+  ON OCID.account_id = C.account_id;
