@@ -59,7 +59,7 @@ SELECT DISTINCT
     'ENABLED', 'DISABLED') AS dda_conversion_action_status
 FROM `{bq_dataset}.ocid_mapping` AS OCID
 INNER JOIN `{bq_dataset}.campaign_settings` AS CC
-  USING (account_id)
+  ON CC.account_id = OCID.customer_id
 LEFT JOIN CONVERSION_ACTION_CATEGORY_COUNTS AS CACC
   USING (account_id)
 LEFT JOIN ACCOUNT_DDA AS ADDA

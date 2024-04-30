@@ -21,11 +21,18 @@ WITH
     SELECT DISTINCT
       account_id,
       campaign_id,
-      dvra_videos,
+      ARRAY_TO_STRING(
+        ARRAY(
+            SELECT
+              ARRAY_REVERSE(SPLIT(item, "/"))[SAFE_OFFSET(0)] AS test
+            FROM UNNEST(dvra_videos) as item
+        ),
+        '|'
+    ) AS dvra_videos,
     FROM
       `{bq_dataset}.ad_group_ad`
     WHERE
-      dvra_videos != ''
+      ARRAY_LENGTH(dvra_videos) > 0
   ),
   AGA_VID_SPLIT AS (
     SELECT

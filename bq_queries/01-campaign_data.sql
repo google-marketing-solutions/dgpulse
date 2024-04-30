@@ -66,4 +66,4 @@ LEFT JOIN
   AND C.campaign_id = T.campaign_id
 LEFT JOIN
   `{bq_dataset}.ocid_mapping` AS OCID
-  ON OCID.account_id = C.account_id;
+  ON OCID.customer_id = C.account_id;

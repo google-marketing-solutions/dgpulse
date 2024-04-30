@@ -47,7 +47,7 @@ AS (
           ON CS.account_id = AGA.account_id
           AND CS.campaign_id = AGA.campaign_id
         INNER JOIN `{bq_dataset}.ocid_mapping` AS OCID
-          ON OCID.account_id = AGA.account_id
+          ON OCID.customer_id = AGA.account_id
   )
   SELECT
     account_name,

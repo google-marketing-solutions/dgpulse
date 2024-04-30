@@ -15,7 +15,7 @@
     "end_date": ":YYYYMMDD-1"
   },
   "bq_macro": {
-    "bq_dataset": "dgpulse"
+    "bq_dataset": "dgpulse_ads"
   },
   "schedule_wf": true,
   "schedule_time": "04:00",
@@ -24,7 +24,7 @@
   "clone_dashboard": true,
   "dashboard_id": "6e773f65-7612-45af-af37-e3cab6a9828b",
   "dashboard_name": "dgpulse",
-  "dashboard_dataset": "dgpulse_bq",
+  "dashboard_dataset": "dgpulse_ads_bq",
   "dashboard_datasources": {
     "campaign_data": "campaign_data",
     "assets_performance": "summaryassets"

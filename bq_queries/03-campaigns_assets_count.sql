@@ -29,12 +29,12 @@ AS (
         campaign_id,
         campaign_name,
         account_id,
-        SUM(ARRAY_LENGTH(SPLIT(dmaa_descriptions, '|'))) AS dmaa_descriptions_count,
-        SUM(ARRAY_LENGTH(SPLIT(aga_headlines, '|'))) AS aga_headlines_count,
-        SUM(ARRAY_LENGTH(SPLIT(dmaa_square_mkt_imgs, '|'))) AS dmaa_square_mkt_imgs_count,
-        SUM(ARRAY_LENGTH(SPLIT(dmaa_mkt_imgs, '|'))) AS dmaa_mkt_imgs_count,
-        SUM(ARRAY_LENGTH(SPLIT(dmaa_logo_imgs, '|'))) AS dmaa_logo_imgs_count,
-        SUM(ARRAY_LENGTH(SPLIT(dmaa_portrait_mkt_imgs, '|'))) AS dmaa_portrait_mkt_imgs_count
+        SUM(ARRAY_LENGTH(dmaa_descriptions)) AS dmaa_descriptions_count,
+        SUM(ARRAY_LENGTH(aga_headlines)) AS aga_headlines_count,
+        SUM(ARRAY_LENGTH(dmaa_square_mkt_imgs)) AS dmaa_square_mkt_imgs_count,
+        SUM(ARRAY_LENGTH(dmaa_mkt_imgs)) AS dmaa_mkt_imgs_count,
+        SUM(ARRAY_LENGTH(dmaa_logo_imgs)) AS dmaa_logo_imgs_count,
+        SUM(ARRAY_LENGTH(dmaa_portrait_mkt_imgs)) AS dmaa_portrait_mkt_imgs_count
       FROM
         `{bq_dataset}.ad_group_ad`
       GROUP BY
@@ -44,7 +44,7 @@ AS (
     ),
     OperatingCustomerId AS (
       SELECT DISTINCT
-        account_id,
+        customer_id as account_id,
         ocid
       FROM
         `{bq_dataset}.ocid_mapping`
