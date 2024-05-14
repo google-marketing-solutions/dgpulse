@@ -1,0 +1,29 @@
+{
+  "name": "gcp-run-may-24",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "start": "node --inspect node_modules/.bin/functions-framework --target=ytarfGET --signature-type=http"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.4.0",
+    "@google-cloud/bigquery-connection": "^3.1.0",
+    "@google-cloud/functions-framework": "^3.4.0",
+    "request": "^2.88.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^29.4.3",
+    "prettier": "^3.2.5",
+    "prettier-eslint": "^16.3.0"
+  },
+  "jest": {
+    "clearMocks": true,
+    "resetMocks": true,
+    "restoreMocks": true
+  }
+}
