@@ -15,10 +15,5 @@
 # limitations under the License.
 set -e
 
-# todo: fetch key and store Youtube Data API Key for later usage
-gcloud services api-keys create \
-    --api-target=service=youtube.googleapis.com \
-    --key-id="youtube-key"
-
-echo "initializing Google Ads data ETL Workflow..."
+echo "Initializing Google Ads data ETL Workflow..."
 npm init gaarf-wf@latest -- --answers=answers.json
