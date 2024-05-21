@@ -1,6 +1,6 @@
 {
   "use_current_project": true,
-  "name": "dgPulse",
+  "name": "dgpulse",
   "gcs_bucket": "",
   "path_to_ads_queries": "google_ads_queries",
   "path_to_bq_queries": "bq_queries",
@@ -27,6 +27,8 @@
   "dashboard_dataset": "dgpulse_ads_bq",
   "dashboard_datasources": {
     "campaign_data": "campaign_data",
-    "assets_performance": "summaryassets"
+    "campaigns_assets_count": "campaigns_assets_count",
+    "audience_performance": "audience_performance",
+    "account_conversion_action": "account_conversion_action"
   }
 }
