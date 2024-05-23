@@ -63,27 +63,27 @@ function getAssetsFromAdGroupAds(agas) {
 
 function setVideoAspectRatioCounts(
   bqCampaignsAssetsCount,
-  countsByAccountCampaign,
+  countsByAccountCampaign
 ) {
   for (let i = 0; i < bqCampaignsAssetsCount.length; i++) {
     const cac = bqCampaignsAssetsCount[i];
     const key = `${cac.account_id}_${cac.campaign_id}`;
     if (!countsByAccountCampaign[key]) {
       console.log(
-        `Info: no videos found in account + campaign ${key} combination`,
+        `Info: no videos found in account + campaign ${key} combination`
       );
     } else {
       bqCampaignsAssetsCount[i] = setVideoCountstoCampaign(
         bqCampaignsAssetsCount,
         i,
         countsByAccountCampaign,
-        key,
+        key
       );
     }
 
     bqCampaignsAssetsCount[i].has_image_plus_video = campaignHasImageAndVideo(
       bqCampaignsAssetsCount,
-      i,
+      i
     );
   }
 
@@ -94,7 +94,7 @@ function setVideoCountstoCampaign(
   bqCampaignsAssetsCount,
   i,
   countsByAccountCampaign,
-  key,
+  key
 ) {
   return {
     ...bqCampaignsAssetsCount[i],
@@ -121,14 +121,14 @@ function getAssetIdFromResource(resourceName) {
 
 async function getAssetFromAdGroupAdsWithVideoRatio(
   assetFromAdGroupAds,
-  videoAssets,
+  videoAssets
 ) {
   let uniqueIds = {};
   let assetFromAdGroupAdsWithVideoRatio = [];
   for (let i = 0; i < assetFromAdGroupAds.length; i++) {
     const a = assetFromAdGroupAds[i];
     const relevantVideoAsset = videoAssets.find(
-      (v) => v["asset_id"] == a.assetId,
+      (v) => v["asset_id"] == a.assetId
     );
     const videoId = relevantVideoAsset?.video_id;
     await awaitTimeout(OUTBOUND_CALLS_THROUGHPUT_LIMIT_INTERVAL);

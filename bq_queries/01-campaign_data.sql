@@ -11,10 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+/*
+ This script will create a dataset for the post processing queries and it will organize 
+ data from campaigns and link external account ids to ocid (OperatingCustomerId)
+ to generate the deep link URLs.
+ 
+ @param {bq_dataset} to be replaced by the answers.json's respective value (e.g.:dgpulse).
+ */
+CREATE SCHEMA IF NOT EXISTS `{bq_dataset}_bq`;
 
 CREATE
-OR REPLACE TABLE `{bq_dataset}_bq.campaign_data` AS
-WITH targets_raw AS (
+OR REPLACE TABLE `{bq_dataset}_bq.campaign_data` AS WITH targets_raw AS (
   SELECT
     account_id,
     campaign_id,
@@ -25,14 +32,15 @@ WITH targets_raw AS (
       WHEN bidding_strategy_troas > 0 THEN bidding_strategy_troas
       ELSE 0
     END AS troas,
-  CASE
-    WHEN campaign_mc_tcpa > 0 THEN campaign_mc_tcpa
-    WHEN campaign_tcpa > 0 THEN campaign_tcpa
-    WHEN bidding_strategy_mc_tcpa > 0 THEN bidding_strategy_mc_tcpa
-    WHEN bidding_strategy_tcpa > 0 THEN bidding_strategy_tcpa
-    ELSE 0
-  END AS tcpa
-  FROM `{bq_dataset}.campaign_settings`
+    CASE
+      WHEN campaign_mc_tcpa > 0 THEN campaign_mc_tcpa
+      WHEN campaign_tcpa > 0 THEN campaign_tcpa
+      WHEN bidding_strategy_mc_tcpa > 0 THEN bidding_strategy_mc_tcpa
+      WHEN bidding_strategy_tcpa > 0 THEN bidding_strategy_tcpa
+      ELSE 0
+    END AS tcpa
+  FROM
+    `{bq_dataset}.campaign_settings`
 ),
 targets AS (
   SELECT
@@ -40,8 +48,11 @@ targets AS (
     campaign_id,
     ANY_VALUE(troas) AS troas,
     ANY_VALUE(tcpa) AS tcpa
-  FROM targets_raw
-  GROUP BY 1, 2
+  FROM
+    targets_raw
+  GROUP BY
+    1,
+    2
 )
 SELECT
   C.date,
@@ -52,18 +63,14 @@ SELECT
   C.bidding_strategy,
   C.shopping_disable_product_feed,
   C.shopping_merchant_id,
-  (C.budget_amount/1e6) AS budget_amount,
+  (C.budget_amount / 1e6) AS budget_amount,
   T.troas,
-  (T.tcpa/1e6) AS tcpa,
-  (C.cost/1e6) AS cost,
+  (T.tcpa / 1e6) AS tcpa,
+  (C.cost / 1e6) AS cost,
   C.conversions,
   OCID.ocid
 FROM
   `{bq_dataset}.campaign_settings` AS C
-LEFT JOIN
-  targets AS T
-  ON C.account_id = T.account_id
+  LEFT JOIN targets AS T ON C.account_id = T.account_id
   AND C.campaign_id = T.campaign_id
-LEFT JOIN
-  `{bq_dataset}.ocid_mapping` AS OCID
-  ON OCID.customer_id = C.account_id;
+  LEFT JOIN `{bq_dataset}.ocid_mapping` AS OCID ON OCID.customer_id = C.account_id;

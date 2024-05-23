@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-const impl = require("./bq")
+const impl = require("./bq");
 
 describe("getUpdateQueryForCampaignsAssetsCount", () => {
   test(`GIVEN 2 campaignsAssetsCount objects
