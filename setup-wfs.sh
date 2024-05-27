@@ -23,7 +23,7 @@ GCP_REGION="europe-west1"
 
 
 # create and store Youtube Data API Key for later usage
-echo "\n----"
+echo "----"
 echo "Creating a YouTube API key"
 echo "Estimated time: 10 seconds"
 # Hack: Currently, the "api-keys create" does not return anything
@@ -48,9 +48,9 @@ cd youtube_aspect_ratio_fetcher
 
 
 # install youtube_aspect_ratio_fetcher function and obtain url:
-echo "\n----"
+echo "----"
 echo "Deploying Run function for Youtube aspect ratio fetcher"
-echo "Estimated time: 2 minutes"
+echo "Estimated time: 5 minutes"
 gcloud functions deploy dgpulse-youtube-aspect-ratio-fetcher \
   --gen2 \
   --runtime=nodejs20 \
@@ -80,7 +80,7 @@ cd ..
 
 
 # install youtube_aspect_ratio_fetcher workflow
-echo "\n----"
+echo "----"
 echo "Deploying Workflow for dgpulse-youtube-aspect-ratio-fetcher"
 echo "Estimated time: 30 seconds"
 gcloud workflows deploy dgpulse-youtube-aspect-ratio-fetcher-wf \
@@ -88,8 +88,12 @@ gcloud workflows deploy dgpulse-youtube-aspect-ratio-fetcher-wf \
   --location=$GCP_REGION
 
 
+
+
+
+
 # install youtube_aspect_ratio_fetcher scheduler that calls workflow
-echo "\n----"
+echo "----"
 echo "Deploying Scheduler job for dgpulse-youtube-aspect-ratio-fetcher-wf"
 echo "Estimated time: 30 seconds"
 
@@ -119,7 +123,7 @@ gcloud scheduler jobs create http dgpulse-youtube-aspect-ratio-fetcher-wf-job \
 
 
 # GAARF Installation:
-echo "\n----"
+echo "----"
 echo "Initializing Google Ads data ETL Workflow..."
 echo "Estimated time: 10 minutes"
 npm init gaarf-wf@latest -- --answers=answers.json
