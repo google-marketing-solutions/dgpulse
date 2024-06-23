@@ -15,7 +15,7 @@
 const { BigQuery } = require("@google-cloud/bigquery");
 
 // TODO: make solutionName dynamic based on user input.
-const solutionName = "dgpulse";
+const solutionName = "dgpulse_ads";
 const datasetId = `${solutionName}_reference_data`;
 let projectId = process.env.GCP_PROJECT_ID;
 // TODO: make baseCurrency a parameter during installation

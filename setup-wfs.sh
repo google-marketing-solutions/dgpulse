@@ -36,10 +36,10 @@ GCP_REGION="europe-west1"
 # TODO: create dataset and table for currency exchange rates (reference data)
 echo "Creating Dataset for reference data and Table for Exchange Rates"
 echo "Estimated time: 5 seconds"
-bq --location=EU mk -d dgpulse_reference_data
+bq --location=EU mk -d dgpulse_ads_reference_data
 bq mk \
  -t \
- dgpulse_reference_data.exchange_rates \
+ dgpulse_ads_reference_data.exchange_rates \
  base_currency:STRING,target_currency:STRING,rate:FLOAT,date:DATE
 
 

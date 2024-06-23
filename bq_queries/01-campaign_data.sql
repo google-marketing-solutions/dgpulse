@@ -63,14 +63,15 @@ SELECT
   C.bidding_strategy,
   C.shopping_disable_product_feed,
   C.shopping_merchant_id,
-  (C.budget_amount / 1e6) AS budget_amount,
+  ((C.budget_amount / 1e6) / ER.rate) AS budget_amount,
   T.troas,
   (T.tcpa / 1e6) AS tcpa,
-  (C.cost / 1e6) AS cost,
+  ((CS.cost / 1e6) / ER.rate) AS cost,
   C.conversions,
   OCID.ocid
 FROM
   `{bq_dataset}.campaign_settings` AS C
   LEFT JOIN targets AS T ON C.account_id = T.account_id
   AND C.campaign_id = T.campaign_id
-  LEFT JOIN `{bq_dataset}.ocid_mapping` AS OCID ON OCID.customer_id = C.account_id;
+  LEFT JOIN `{bq_dataset}.ocid_mapping` AS OCID ON OCID.customer_id = C.account_id
+  LEFT JOIN `{bq_dataset}_reference_data.exchange_rates` AS ER ON C.currency_code = ER.target_currency;

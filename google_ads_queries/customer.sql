@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
 SELECT
     customer.id AS account_id,
     customer.descriptive_name AS account_name,
+    customer.currency_code AS currency_code,
     customer.conversion_tracking_setting.enhanced_conversions_for_leads_enabled AS ecl_enabled
-FROM customer
+FROM
+    customer
