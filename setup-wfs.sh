@@ -34,9 +34,14 @@ GCP_REGION="europe-west1"
 
 
 # TODO: create dataset and table for currency exchange rates (reference data)
-######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! 
-######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! 
-######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! 
+echo "Creating Dataset for reference data and Table for Exchange Rates"
+echo "Estimated time: 5 seconds"
+bq --location=EU mk -d dgpulse_reference_data
+bq mk \
+ -t \
+ dgpulse_reference_data.exchange_rates \
+ base_currency:STRING,target_currency:STRING,rate:FLOAT,date:DATE
+
 
 
 # step into exchange_rates folder with sub project scripts.
@@ -80,9 +85,8 @@ gcloud scheduler jobs create http dgpulse-exchange-rates-fetcher-job \
 
 
 # TODO: Force scheduler start (dgpulse-exchange-rates-fetcher-job)
-######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! 
-######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! 
-######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! ######### !!!!! 
+gcloud scheduler jobs run dgpulse-exchange-rates-fetcher-job \
+  --location=$GCP_REGION
 
 
 # step back one level since our function is ready.
