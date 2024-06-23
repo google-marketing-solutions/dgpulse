@@ -12,10 +12,10 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+var request = require("request");
+
 // TODO: make baseCurrency a parameter during installation
 const baseCurrency = "usd";
-
-var request = require("request");
 
 const baseUrl =
   "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies";

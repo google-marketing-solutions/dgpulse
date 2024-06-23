@@ -149,7 +149,7 @@ describe("setVideoAspectRatioCounts", () => {
     //Act: WHEN
     const result = helpers.setVideoAspectRatioCounts(
       campaignsAssetsCount,
-      countsByAccountCampaign,
+      countsByAccountCampaign
     );
 
     //Assert: Then
@@ -158,15 +158,17 @@ describe("setVideoAspectRatioCounts", () => {
     expect(result[0].landscape_video_count).toBe(3);
     expect(result[0].square_video_count).toBe(0);
     expect(result[0].portrait_video_count).toBe(4);
+    expect(result[0].has_image_plus_video).toBe("NO");
 
     expect(result[1].landscape_video_count).toBe(0);
     expect(result[1].square_video_count).toBe(0);
     expect(result[1].portrait_video_count).toBe(0);
+    expect(result[1].has_image_plus_video).toBe("NO");
   });
 
   test(`GIVEN a campaignsAssetsCount record contains an image and a video
             WHEN function is called
-            THEN it should set has_image_plus_video to true`, () => {
+            THEN it should set has_image_plus_video to YES`, () => {
     //Arrange: Given
     const campaignsAssetsCount = [
       {
@@ -188,11 +190,11 @@ describe("setVideoAspectRatioCounts", () => {
     //Act: WHEN
     const result = helpers.setVideoAspectRatioCounts(
       campaignsAssetsCount,
-      countsByAccountCampaign,
+      countsByAccountCampaign
     );
 
     //Assert: Then
-    expect(result[0].has_image_plus_video).toBe(true);
+    expect(result[0].has_image_plus_video).toBe("YES");
   });
 });
 
@@ -223,7 +225,7 @@ describe("getAssetFromAdGroupAdsWithVideoRatio", () => {
     //Act: WHEN
     await helpers.getAssetFromAdGroupAdsWithVideoRatio(
       assetFromAdGroupAds,
-      videoAssets,
+      videoAssets
     );
 
     //Assert: Then
@@ -249,7 +251,7 @@ describe("getAssetFromAdGroupAdsWithVideoRatio", () => {
     //Act: WHEN
     await helpers.getAssetFromAdGroupAdsWithVideoRatio(
       assetFromAdGroupAds,
-      videoAssets,
+      videoAssets
     );
 
     //Assert: Then

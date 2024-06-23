@@ -14,7 +14,7 @@
 
 const { BigQuery } = require("@google-cloud/bigquery");
 
-// TODO: solutionName should be dynamic.
+// TODO: make solutionName dynamic based on user input.
 const solutionName = "dgpulse";
 const datasetId = `${solutionName}_reference_data`;
 let projectId = process.env.GCP_PROJECT_ID;
@@ -40,7 +40,6 @@ async function executeQuery(query) {
   const job = response[0];
   const [rows] = await job.getQueryResults(job);
 
-  console.log(`${rows.length} returned`);
   return rows;
 }
 
@@ -69,7 +68,9 @@ function getInsertQueryForExchangeRates(exchangeRates) {
 async function insertExchangeRates(exchangeRates) {
   const query = getInsertQueryForExchangeRates(exchangeRates);
   console.log(
-    `Inserting into BQ: exchange_rates: ${exchangeRates[baseCurrency].length} records`
+    `Inserting into BQ: exchange_rates: ${JSON.stringify(
+      exchangeRates[baseCurrency]
+    )}`
   );
   return await executeQuery(query);
 }
