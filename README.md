@@ -25,7 +25,6 @@ Moreover, assets' performance is displayed and conveniently presented so adverti
 
 A Looker Studio dashboard based on your Google Ads and Merchant Center data. After joining the group below, [click here](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC) to see it in action.
 
-**todo**
 [![DG-Pulse](https://services.google.com/fh/files/misc/dgpulse-animated-preview.gif)](https://lookerstudio.google.com/c/reporting/755d5896-5c56-4f5a-9075-79249137c9ea/page/i5YsC)
 
 - LookerStudio dashboard based on your Google Ads and Merchant Center data.
@@ -68,8 +67,7 @@ Notice that this will **not** change the Looker Studio template. Only the code. 
 
 ### What happens during installation
 
-**todo**
-![What happens during installation](https://services.google.com/fh/files/misc/dgpulse-arch-1.png)
+![What happens during installation](https://services.google.com/fh/files/misc/dgpulse-arch-1.jpeg)
 
 ### What Google Cloud components are deployed automatically
 
@@ -94,7 +92,7 @@ Notice that this will **not** change the Looker Studio template. Only the code. 
 
 ### What happens daily post installation
 
-![What happens daily post installation](https://services.google.com/fh/files/misc/dgpulse-arch-7.png)
+![What happens daily post installation](https://services.google.com/fh/files/misc/dgpulse-arch-7.jpeg)
 
 ## Troubleshooting
 
