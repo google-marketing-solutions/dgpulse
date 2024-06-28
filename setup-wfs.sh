@@ -23,6 +23,11 @@ GCP_PROJECT_NUMBER=$(gcloud projects list \
 #TODO: Allow for user customization during setup
 SERVICE_ACCOUNT_EMAIL=$GCP_PROJECT_NUMBER-compute@developer.gserviceaccount.com
 
+# TEMP
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
+    --role="roles/owner"
+
 #TODO: Request region from user prompt and provide it to gaarf later:
 GCP_REGION="europe-west1"
 
