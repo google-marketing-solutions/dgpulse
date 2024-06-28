@@ -84,7 +84,9 @@ function setVideoAspectRatioCounts(
     bqCampaignsAssetsCount[i].has_image_plus_video = campaignHasImageAndVideo(
       bqCampaignsAssetsCount,
       i
-    );
+    )
+      ? "YES"
+      : "NO";
   }
 
   return bqCampaignsAssetsCount;

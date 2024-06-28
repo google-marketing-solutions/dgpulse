@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.7.1",
+    "@google-cloud/bigquery-connection": "^3.3.0",
+    "@google-cloud/functions-framework": "^3.4.0",
+    "request": "^2.88.2"
+  }
+}

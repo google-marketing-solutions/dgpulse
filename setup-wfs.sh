@@ -16,13 +16,101 @@
 set -e
 
 GCP_PROJECT_ID=$(gcloud config get-value project)
+GCP_PROJECT_NUMBER=$(gcloud projects list \
+  --filter="$(gcloud config get-value project)" \
+  --format="value(PROJECT_NUMBER)")
+
+#TODO: Allow for user customization during setup
+SERVICE_ACCOUNT_EMAIL=$GCP_PROJECT_NUMBER-compute@developer.gserviceaccount.com
+
 #TODO: Request region from user prompt and provide it to gaarf later:
 GCP_REGION="europe-west1"
 
 
 
 
-# create and store Youtube Data API Key for later usage
+# START: exchange-rates-fetcher setup.
+
+
+
+# TODO: create dataset and table for currency exchange rates (reference data)
+echo "Creating Dataset for reference data and Table for Exchange Rates"
+echo "Estimated time: 5 seconds"
+bq --location=EU mk -d dgpulse_ads_reference_data
+bq mk \
+ -t \
+ dgpulse_ads_reference_data.exchange_rates \
+ base_currency:STRING,target_currency:STRING,rate:FLOAT,date:DATE
+
+
+
+# step into exchange_rates folder with sub project scripts.
+cd exchange_rates_fetcher
+
+
+# install dgpulse-exchange-rates-fetcher function.
+echo "----"
+echo "Deploying Run function for Exchange Rates"
+echo "Estimated time: Less than 5 minutes"
+gcloud functions deploy dgpulse-exchange-rates-fetcher \
+  --gen2 \
+  --runtime=nodejs20 \
+  --region=$GCP_REGION \
+  --source=. \
+  --entry-point=exchangeRatesGET \
+  --trigger-http \
+  --no-allow-unauthenticated \
+  --timeout=3600 \
+  --set-env-vars GCP_PROJECT_ID=$GCP_PROJECT_ID
+
+EXCHANGE_RATES_FUNCTION_URL=$(gcloud functions describe \
+  dgpulse-exchange-rates-fetcher \
+  --gen2 \
+  --region="$GCP_REGION" \
+  --format='value(serviceConfig.uri)'\
+)
+
+# install dgpulse-exchange-rates-fetcher scheduler that calls function.
+echo "----"
+echo "Deploying Scheduler job for dgpulse-exchange-rates-fetcher"
+echo "Estimated time: 5 seconds"
+
+gcloud scheduler jobs create http dgpulse-exchange-rates-fetcher-job \
+  --location=$GCP_REGION \
+  --http-method="GET" \
+  --schedule="0 0 1 * *" \
+  --uri=$EXCHANGE_RATES_FUNCTION_URL \
+  --oidc-service-account-email=$SERVICE_ACCOUNT_EMAIL \
+  --oidc-token-audience=$EXCHANGE_RATES_FUNCTION_URL
+
+
+# TODO: Force scheduler start (dgpulse-exchange-rates-fetcher-job)
+gcloud scheduler jobs run dgpulse-exchange-rates-fetcher-job \
+  --location=$GCP_REGION
+
+
+# step back one level since our function is ready.
+cd ..
+
+# END: exchange-rates-fetcher setup.
+
+
+
+
+
+
+
+
+
+
+# START: youtube_aspect_ratio_fetcher setup.
+
+# step into youtube_aspect_ratio_fetcher with sub project scripts.
+cd youtube_aspect_ratio_fetcher
+
+
+
+# create and store Youtube Data API Key for later usage.
 echo "----"
 echo "Creating a YouTube API key"
 echo "Estimated time: 10 seconds"
@@ -37,20 +125,10 @@ YOUTUBE_KEY_CREATE_LOGS=$(gcloud services api-keys create \
 API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
 
 
-
-
-
-# step into folder with sub project scripts
-cd youtube_aspect_ratio_fetcher
-
-
-
-
-
-# install youtube_aspect_ratio_fetcher function and obtain url:
+# install youtube_aspect_ratio_fetcher function
 echo "----"
 echo "Deploying Run function for Youtube aspect ratio fetcher"
-echo "Estimated time: 5 minutes"
+echo "Estimated time: Less than 5 minutes"
 gcloud functions deploy dgpulse-youtube-aspect-ratio-fetcher \
   --gen2 \
   --runtime=nodejs20 \
@@ -62,59 +140,32 @@ gcloud functions deploy dgpulse-youtube-aspect-ratio-fetcher \
   --timeout=3600 \
   --set-env-vars YOUTUBE_API_KEY=$API_KEY,GCP_PROJECT_ID=$GCP_PROJECT_ID
 
-FUNCTION_URL=$(gcloud functions describe \
+YOUTUBE_RATIO_FUNCTION_URL=$(gcloud functions describe \
   dgpulse-youtube-aspect-ratio-fetcher \
   --gen2 \
   --region="$GCP_REGION" \
   --format='value(serviceConfig.uri)'\
 )
 
+# install youtube_aspect_ratio_fetcher scheduler that calls function
+echo "----"
+echo "Deploying Scheduler job for dgpulse-youtube-aspect-ratio-fetcher"
+echo "Estimated time: 30 seconds"
+
+gcloud scheduler jobs create http dgpulse-youtube-aspect-ratio-fetcher-job \
+  --location=$GCP_REGION \
+  --http-method="GET" \
+  --schedule="0 5 * * *" \
+  --uri=$YOUTUBE_RATIO_FUNCTION_URL \
+  --oidc-service-account-email=$SERVICE_ACCOUNT_EMAIL \
+  --oidc-token-audience=$YOUTUBE_RATIO_FUNCTION_URL
 
 
-
-# step back one level
+# step back one level.
 cd ..
 
 
- 
-
-
-# install youtube_aspect_ratio_fetcher workflow
-echo "----"
-echo "Deploying Workflow for dgpulse-youtube-aspect-ratio-fetcher"
-echo "Estimated time: 30 seconds"
-gcloud workflows deploy dgpulse-youtube-aspect-ratio-fetcher-wf \
-  --source=youtube_aspect_ratio_fetcher_workflow.yaml \
-  --location=$GCP_REGION
-
-
-
-
-
-
-# install youtube_aspect_ratio_fetcher scheduler that calls workflow
-echo "----"
-echo "Deploying Scheduler job for dgpulse-youtube-aspect-ratio-fetcher-wf"
-echo "Estimated time: 30 seconds"
-
-WORKFLOW_NAME_PATH=$(gcloud workflows describe \
-  dgpulse-youtube-aspect-ratio-fetcher-wf \
-  --location=$GCP_REGION \
-  --format='value(name)' \
-)
-
-SERVICE_ACCOUNT_EMAIL=$(gcloud workflows describe \
-  dgpulse-youtube-aspect-ratio-fetcher-wf \
-  --location=$GCP_REGION \
-  --format='value(serviceAccount)' \
-  | grep -E -o "\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}\b" \
-)
-
-gcloud scheduler jobs create http dgpulse-youtube-aspect-ratio-fetcher-wf-job \
-  --location=$GCP_REGION \
-  --schedule="0 3 * * *" \
-  --uri="https://workflowexecutions.googleapis.com/v1/$WORKFLOW_NAME_PATH/executions" \
-  --oauth-service-account-email=$SERVICE_ACCOUNT_EMAIL
+# END: youtube_aspect_ratio_fetcher setup.
 
 
 
@@ -122,8 +173,13 @@ gcloud scheduler jobs create http dgpulse-youtube-aspect-ratio-fetcher-wf-job \
 
 
 
-# GAARF Installation:
+
+# START: GAARF Installation
+
 echo "----"
 echo "Initializing Google Ads data ETL Workflow..."
 echo "Estimated time: 10 minutes"
 npm init gaarf-wf@latest -- --answers=answers.json
+
+
+# END: GAARF Installation

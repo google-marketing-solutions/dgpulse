@@ -14,8 +14,7 @@
 
 const { BigQuery } = require("@google-cloud/bigquery");
 
-// TODO: the following 3 rows are temporary as I set the solution up
-// but need the code checked in. I'll get these from config.
+// TODO: solutionName should be dynamic.
 const solutionName = "dgpulse";
 const datasetId = `${solutionName}_ads`;
 let projectId = process.env.GCP_PROJECT_ID;
@@ -91,7 +90,8 @@ function getUpdateQueryForCampaignsAssetsCount(campaignsAssetsCounts) {
             SET 
                 square_video_count = ${cac.square_video_count},
                 portrait_video_count = ${cac.portrait_video_count},
-                landscape_video_count = ${cac.landscape_video_count}
+                landscape_video_count = ${cac.landscape_video_count},
+                has_image_plus_video = ${cac.has_image_plus_video}
             WHERE campaign_id = ${cac.campaign_id}
                 AND account_id = ${cac.account_id};`;
   }
@@ -100,10 +100,10 @@ function getUpdateQueryForCampaignsAssetsCount(campaignsAssetsCounts) {
 
 async function updateCampaignsAssetsCounts(campaignsAssetsFinalCount) {
   const query = getUpdateQueryForCampaignsAssetsCount(
-    campaignsAssetsFinalCount,
+    campaignsAssetsFinalCount
   );
   console.log(
-    `Updating BQ: campaigns_assets_count: ${campaignsAssetsFinalCount.length} records`,
+    `Updating BQ: campaigns_assets_count: ${campaignsAssetsFinalCount.length} records`
   );
   return await executeQuery(query);
 }
