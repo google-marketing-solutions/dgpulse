@@ -24,11 +24,11 @@ Moreover, assets' performance is displayed and conveniently presented so adverti
 
 ## Deliverable (Implementation)
 
-A Looker Studio dashboard based on your Google Ads and Merchant Center data. After joining [this group](https://groups.google.com/g/dgpulse/), [click here](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC) to see it in action.
+A Looker Studio dashboard based on your Google Ads and You Tube data. After joining [this group](https://groups.google.com/g/dgpulse/), [click here](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC) to see it in action.
 
 [![DG-Pulse](https://services.google.com/fh/files/misc/dgpulse-animated-preview.gif)](https://lookerstudio.google.com/c/reporting/755d5896-5c56-4f5a-9075-79249137c9ea/page/i5YsC)
 
-- LookerStudio dashboard based on your Google Ads and Merchant Center data.
+- LookerStudio dashboard based on your Google Ads and You Tube data.
 
 ## Prerequisites
 
