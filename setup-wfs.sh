@@ -23,11 +23,6 @@ GCP_PROJECT_NUMBER=$(gcloud projects list \
 #TODO: Allow for user customization during setup
 SERVICE_ACCOUNT_EMAIL=$GCP_PROJECT_NUMBER-compute@developer.gserviceaccount.com
 
-# TEMP
-gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
-    --member="serviceAccount:$SERVICE_ACCOUNT_EMAIL" \
-    --role="roles/owner"
-
 #TODO: Request region from user prompt and provide it to gaarf later:
 GCP_REGION="europe-west1"
 
@@ -41,11 +36,20 @@ GCP_REGION="europe-west1"
 # TODO: create dataset and table for currency exchange rates (reference data)
 echo "Creating Dataset for reference data and Table for Exchange Rates"
 echo "Estimated time: 5 seconds"
-bq --location=EU mk -d dgpulse_ads_reference_data
-bq mk \
- -t \
- dgpulse_ads_reference_data.exchange_rates \
- base_currency:STRING,target_currency:STRING,rate:FLOAT,date:DATE
+# Check if the dataset exists
+if bq --location=EU show --dataset dgpulse_ads_reference_data; then
+  echo "Dataset already exists."
+else
+  # Create the dataset if it does not exist
+  bq --location=EU mk -d dgpulse_ads_reference_data
+  # Create the exchange_rates table
+  bq mk \
+    -t \
+    dgpulse_ads_reference_data.exchange_rates \
+    base_currency:STRING,target_currency:STRING,rate:FLOAT,date:DATE
+fi
+
+
 
 
 
@@ -79,17 +83,24 @@ EXCHANGE_RATES_FUNCTION_URL=$(gcloud functions describe \
 echo "----"
 echo "Deploying Scheduler job for dgpulse-exchange-rates-fetcher"
 echo "Estimated time: 5 seconds"
+X_RATES_JOB_NAME="dgpulse-exchange-rates-fetcher-job"
+if ! gcloud scheduler jobs describe $X_RATES_JOB_NAME --location=$GCP_REGION > /dev/null 2>&1; then
+  gcloud scheduler jobs create http $X_RATES_JOB_NAME \
+    --location=$GCP_REGION \
+    --http-method="GET" \
+    --schedule="0 0 1 * *" \
+    --uri=$EXCHANGE_RATES_FUNCTION_URL \
+    --oidc-service-account-email=$SERVICE_ACCOUNT_EMAIL \
+    --oidc-token-audience=$EXCHANGE_RATES_FUNCTION_URL
+else
+  echo "Job already exists."
+fi
 
-gcloud scheduler jobs create http dgpulse-exchange-rates-fetcher-job \
-  --location=$GCP_REGION \
-  --http-method="GET" \
-  --schedule="0 0 1 * *" \
-  --uri=$EXCHANGE_RATES_FUNCTION_URL \
-  --oidc-service-account-email=$SERVICE_ACCOUNT_EMAIL \
-  --oidc-token-audience=$EXCHANGE_RATES_FUNCTION_URL
 
 
-# TODO: Force scheduler start (dgpulse-exchange-rates-fetcher-job)
+
+echo "Running dgpulse-exchange-rates-fetcher-job for the 1st time"
+echo "Estimated time: 5 seconds"
 gcloud scheduler jobs run dgpulse-exchange-rates-fetcher-job \
   --location=$GCP_REGION
 
@@ -157,13 +168,20 @@ echo "----"
 echo "Deploying Scheduler job for dgpulse-youtube-aspect-ratio-fetcher"
 echo "Estimated time: 30 seconds"
 
-gcloud scheduler jobs create http dgpulse-youtube-aspect-ratio-fetcher-job \
-  --location=$GCP_REGION \
-  --http-method="GET" \
-  --schedule="0 5 * * *" \
-  --uri=$YOUTUBE_RATIO_FUNCTION_URL \
-  --oidc-service-account-email=$SERVICE_ACCOUNT_EMAIL \
-  --oidc-token-audience=$YOUTUBE_RATIO_FUNCTION_URL
+
+YOUTUBE_JOB_NAME="dgpulse-youtube-aspect-ratio-fetcher-job"
+if ! gcloud scheduler jobs describe $YOUTUBE_JOB_NAME --location=$GCP_REGION > /dev/null 2>&1; then
+  gcloud scheduler jobs create http $YOUTUBE_JOB_NAME \
+    --location=$GCP_REGION \
+    --http-method="GET" \
+    --schedule="0 5 * * *" \
+    --uri=$YOUTUBE_RATIO_FUNCTION_URL \
+    --oidc-service-account-email=$SERVICE_ACCOUNT_EMAIL \
+    --oidc-token-audience=$YOUTUBE_RATIO_FUNCTION_URL
+else
+  echo "Job already exists."
+fi
+
 
 
 # step back one level.
