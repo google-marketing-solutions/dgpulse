@@ -144,7 +144,7 @@ After generating the client_id and client_secret keep the confirmation screen op
 
 Use [this link](https://groups.google.com/g/dgpulse/) to access the group URL and click on "Join Group"
 
-![join_group](https://services.google.com/fh/files/misc/join_group.png)
+![join_group](https://services.google.com/fh/files/misc/dgpulse_join_group.png)
 
 ## Deploy Solution 
 
