@@ -132,14 +132,17 @@ echo "Creating a YouTube API key"
 echo "Estimated time: 10 seconds"
 # Hack: Currently, the "api-keys create" does not return anything
 # but the api key value is printed in the logs.
-YOUTUBE_KEY_CREATE_LOGS=$(gcloud services api-keys create \
-    --api-target=service=youtube.googleapis.com \
-    --key-id="youtube-key" \
-    --display-name="Youtube API Key for Demand Gen Pulse" \
-    2>&1)
-# The api key value is logged in "keyString":
-API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
-
+if ! gcloud alpha services api-keys list --format="value(name)" | grep -q "youtube-key"; then
+  YOUTUBE_KEY_CREATE_LOGS=$(gcloud services api-keys create \
+      --api-target=service=youtube.googleapis.com \
+      --key-id="youtube-key" \
+      --display-name="Youtube API Key for Demand Gen Pulse" \
+      2>&1)
+  # The api key value is logged in "keyString":
+  API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
+else
+  echo "API key 'youtube-key' already exists."
+fi
 
 # install youtube_aspect_ratio_fetcher function
 echo "----"
@@ -167,8 +170,6 @@ YOUTUBE_RATIO_FUNCTION_URL=$(gcloud functions describe \
 echo "----"
 echo "Deploying Scheduler job for dgpulse-youtube-aspect-ratio-fetcher"
 echo "Estimated time: 30 seconds"
-
-
 YOUTUBE_JOB_NAME="dgpulse-youtube-aspect-ratio-fetcher-job"
 if ! gcloud scheduler jobs describe $YOUTUBE_JOB_NAME --location=$GCP_REGION > /dev/null 2>&1; then
   gcloud scheduler jobs create http $YOUTUBE_JOB_NAME \
