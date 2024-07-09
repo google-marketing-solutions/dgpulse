@@ -208,6 +208,15 @@ Please refer to the folder google_ads_queries.
 For convenience, here's an SQL script you can run after all bigquery tables have been created:
 
 ```
+UPDATE `dgpulse_ads_bq.account_conversion_action`
+SET
+  account_name = CONCAT(
+    SUBSTRING(account_name, 1, 2),
+    'xxxxx',
+    SUBSTRING(account_name,LENGTH(account_name), LENGTH(account_name)))
+WHERE account_name IS NOT NULL;
+
+
 UPDATE `dgpulse_ads_bq.campaign_data`
 SET
   account_name = CONCAT(
@@ -227,10 +236,6 @@ SET
     SUBSTRING(account_name, 1, 2),
     'xxxxx',
     SUBSTRING(account_name,LENGTH(account_name), LENGTH(account_name))),
-  audience_name = CONCAT(
-    SUBSTRING(audience_name, 1, 2),
-    'xxxxx',
-    SUBSTRING(audience_name,LENGTH(audience_name), LENGTH(audience_name)))
   campaign_name = CONCAT(
     SUBSTRING(campaign_name, 1, 2),
     'yyyyyyyyyyy',
@@ -244,6 +249,10 @@ SET
     SUBSTRING(account_name, 1, 2),
     'xxxxx',
     SUBSTRING(account_name,LENGTH(account_name), LENGTH(account_name))),
+  audience_name = CONCAT(
+    SUBSTRING(audience_name, 1, 2),
+    'xxxxx',
+    SUBSTRING(audience_name,LENGTH(audience_name), LENGTH(audience_name))),
   campaign_name = CONCAT(
     SUBSTRING(campaign_name, 1, 2),
     'yyyyyyyyyyy',
