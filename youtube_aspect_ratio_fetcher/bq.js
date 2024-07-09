@@ -91,7 +91,7 @@ function getUpdateQueryForCampaignsAssetsCount(campaignsAssetsCounts) {
                 square_video_count = ${cac.square_video_count},
                 portrait_video_count = ${cac.portrait_video_count},
                 landscape_video_count = ${cac.landscape_video_count},
-                has_image_plus_video = ${cac.has_image_plus_video}
+                has_image_plus_video = "${cac.has_image_plus_video}"
             WHERE campaign_id = ${cac.campaign_id}
                 AND account_id = ${cac.account_id};`;
   }
