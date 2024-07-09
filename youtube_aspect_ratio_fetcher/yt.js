@@ -24,11 +24,14 @@ async function getSingleVideoAspectRatio(videoId) {
     request(url, function (error, res, body) {
       if (!error && res.statusCode === 200) {
         if (error) reject(error);
-        // console.log(`Found YouTube video: ${videoId}`);
         const item = JSON.parse(body).items[0];
-        const aspectRatio = getAspectRatioFromYouTubeVideoItem(item);
-        // console.log(`Aspect ratio is: ${aspectRatio}`);
-        resolve(aspectRatio);
+        if (!item) {
+          console.log(`No item for YouTube video: ${videoId}`);
+          resolve(0);
+        } else {
+          const aspectRatio = getAspectRatioFromYouTubeVideoItem(item);
+          resolve(aspectRatio);
+        }
       } else {
         reject(error);
       }
