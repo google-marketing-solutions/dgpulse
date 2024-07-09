@@ -15,9 +15,9 @@
 # limitations under the License.
 set -e
 
-GCP_PROJECT_ID=$(gcloud config get-value project)
+GCP_PROJECT_ID=$(gcloud config get-value project) && \
 GCP_PROJECT_NUMBER=$(gcloud projects list \
-  --filter="$(gcloud config get-value project)" \
+  --filter="projectId:$GCP_PROJECT_ID" \
   --format="value(PROJECT_NUMBER)")
 
 #TODO: Allow for user customization during setup
