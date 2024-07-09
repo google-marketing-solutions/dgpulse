@@ -22,7 +22,7 @@
   "run_job": false,
   "run_wf": true,
   "clone_dashboard": true,
-  "dashboard_id": "6e773f65-7612-45af-af37-e3cab6a9828b",
+  "dashboard_id": "7ae6081d-c69a-4f29-ad02-f9c1aa16a052",
   "dashboard_name": "dgpulse",
   "dashboard_dataset": "dgpulse_ads_bq",
   "dashboard_datasources": {
