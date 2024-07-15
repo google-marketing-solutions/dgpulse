@@ -19,21 +19,23 @@ const key = process.env.YOUTUBE_API_KEY;
 
 async function getSingleVideoAspectRatio(videoId) {
   const url = `${baseUrl}?part=player&id=${videoId}&maxWidth=500&key=${key}`;
-  return new Promise(function (resolve, reject) {
+  return new Promise((resolve, reject) => {
     console.log("Calling YouTube for video:", videoId);
-    request(url, function (error, res, body) {
-      if (!error && res.statusCode === 200) {
-        if (error) reject(error);
+    request(url, (error, res, body) => {
+      if (error) {
+        return reject(error);
+      }
+      if (res.statusCode === 200) {
         const item = JSON.parse(body).items[0];
         if (!item) {
           console.log(`No item for YouTube video: ${videoId}`);
-          resolve(0);
+          return resolve(0);
         } else {
           const aspectRatio = getAspectRatioFromYouTubeVideoItem(item);
-          resolve(aspectRatio);
+          return resolve(aspectRatio);
         }
       } else {
-        reject(error);
+        return reject(new Error(`Unexpected status code ${res.statusCode}`));
       }
     });
   });
