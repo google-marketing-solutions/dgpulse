@@ -132,17 +132,28 @@ echo "Creating a YouTube API key"
 echo "Estimated time: 10 seconds"
 # Hack: Currently, the "api-keys create" does not return anything
 # but the api key value is printed in the logs.
-if ! gcloud alpha services api-keys list --format="value(name)" | grep -q "youtube-key"; then
-  YOUTUBE_KEY_CREATE_LOGS=$(gcloud services api-keys create \
-      --api-target=service=youtube.googleapis.com \
-      --key-id="youtube-key" \
-      --display-name="Youtube API Key for Demand Gen Pulse" \
-      2>&1)
-  # The api key value is logged in "keyString":
-  API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
-else
-  echo "API key 'youtube-key' already exists."
-fi
+
+# Generate a random short string using date and md5sum.
+RANDOM_STRING=$(date +%s | md5sum | head -c 8)
+API_KEY_NAME="youtube-key-${RANDOM_STRING}"
+
+# Create the new API key.
+YOUTUBE_KEY_CREATE_LOGS=$(gcloud services api-keys create \
+    --api-target=service=youtube.googleapis.com \
+    --key-id="${API_KEY_NAME}" \
+    --display-name="Youtube API Key for Demand Gen Pulse" \
+    2>&1)
+
+# Extract the API key value from the logs.
+API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
+
+echo "New API key created: ${API_KEY_NAME}"
+echo "API Key: ${API_KEY}"
+
+
+
+
+
 
 # install youtube_aspect_ratio_fetcher function
 echo "----"
