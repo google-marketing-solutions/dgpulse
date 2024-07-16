@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JSON Escaping</title>
+</head>
+<body>
+
+    <h2>Input</h2>
+    <textarea id="inputTextarea" rows="5" cols="50"></textarea>
+
+    <button onclick="processInput()">Submit</button>
+
+    <h2>Output</h2>
+    <textarea id="outputTextarea" rows="5" cols="50" readonly></textarea>
+
+    <script>
+        function processInput() {
+            var input = document.getElementById("inputTextarea").value;
+            var argumentStr = input.replace('{"argument": "', "").replace('"}', "");
+            var output = `{"argument": ${JSON.stringify(argumentStr)}}`;
+
+            document.getElementById("outputTextarea").value = output;
+        }
+    </script>
+
+</body>
+</html>
