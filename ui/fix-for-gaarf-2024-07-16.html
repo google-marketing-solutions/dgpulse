@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JSON Escaping</title>
+</head>
+<body style="
+width: 50%;
+margin: 0 auto;
+font-family: verdana;
+font-size: 12px;
+">
+
+<h1>Fixing the gaarf issue communicated on 2024-07-16</h1>
+  There was a recent bug on gaarf that caused new installations to fail when trying to run Worflows.
+
+  <br>
+  To confirm you have been affected:
+
+  <ol>
+  <li>Go to Google Cloud</li>
+  <li>Search for "Cloud Scheduler" at the top search bar</li>
+  <li>Click on the Scheduler Job named "dgpulse-wf" (which would have a failure, but let's double check the root cause)</li>
+  <li>Go to the section 2 named "Configure the execution"</li>
+  <li>The field "body" must start with exactly the following: <i>{"argument": "{ \"cloud_function\" ...</i></li>
+  <li>If you don't see the backslashes (\) before and after cloud_function, you need to apply the following fix.</li>
+  </ol>
+  
+
+  To solve that issue, please:
+
+  <ol>
+    <li>Copy the contents of "body"</li>
+    <li>Paste it into the Input box below</li>
+    <li>Press the Submit button</li>
+    <li>Copy and paste the contents of the Output box into the "body"</li>
+    <li>Press the "Update" button to save your GCP Scheduler changes</li>
+  </ol>
+
+  <h2>Input</h2>
+  <textarea id="inputTextarea" rows="5" cols="50" 
+    placeholder='{"argument": "{ "cloud_function": ...'></textarea>
+  
+  <br>
+
+  <button onclick="processInput()">Submit</button>
+
+  <h2>Output</h2>
+  <textarea id="outputTextarea" rows="5" cols="50" readonly></textarea>
+
+  <br><br>
+
+  If you find any issues, please post it in our
+  <a href="https://groups.google.com/g/dgpulse" target="_blank">public group</a>.
+
+
+    <script>
+        function processInput() {
+            var input = document.getElementById("inputTextarea").value;
+            var argumentStr = input.replace('{"argument": "', "").replace('"}', "");
+            var output = `{"argument": ${JSON.stringify(argumentStr)}}`;
+
+            document.getElementById("outputTextarea").value = output;
+        }
+    </script>
+
+</body>
+</html>
