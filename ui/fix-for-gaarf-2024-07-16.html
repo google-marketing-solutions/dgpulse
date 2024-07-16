@@ -36,13 +36,22 @@ font-size: 12px;
     <li>Press the "Update" button to save your GCP Scheduler changes</li>
   </ol>
 
-    <h2>Input</h2>
-    <textarea id="inputTextarea" rows="5" cols="50" placeholder='{"argument": "{ "cloud_function": ...'></textarea>
-<br>
-    <button onclick="processInput()">Submit</button>
+  <h2>Input</h2>
+  <textarea id="inputTextarea" rows="5" cols="50" 
+    placeholder='{"argument": "{ "cloud_function": ...'></textarea>
+  
+  <br>
 
-    <h2>Output</h2>
-    <textarea id="outputTextarea" rows="5" cols="50" readonly></textarea>
+  <button onclick="processInput()">Submit</button>
+
+  <h2>Output</h2>
+  <textarea id="outputTextarea" rows="5" cols="50" readonly></textarea>
+
+  <br><br>
+
+  If you find any issues, please post it in our
+  <a href="https://groups.google.com/g/dgpulse" target="_blank">public group</a>.
+
 
     <script>
         function processInput() {
