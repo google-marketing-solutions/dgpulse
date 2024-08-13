@@ -18,6 +18,7 @@ const bq = require("./bq");
 
 functions.http("exchangeRatesGET", async (req, res) => {
   const exchangeRates = await exchangeApi.getExchangeRatesFromAPI();
+  await bq.deleteExchangeRates();
   const insertQueryForExchangeRates = bq.insertExchangeRates(exchangeRates);
   res.send(
     "BigQuery INSERTs queued for execution and should complete in seconds."

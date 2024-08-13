@@ -65,6 +65,14 @@ function getInsertQueryForExchangeRates(exchangeRates) {
   return finalUpdateQuery.substring(0, finalUpdateQuery.length - 1);
 }
 
+async function deleteExchangeRates() {
+  const query = `DELETE
+      \`${projectId}.${datasetId}.exchange_rates\`
+      WHERE target_currency IS NOT NULL`;
+  console.log(`Deleting from BQ: exchange_rates`);
+  return await executeQuery(query);
+}
+
 async function insertExchangeRates(exchangeRates) {
   const query = getInsertQueryForExchangeRates(exchangeRates);
   console.log(
@@ -78,4 +86,5 @@ async function insertExchangeRates(exchangeRates) {
 module.exports = {
   insertExchangeRates,
   getInsertQueryForExchangeRates,
+  deleteExchangeRates,
 };
