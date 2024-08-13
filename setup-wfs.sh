@@ -27,6 +27,59 @@ SERVICE_ACCOUNT_EMAIL=$GCP_PROJECT_NUMBER-compute@developer.gserviceaccount.com
 GCP_REGION="europe-west1"
 
 
+# START: Permissions to Service Account:
+
+
+echo "Setting permissions to Service Account:"
+echo "Estimated time: Less than 1 minute"
+# Artifact registry administrator
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role="roles/artifactregistry.admin"
+
+# Logs Writer
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role="roles/logging.logWriter"
+
+# Storage object viewer
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role="roles/storage.objectViewer"
+
+# Cloud Build Editor
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role="roles/cloudbuild.builds.editor"
+
+# Cloud Run Invoker
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role="roles/run.invoker"
+
+# Cloud Functions invoker
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role="roles/cloudfunctions.invoker"
+
+# Cloud Functions Deployment Builder
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+ --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+ --role="roles/cloudbuild.builds.builder"
+
+# BigQuery Data Editor
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --role="roles/bigquery.dataEditor"
+
+
+# END: Permissions to Service Account.
+
+
+
+
+
+
 
 
 # START: exchange-rates-fetcher setup.
