@@ -42,6 +42,21 @@ OR REPLACE TABLE `{bq_dataset}_bq.campaign_data` AS WITH targets_raw AS (
   FROM
     `{bq_dataset}.campaign_settings`
 ),
+campaigns_with_lookalikes AS (
+  SELECT
+    DISTINCT am.campaign_id
+  FROM
+    `{bq_dataset}.audience_metrics` AS am
+  WHERE
+    EXISTS (
+      SELECT
+        1
+      FROM
+        `{bq_dataset}.ad_group_criterion` AS agc
+      WHERE
+        am.criterion_id = agc.criterion_id
+    )
+),
 targets AS (
   SELECT
     account_id,
@@ -68,11 +83,16 @@ SELECT
   (T.tcpa / 1e6) AS tcpa,
   ((C.cost / 1e6) / ER.rate) AS cost,
   C.conversions,
-  OCID.ocid
+  OCID.ocid,
+  CASE
+    WHEN CWL.campaign_id IS NOT NULL THEN 'YES'
+    ELSE 'NO'
+  END AS has_lookalike_audience
 FROM
   `{bq_dataset}.campaign_settings` AS C
   LEFT JOIN targets AS T ON C.account_id = T.account_id
   AND C.campaign_id = T.campaign_id
   LEFT JOIN `{bq_dataset}.ocid_mapping` AS OCID ON OCID.customer_id = C.account_id
   LEFT JOIN `{bq_dataset}.customer` AS CUST ON CUST.account_id = C.account_id
-  LEFT JOIN `{bq_dataset}_reference_data.exchange_rates` AS ER ON CUST.currency_code = ER.target_currency;
+  LEFT JOIN `{bq_dataset}_reference_data.exchange_rates` AS ER ON CUST.currency_code = ER.target_currency
+  LEFT JOIN campaigns_with_lookalikes AS CWL ON C.campaign_id = CWL.campaign_id;

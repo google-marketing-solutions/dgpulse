@@ -21,22 +21,11 @@
  @param {end_date} The end date of the date range.
  */
 SELECT
-  segments.date AS date,
-  campaign.id AS campaign_id,
-  customer.id AS account_id,
-  ad_group.id AS ag_id,
-  metrics.clicks AS clicks,
-  metrics.cost_micros AS cost,
-  metrics.conversions AS conversions,
-  metrics.view_through_conversions AS vt_conversions,
-  metrics.all_conversions_value_per_cost AS roas,
   ad_group_criterion.criterion_id AS criterion_id,
-  ad_group_criterion.type AS audience_type,
-  ad_group_criterion.display_name AS audience_name
+  ad_group_criterion.user_list.user_list ~ 0 AS user_list_id
 FROM
-  ad_group_audience_view
+  ad_group_criterion
 WHERE
-  campaign.advertising_channel_type = 'DISCOVERY'
-  AND segments.date >= '{start_date}'
-  AND segments.date <= '{end_date}'
-  AND campaign.status = 'ENABLED' -- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.
+  ad_group_criterion.type = 'USER_LIST'
+  AND user_list.type = 'LOOKALIKE'
+  AND ad_group_criterion.status = 'ENABLED' -- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.
