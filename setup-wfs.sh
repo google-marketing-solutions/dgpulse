@@ -183,17 +183,10 @@ cd youtube_aspect_ratio_fetcher
 echo "----"
 echo "Creating a YouTube API key"
 echo "Estimated time: 10 seconds"
-# Hack: Currently, the "api-keys create" does not return anything
-# but the api key value is printed in the logs.
-
-# Generate a random short string using date and md5sum.
-RANDOM_STRING=$(date +%s | md5sum | head -c 8)
-API_KEY_NAME="youtube-key-${RANDOM_STRING}"
 
 # Create the new API key.
-YOUTUBE_KEY_CREATE_LOGS=$(gcloud services api-keys create \
+YOUTUBE_KEY_CREATE_LOGS=$(gcloud beta services api-keys create \
     --api-target=service=youtube.googleapis.com \
-    --key-id="${API_KEY_NAME}" \
     --display-name="Youtube API Key for Demand Gen Pulse" \
     2>&1)
 
