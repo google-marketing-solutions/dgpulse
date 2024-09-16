@@ -187,7 +187,7 @@ echo "Estimated time: 10 seconds"
 # but the api key value is printed in the logs.
 
 # Create the new API key.
-YOUTUBE_KEY_CREATE_LOGS=$(gcloud services api-keys create \
+YOUTUBE_KEY_CREATE_LOGS=$(gcloud alpha services api-keys create \
     --api-target=service=youtube.googleapis.com \
     --display-name="Youtube API Key for Demand Gen Pulse" \
     2>&1)
