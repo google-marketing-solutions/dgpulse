@@ -42,6 +42,6 @@ SELECT
   metrics.all_conversions_value AS all_conversions_value
 FROM campaign
 WHERE
-  campaign.advertising_channel_type = "DISCOVERY"
+  campaign.advertising_channel_type = "DEMAND_GEN"
   AND segments.date >= "{start_date}"
   AND segments.date <= "{end_date}"

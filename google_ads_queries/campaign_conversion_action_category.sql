@@ -24,7 +24,7 @@ SELECT
   metrics.all_conversions AS number_of_conversions
 FROM campaign
 WHERE
-  campaign.advertising_channel_type = "DISCOVERY"
+  campaign.advertising_channel_type = "DEMAND_GEN"
   AND segments.conversion_action_category != "DEFAULT"
   AND campaign.status = "ENABLED"
   AND segments.date >= "{start_date}"

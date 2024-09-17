@@ -14,4 +14,5 @@
 
 SELECT customer.id
 FROM campaign
-WHERE campaign.advertising_channel_type = "DISCOVERY"
+WHERE campaign.advertising_channel_type = "DEMAND_GEN"
+AND campaign.status = 'ENABLED'

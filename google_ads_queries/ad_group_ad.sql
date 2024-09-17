@@ -23,17 +23,17 @@ SELECT
   ad_group_ad.ad.id AS aga_id,
   ad_group.name AS ag_name,
   ad_group_ad.ad.type AS aga_type,
-  ad_group_ad.ad.discovery_multi_asset_ad.portrait_marketing_images:asset AS dmaa_portrait_mkt_imgs,
-  ad_group_ad.ad.discovery_multi_asset_ad.square_marketing_images:asset AS dmaa_square_mkt_imgs,
-  ad_group_ad.ad.discovery_multi_asset_ad.marketing_images:asset AS dmaa_mkt_imgs,
-  ad_group_ad.ad.discovery_multi_asset_ad.logo_images:asset AS dmaa_logo_imgs,
-  ad_group_ad.ad.discovery_multi_asset_ad.descriptions AS dmaa_descriptions,
-  ad_group_ad.ad.discovery_multi_asset_ad.headlines AS aga_headlines,
-  ad_group_ad.ad.discovery_video_responsive_ad.videos:asset AS dvra_videos,
-  ad_group_ad.ad.discovery_video_responsive_ad.long_headlines AS dvra_long_headlines,
-  ad_group_ad.ad.discovery_video_responsive_ad.logo_images AS dvra_logo_imgs,
-  ad_group_ad.ad.discovery_video_responsive_ad.descriptions AS dvra_descriptions,
-  ad_group_ad.ad.discovery_video_responsive_ad.headlines AS dvra_headlines,
+  ad_group_ad.ad.demand_gen_multi_asset_ad.portrait_marketing_images:asset AS dmaa_portrait_mkt_imgs,
+  ad_group_ad.ad.demand_gen_multi_asset_ad.square_marketing_images:asset AS dmaa_square_mkt_imgs,
+  ad_group_ad.ad.demand_gen_multi_asset_ad.marketing_images:asset AS dmaa_mkt_imgs,
+  ad_group_ad.ad.demand_gen_multi_asset_ad.logo_images:asset AS dmaa_logo_imgs,
+  ad_group_ad.ad.demand_gen_multi_asset_ad.descriptions AS dmaa_descriptions,
+  ad_group_ad.ad.demand_gen_multi_asset_ad.headlines AS aga_headlines,
+  ad_group_ad.ad.demand_gen_video_responsive_ad.videos:asset AS dvra_videos,
+  ad_group_ad.ad.demand_gen_video_responsive_ad.long_headlines AS dvra_long_headlines,
+  ad_group_ad.ad.demand_gen_video_responsive_ad.logo_images AS dvra_logo_imgs,
+  ad_group_ad.ad.demand_gen_video_responsive_ad.descriptions AS dvra_descriptions,
+  ad_group_ad.ad.demand_gen_video_responsive_ad.headlines AS dvra_headlines,
   customer.id AS account_id,
   campaign.id AS campaign_id,
   ad_group.id AS ag_id,
@@ -41,7 +41,7 @@ SELECT
 FROM
   ad_group_ad
 WHERE
-  campaign.advertising_channel_type = 'DISCOVERY'
+  campaign.advertising_channel_type = 'DEMAND_GEN'
   AND campaign.status = 'ENABLED'
   AND ad_group_ad.status = 'ENABLED'
 -- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.
