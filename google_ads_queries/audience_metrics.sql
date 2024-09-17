@@ -36,7 +36,8 @@ SELECT
 FROM
   ad_group_audience_view
 WHERE
-  campaign.advertising_channel_type = 'DISCOVERY'
+  campaign.advertising_channel_type = 'DEMAND_GEN'
   AND segments.date >= '{start_date}'
   AND segments.date <= '{end_date}'
-  AND campaign.status = 'ENABLED' -- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.
+  AND campaign.status = 'ENABLED'
+  -- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.

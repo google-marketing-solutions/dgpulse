@@ -28,4 +28,5 @@ FROM
 WHERE
   ad_group_criterion.type = 'USER_LIST'
   AND user_list.type = 'LOOKALIKE'
-  AND ad_group_criterion.status = 'ENABLED' -- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.
+  AND ad_group_criterion.status = 'ENABLED'
+-- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.
