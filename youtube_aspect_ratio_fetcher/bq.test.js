@@ -74,3 +74,38 @@ describe("getUpdateQueryForCampaignsAssetsCount", () => {
     expect(result.indexOf("campaign_id = 2") > 1).toBe(true)
   })
 })
+
+
+
+
+describe("getUpdateQueryForAssetAspectRatio", () => {
+  test(`GIVEN 2 assets are provided objects
+            WHEN function is called with them
+            THEN it should return a string
+                with exactly 2 UPDATE queries
+                to the assets_performance table`, () => {
+    //Arrange: GIVEN
+    const assetFromAdGroupAdsWithVideoRatio = [
+      {
+        asset_id: 1,
+        video_aspect_ratio: 1.0
+      },
+      {
+        asset_id: 2,
+        video_aspect_ratio: 0.5
+      }
+    ]
+
+    //Act: WHEN
+    const result =
+      impl.getUpdateQueryForAssetAspectRatio(assetFromAdGroupAdsWithVideoRatio)
+
+    console.log(result)
+
+    //Assert: THEN
+    expect(result.indexOf(".assets_performance") > 1).toBe(true)
+    expect(result.match(/assets_performance/g).length).toBe(2)
+    expect(result.match(/UPDATE/g).length).toBe(2)
+  })
+
+})

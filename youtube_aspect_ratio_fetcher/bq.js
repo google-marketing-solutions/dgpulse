@@ -108,10 +108,43 @@ async function updateCampaignsAssetsCounts(campaignsAssetsFinalCount) {
   return await executeQuery(query);
 }
 
+
+function getUpdateQueryForAssetAspectRatio(assetFromAdGroupAdsWithVideoRatio) {
+  let finalUpdateQuery = "";
+  for (let i = 0; i < assetFromAdGroupAdsWithVideoRatio.length; i++) {
+    const assetWithRatio = assetFromAdGroupAdsWithVideoRatio[i];
+    const assetTypeInferred
+      = assetWithRatio.videoAspectRatio == 1
+        ? "SQUARE VIDEO"
+        : assetWithRatio.videoAspectRatio > 1
+          ? "LANDSCAPE VIDEO"
+          : "PORTRAIT VIDEO";
+    finalUpdateQuery += `
+            UPDATE
+                \`${projectId}.${datasetId}_bq.assets_performance\`
+            SET 
+                asset_type_inferred = "${assetTypeInferred}"
+            WHERE asset_id = ${assetWithRatio.assetId};`;
+  }
+  return finalUpdateQuery;
+}
+
+async function updateAssetsAspectRatio(campaignsAssetsFinalCount) {
+  const query = getUpdateQueryForAssetAspectRatio(
+    campaignsAssetsFinalCount
+  );
+  console.log(
+    `Updating BQ: assets_performance: ${campaignsAssetsFinalCount.length} records`
+  );
+  return await executeQuery(query);
+}
+
 module.exports = {
   getVideoAssets,
+  updateAssetsAspectRatio,
   getAdGroupAds,
   getCampaignsAssetsCount,
   updateCampaignsAssetsCounts,
   getUpdateQueryForCampaignsAssetsCount,
+  getUpdateQueryForAssetAspectRatio
 };
