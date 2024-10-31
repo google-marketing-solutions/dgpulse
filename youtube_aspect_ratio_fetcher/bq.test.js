@@ -100,10 +100,7 @@ describe("getUpdateQueryForAssetAspectRatio", () => {
     const result =
       impl.getUpdateQueryForAssetAspectRatio(assetFromAdGroupAdsWithVideoRatio)
 
-    console.log(result)
-
     //Assert: THEN
-    expect(result.indexOf(".assets_performance") > 1).toBe(true)
     expect(result.match(/assets_performance/g).length).toBe(2)
     expect(result.match(/UPDATE/g).length).toBe(2)
   })
