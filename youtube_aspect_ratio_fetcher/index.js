@@ -43,7 +43,12 @@ functions.http("ytarfGET", async (req, res) => {
   );
 
   console.log("Sending updated video information to BQ");
-  bq.updateCampaignsAssetsCounts(campaignsAssetsFinalCount);
+  await bq.updateCampaignsAssetsCounts(campaignsAssetsFinalCount);
+
+  console.log("Setting aspect ratios to each video asset");
+  await bq.updateAssetsAspectRatio(
+    assetFromAdGroupAdsWithVideoRatio,
+  );
 
   res.send(
     "BigQuery UPDATEs queued for execution and should complete in a few minutes.",
