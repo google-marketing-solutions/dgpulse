@@ -86,10 +86,10 @@ repos:
           - mdformat-gfm
 
   # SQL
-  - repo: https://github.com/sql-formatter-org/sql-formatter
-    rev: v15.4.5
-    hooks:
-      - id: sql-formatter
+  #- repo: https://github.com/sql-formatter-org/sql-formatter
+  #  rev: v15.4.5
+  #  hooks:
+  #    - id: sql-formatter
 
   # Conventional Commits
   - repo: https://github.com/commitizen-tools/commitizen
