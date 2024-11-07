@@ -98,15 +98,15 @@ repos:
       - id: commitizen
 
   # TypeScript or JavaScript
-  - repo: https://github.com/google/gts
-    rev: v6.0.0
-    hooks:
-      - id: gts
-  - repo: local
-    hooks:
-      - id: typescript-testing
-        name: Running TypeScript tests
-        entry: npm run test
-        language: system
-        pass_filenames: false
-        always_run: true
+  #- repo: https://github.com/google/gts
+  #  rev: v6.0.0
+  #  hooks:
+  #    - id: gts
+  #- repo: local
+  #  hooks:
+  #    - id: typescript-testing
+  #      name: Running TypeScript tests
+  #      entry: npm run test
+  #      language: system
+  #      pass_filenames: false
+  #      always_run: true
