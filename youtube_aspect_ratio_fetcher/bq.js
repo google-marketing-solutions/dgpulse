@@ -117,8 +117,8 @@ function getUpdateQueryForAssetAspectRatio(assetFromAdGroupAdsWithVideoRatio) {
       = assetWithRatio.videoAspectRatio == 1
         ? "SQUARE VIDEO"
         : assetWithRatio.videoAspectRatio > 1
-          ? "LANDSCAPE VIDEO"
-          : "PORTRAIT VIDEO";
+          ? "HORIZONTAL VIDEO"
+          : "VERTICAL VIDEO";
     finalUpdateQuery += `
             UPDATE
                 \`${projectId}.${datasetId}_bq.assets_performance\`
