@@ -29,6 +29,7 @@
     "campaign_data": "campaign_data",
     "campaigns_assets_count": "campaigns_assets_count",
     "audience_performance": "audience_performance",
-    "account_conversion_action": "account_conversion_action"
+    "account_conversion_action": "account_conversion_action",
+    "insights": "insights"
   }
 }

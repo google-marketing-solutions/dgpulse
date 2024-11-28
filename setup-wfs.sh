@@ -314,10 +314,10 @@ gcloud functions deploy dgpulse-ai-bubbles \
   --trigger-http \
   --no-allow-unauthenticated \
   --timeout=3600 \
-  --set-env-vars YOUTUBE_API_KEY=$GEMINI_API_KEY,GCP_PROJECT_ID=$GCP_PROJECT_ID
+  --set-env-vars GEMINI_API_KEY=$GEMINI_API_KEY,GCP_PROJECT_ID=$GCP_PROJECT_ID
   
 AI_BUBBLES_FUNCTION_URL=$(gcloud functions describe \
-  dgpulse-youtube-aspect-ratio-fetcher \
+  dgpulse-ai-bubbles \
   --gen2 \
   --region="$GCP_REGION" \
   --format='value(serviceConfig.uri)'\
