@@ -47,7 +47,7 @@ function getInsertQueryForInsights(data) {
     const record = data[i];
     finalUpdateQuery += `
             INSERT INTO
-              \`${projectId}.${datasetId}_ai_bubbles.insights\`
+              \`${projectId}.${datasetId}_bq.insights\`
             (insights, table, date)
             VALUES 
               ("${record.insights

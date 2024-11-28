@@ -18,7 +18,6 @@
  
  @param {bq_dataset} to be replaced by the answers.json's respective value (e.g.:dgpulse).
  */
-CREATE SCHEMA IF NOT EXISTS `{bq_dataset}_bq`;
 
 CREATE
 OR REPLACE TABLE `{bq_dataset}_bq.campaign_data` AS WITH targets_raw AS (

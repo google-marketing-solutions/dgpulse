@@ -259,18 +259,18 @@ cd ..
 
 
 
-echo "Creating Dataset for reference data and Table for AI Bubbles"
+echo "Creating Dataset and Table for AI Bubbles"
 echo "Estimated time: 5 seconds"
 # Check if the dataset exists
-if bq --location=$DEFAULT_MULTI_REGION show --dataset dgpulse_ads_ai_bubbles; then
+if bq --location=$DEFAULT_MULTI_REGION show --dataset dgpulse_ads_bq; then
   echo "Dataset already exists."
 else
   # Create the dataset if it does not exist
-  bq --location=$DEFAULT_MULTI_REGION mk -d dgpulse_ads_ai_bubbles
+  bq --location=$DEFAULT_MULTI_REGION mk -d dgpulse_ads_bq
   # Create the exchange_rates table
   bq mk \
     -t \
-    dgpulse_ads_ai_bubbles.insights \
+    dgpulse_ads_bq.insights \
     table:STRING,insights:STRING,date:DATE
 fi
 
