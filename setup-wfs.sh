@@ -15,6 +15,10 @@
 # limitations under the License.
 set -e
 
+#TODO: Request region from user prompt and provide it to gaarf later:
+DEFAULT_MULTI_REGION="EU"
+GCP_REGION="europe-west1"
+
 GCP_PROJECT_ID=$(gcloud config get-value project) && \
 GCP_PROJECT_NUMBER=$(gcloud projects list \
   --filter="projectId:$GCP_PROJECT_ID" \
@@ -23,8 +27,7 @@ GCP_PROJECT_NUMBER=$(gcloud projects list \
 #TODO: Allow for user customization during setup
 SERVICE_ACCOUNT_EMAIL=$GCP_PROJECT_NUMBER-compute@developer.gserviceaccount.com
 
-#TODO: Request region from user prompt and provide it to gaarf later:
-GCP_REGION="europe-west1"
+
 
 
 # START: Permissions to Service Account:
@@ -86,15 +89,14 @@ gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
 
 
 
-# TODO: create dataset and table for currency exchange rates (reference data)
 echo "Creating Dataset for reference data and Table for Exchange Rates"
 echo "Estimated time: 5 seconds"
 # Check if the dataset exists
-if bq --location=EU show --dataset dgpulse_ads_reference_data; then
+if bq --location=$DEFAULT_MULTI_REGION show --dataset dgpulse_ads_reference_data; then
   echo "Dataset already exists."
 else
   # Create the dataset if it does not exist
-  bq --location=EU mk -d dgpulse_ads_reference_data
+  bq --location=$DEFAULT_MULTI_REGION mk -d dgpulse_ads_reference_data
   # Create the exchange_rates table
   bq mk \
     -t \
@@ -193,10 +195,9 @@ YOUTUBE_KEY_CREATE_LOGS=$(gcloud alpha services api-keys create \
     2>&1)
 
 # Extract the API key value from the logs.
-API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
+YOUTUBE_API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
 
-echo "New API key created: ${API_KEY_NAME}"
-echo "API Key: ${API_KEY}"
+echo "API Key created: ${YOUTUBE_API_KEY}"
 
 
 
@@ -216,7 +217,7 @@ gcloud functions deploy dgpulse-youtube-aspect-ratio-fetcher \
   --trigger-http \
   --no-allow-unauthenticated \
   --timeout=3600 \
-  --set-env-vars YOUTUBE_API_KEY=$API_KEY,GCP_PROJECT_ID=$GCP_PROJECT_ID
+  --set-env-vars YOUTUBE_API_KEY=$YOUTUBE_API_KEY,GCP_PROJECT_ID=$GCP_PROJECT_ID
 
 YOUTUBE_RATIO_FUNCTION_URL=$(gcloud functions describe \
   dgpulse-youtube-aspect-ratio-fetcher \
@@ -250,6 +251,114 @@ cd ..
 
 # END: youtube_aspect_ratio_fetcher setup.
 
+
+
+
+
+# START: dgpulse-ai-bubbles setup.
+
+
+
+echo "Creating Dataset for reference data and Table for AI Bubbles"
+echo "Estimated time: 5 seconds"
+# Check if the dataset exists
+if bq --location=$DEFAULT_MULTI_REGION show --dataset dgpulse_ads_ai_bubbles; then
+  echo "Dataset already exists."
+else
+  # Create the dataset if it does not exist
+  bq --location=$DEFAULT_MULTI_REGION mk -d dgpulse_ads_ai_bubbles
+  # Create the exchange_rates table
+  bq mk \
+    -t \
+    dgpulse_ads_ai_bubbles.insights \
+    table:STRING,insights:STRING,date:DATE
+fi
+
+# step into youtube_aspect_ratio_fetcher with sub project scripts.
+cd ai_bubbles
+
+
+
+# create and store Youtube Data API Key for later usage.
+echo "----"
+echo "Creating a Gemini API key"
+echo "Estimated time: 10 seconds"
+# Hack: Currently, the "api-keys create" does not return anything
+# but the api key value is printed in the logs.
+
+# Create the new API key.
+GEMINI_KEY_CREATE_LOGS=$(gcloud alpha services api-keys create \
+    --api-target=service=cloudaicompanion.googleapis.com \
+    --display-name="Gemini API Key for Demand Gen Pulse" \
+    2>&1)
+
+# Extract the API key value from the logs.
+GEMINI_API_KEY=$(echo "$GEMINI_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
+
+echo "API Key created: ${GEMINI_API_KEY}"
+
+
+
+
+
+# install dgpulse-ai-bubbles function
+echo "----"
+echo "Deploying Run function for AI Bubbles"
+echo "Estimated time: Less than 5 minutes"
+gcloud functions deploy dgpulse-ai-bubbles \
+  --gen2 \
+  --runtime=nodejs20 \
+  --region=$GCP_REGION \
+  --source=. \
+  --entry-point=aiBubblesGET \
+  --trigger-http \
+  --no-allow-unauthenticated \
+  --timeout=3600 \
+  --set-env-vars YOUTUBE_API_KEY=$GEMINI_API_KEY,GCP_PROJECT_ID=$GCP_PROJECT_ID
+  
+AI_BUBBLES_FUNCTION_URL=$(gcloud functions describe \
+  dgpulse-youtube-aspect-ratio-fetcher \
+  --gen2 \
+  --region="$GCP_REGION" \
+  --format='value(serviceConfig.uri)'\
+)
+
+
+
+
+
+
+# install dgpulse-ai-bubbles scheduler that calls function
+echo "----"
+echo "Deploying Scheduler job for dgpulse-ai-bubbles"
+echo "Estimated time: 30 seconds"
+AI_BUBBLES_JOB_NAME="dgpulse-ai-bubbles-job"
+if ! gcloud scheduler jobs describe $AI_BUBBLES_JOB_NAME --location=$GCP_REGION > /dev/null 2>&1; then
+  gcloud scheduler jobs create http $AI_BUBBLES_JOB_NAME \
+    --location=$GCP_REGION \
+    --http-method="GET" \
+    --schedule="0 6 * * *" \
+    --uri=$AI_BUBBLES_FUNCTION_URL \
+    --oidc-service-account-email=$SERVICE_ACCOUNT_EMAIL \
+    --oidc-token-audience=$AI_BUBBLES_FUNCTION_URL
+else
+  echo "Job already exists."
+fi
+
+
+
+
+
+
+
+
+
+# step back one level since our function is ready.
+cd ..
+
+
+
+# END: dgpulse-ai-bubbles setup.
 
 
 
