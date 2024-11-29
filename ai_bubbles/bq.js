@@ -45,6 +45,7 @@ function getInsertQueryForInsights(data) {
   let finalUpdateQuery = "";
   for (let i = 0; i < data.length; i++) {
     const record = data[i];
+    if (!record.insights || !record.table) throw "missing data for insert";
     finalUpdateQuery += `
             INSERT INTO
               \`${projectId}.${datasetId}_bq.insights\`
@@ -54,7 +55,7 @@ function getInsertQueryForInsights(data) {
                   .replace(/"/g, '')
                   .trim()}",
                 "${record.table}",
-                CURRENT_DATETIME());`;
+                CURRENT_DATE());`;
   }
   console.log(finalUpdateQuery);
   return finalUpdateQuery;
