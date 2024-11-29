@@ -289,6 +289,7 @@ echo "Estimated time: 10 seconds"
 # Create the new API key.
 GEMINI_KEY_CREATE_LOGS=$(gcloud alpha services api-keys create \
     --api-target=service=cloudaicompanion.googleapis.com \
+    --api-target=service=generativelanguage.googleapis.com \
     --display-name="Gemini API Key for Demand Gen Pulse" \
     2>&1)
 
