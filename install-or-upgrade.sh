@@ -15,6 +15,8 @@
 # limitations under the License.
 set -e
 
+git pull
+
 #TODO: Request region from user prompt and provide it to gaarf later:
 DEFAULT_MULTI_REGION="EU"
 GCP_REGION="europe-west1"
