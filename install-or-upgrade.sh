@@ -29,8 +29,8 @@ GCP_PROJECT_NUMBER=$(gcloud projects list \
 SERVICE_ACCOUNT_EMAIL=$GCP_PROJECT_NUMBER-compute@developer.gserviceaccount.com
 
 # Call sub-scripts and pass variables as arguments
-./install-scripts/00-setup-permissions.sh "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
-./install-scripts/01-exchange-rates.sh "$DEFAULT_MULTI_REGION" "$GCP_REGION" "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
-./install-scripts/02-youtube-aspect-ratio.sh "$GCP_REGION" "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
-./install-scripts/03-ai-bubbles.sh "$DEFAULT_MULTI_REGION" "$GCP_REGION" "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
-./install-scripts/04-gaarf-installation.sh
+./install_scripts/00-setup-permissions.sh "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
+./install_scripts/01-exchange-rates.sh "$DEFAULT_MULTI_REGION" "$GCP_REGION" "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
+./install_scripts/02-youtube-aspect-ratio.sh "$GCP_REGION" "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
+./install_scripts/03-ai-bubbles.sh "$DEFAULT_MULTI_REGION" "$GCP_REGION" "$GCP_PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
+./install_scripts/04-gaarf-installation.sh
