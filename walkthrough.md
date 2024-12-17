@@ -151,7 +151,7 @@ Use [this link](https://groups.google.com/g/dgpulse/) to access the group URL an
 Run the following command and follow the steps:
 
 ```bash
-sh setup-wfs.sh
+sh install-or-upgrade.sh
 ```
 
 
