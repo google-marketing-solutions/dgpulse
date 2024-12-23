@@ -18,6 +18,8 @@ const json2csv = require("json-2-csv");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GoogleAIFileManager } = require("@google/generative-ai/server");
 
+const bq = require("./bq");
+
 const GOOGLE_GENERATIVEAI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Configurable constants:
