@@ -159,9 +159,9 @@ async function getGeminiResponseFromCSV(
   uploadResult, table, insights) {
   const genAI = new GoogleGenerativeAI(GOOGLE_GENERATIVEAI_API_KEY);
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-  const promptType = insights ? 'insights' : 'headline';
+  const promptType = insights ? 'headline' : 'insights';
   const prompt = promptsByTableName[table][promptType].roleAndTask
-    + promptsByTableName[table][promptType].contextAndExamples || insights
+    + (promptsByTableName[table][promptType].contextAndExamples || insights)
     + promptsByTableName[table][promptType].requirementsAndInstructions;
     
   console.log('prompt 1:', prompt)
