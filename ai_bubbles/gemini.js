@@ -105,7 +105,8 @@ const promptsByTableName = {
     },
     headline: {
       roleAndTask: `
-      Take the summary below and produce a 1 sentence headline:`,
+      You are a Google Ads Campaign performance specialist working on Demand Gen
+      campaigns. Take the summary below and produce a 1 sentence headline:`,
       requirementsAndInstructions: `
       The headline should be written with an attention grabbing headline that a
       senior manager would respond positively to. It should be concise.`
@@ -118,6 +119,7 @@ async function getInsightsAndHeadlineForTable(table) {
   const uploadResult = await storeCsvForLater(data, table);
   const insights
     = await this.getRespectivePromptResponse(uploadResult, table);
+  console.log('insights', insights)
   const headline
     = await this.getRespectivePromptResponse(uploadResult, table, insights);
   return { insights, headline, table };
@@ -164,7 +166,7 @@ async function getGeminiResponseFromCSV(
     + (promptsByTableName[table][promptType].contextAndExamples || insights)
     + promptsByTableName[table][promptType].requirementsAndInstructions;
     
-  console.log('prompt 1:', prompt)
+  console.log('prompt:' + promptType + " -- "+ prompt)
   
   const result = await model.generateContent([
     prompt,
