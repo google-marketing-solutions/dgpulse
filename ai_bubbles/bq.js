@@ -51,7 +51,7 @@ function getInsertQueryForInsights(data) {
     finalUpdateQuery += `
             INSERT INTO
               \`${projectId}.${datasetId}_bq.insights\`
-            (headline, insights, table, date)
+            (insights, headline, table, date)
             VALUES 
               ("${record.insights
                   .replace(/"/g, '')
