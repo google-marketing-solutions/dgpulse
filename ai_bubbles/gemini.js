@@ -131,6 +131,8 @@ async function getRespectivePromptResponse(uploadResult, table, insights) {
     const geminiTextResponse
       = await getGeminiResponseFromCSV(uploadResult, table, insights);
     console.log('geminiTextResponse:', geminiTextResponse);
+
+    return geminiTextResponse;
     
   } catch (error) {
     console.error('Error:', error);
