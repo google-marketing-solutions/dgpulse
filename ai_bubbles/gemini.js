@@ -59,7 +59,7 @@ const promptsByTableName = {
       requirementsAndInstructions: `
       I would like you to write me summary as follows:
       The summary should be a single paragraph written in enthusiastic and
-      concise business language in no more than 400 characters. It should
+      concise business language in around 400 characters. It should
       include the names of at least 3 accounts I should take action on and
       1 account which has adopted all of the best practices.`
     },
