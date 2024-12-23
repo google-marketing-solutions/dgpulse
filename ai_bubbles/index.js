@@ -21,18 +21,11 @@ functions.http("aiBubblesGET", async (req, res) => {
 
   const inserts = [];
   // campaign_data is the table for the "Bid and Bugdet" in the UI:
-  inserts.push(await getInsightsAndHighlightForTable('campaign_data'));
+  inserts.push(await gemini.getInsightsAndHeadlineForTable('campaign_data'));
   
   await bq.insertIntoInsights(inserts);
 
   res.send("Finished");
 });
 
-async function getInsightsAndHighlightForTable(table) {
-  const campaignData = await bq.getCampaignData();
-  const insights
-    = await gemini.getRespectivePromptResponse(campaignData, table);
-  const headline
-    = await gemini.getRespectivePromptResponse(campaignData, table, insights);
-  return { insights, headline, table };
-}
+

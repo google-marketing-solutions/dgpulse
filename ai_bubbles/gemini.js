@@ -61,7 +61,7 @@ const promptsByTableName = {
       include the names of at least 3 accounts I should take action on and
       1 account which has adopted all of the best practices.`
     },
-    highlight: {
+    headline: {
       roleAndTask: `
       Take the summary below and produce a 1 sentence headline:`,
       requirementsAndInstructions: `
@@ -101,7 +101,7 @@ const promptsByTableName = {
       important for Demand Gen campaigns. Please do not repeat the best
       practices back to me.`
     },
-    highlight: {
+    headline: {
       roleAndTask: `
       Take the summary below and produce a 1 sentence headline:`,
       requirementsAndInstructions: `
@@ -109,27 +109,36 @@ const promptsByTableName = {
       senior manager would respond positively to. It should be concise.`
     }
   }
-    
 };
 
+async function getInsightsAndHeadlineForTable(table) {
+  const data = await bq.getCampaignData();
+  const uploadResult = await storeCsvForLater(data, table);
+  const insights
+    = await this.getRespectivePromptResponse(uploadResult, table);
+  const headline
+    = await this.getRespectivePromptResponse(uploadResult, table, insights);
+  return { insights, headline, table };
+}
 
-async function getRespectivePromptResponse(data, table) {
+async function getRespectivePromptResponse(uploadResult, table, insights) {
   try {
-    // store in temp CSV
-    const csv = json2csv.json2csv(data);
-    const tmpFile = tmp.fileSync(); 
-    fs.writeFileSync(tmpFile.name, csv);
-    
-    // upload to Google AI Storage
-    const uploadResult = await uploadFileToGoogleAiStorage(tmpFile.name, table);
-
     // Talk to Gemini
-    const geminiTextResponse = await getGeminiResponseFromCSV(uploadResult, table);
+    const geminiTextResponse
+      = await getGeminiResponseFromCSV(uploadResult, table, insights);
     console.log('geminiTextResponse:', geminiTextResponse);
     
   } catch (error) {
     console.error('Error:', error);
   }
+}
+
+async function storeCsvForLater(data, table) {
+  const csv = json2csv.json2csv(data);
+  const tmpFile = tmp.fileSync();
+  fs.writeFileSync(tmpFile.name, csv);
+  const uploadResult = await uploadFileToGoogleAiStorage(tmpFile.name, table);
+  return uploadResult;
 }
 
 async function uploadFileToGoogleAiStorage(csvName, table) {
@@ -148,10 +157,13 @@ async function getGeminiResponseFromCSV(
   uploadResult, table, insights) {
   const genAI = new GoogleGenerativeAI(GOOGLE_GENERATIVEAI_API_KEY);
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-  const promptType = insights ? 'insights' : 'highlight';
+  const promptType = insights ? 'insights' : 'headline';
   const prompt = promptsByTableName[table][promptType].roleAndTask
     + promptsByTableName[table][promptType].contextAndExamples || insights
     + promptsByTableName[table][promptType].requirementsAndInstructions;
+    
+  console.log('prompt 1:', prompt)
+  
   const result = await model.generateContent([
     prompt,
     {
@@ -166,6 +178,7 @@ async function getGeminiResponseFromCSV(
 
 
 module.exports = {
+  getInsightsAndHeadlineForTable,
   getRespectivePromptResponse,
   uploadFileToGoogleAiStorage,
   getGeminiResponseFromCSV
