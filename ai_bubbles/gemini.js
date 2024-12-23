@@ -96,7 +96,7 @@ const promptsByTableName = {
       and concise business language in no more than 400 characters. It should
       include the names of at least 3 accounts I should take action on and 1
       account which has adopted all of the best practices.  What are the 3
-      accounts you think I should start actioning immediately? I’m keen to
+      accounts you think I should start actioning immediately? I am keen to
       understand which accounts are not adopting these best practices and where
       there are opportunities to optimise. It would be great to highlight the
       best performing campaign in terms of asset coverage and why it's
@@ -106,7 +106,8 @@ const promptsByTableName = {
     headline: {
       roleAndTask: `
       You are a Google Ads Campaign performance specialist working on Demand Gen
-      campaigns. Take the summary below and produce a 1 sentence headline:`,
+      campaigns. Take the following summary and produce a 1 sentence headline:
+      `,
       requirementsAndInstructions: `
       The headline should be written with an attention grabbing headline that a
       senior manager would respond positively to. It should be concise.`

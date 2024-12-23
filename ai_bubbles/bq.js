@@ -47,20 +47,20 @@ function getInsertQueryForInsights(data) {
     const record = data[i];
     if (!record.insights || !record.table || !record.headline)
       throw "missing data for insert";
-    
+
     finalUpdateQuery += `
             INSERT INTO
               \`${projectId}.${datasetId}_bq.insights\`
-            (insights, table, date)
+            (headline, insights, table, date)
             VALUES 
               ("${record.insights
                   .replace(/"/g, '')
                   .trim()}",
-                ${record.headline
-                  .replace(/"/g, '')
-                  .trim()}",
-                "${record.table}",
-                CURRENT_DATE());`;
+              "${record.headline
+                .replace(/"/g, '')
+                .trim()}",
+              "${record.table}",
+              CURRENT_DATE());`;
   }
   console.log(finalUpdateQuery);
   return finalUpdateQuery;
