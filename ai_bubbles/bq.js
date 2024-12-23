@@ -45,13 +45,18 @@ function getInsertQueryForInsights(data) {
   let finalUpdateQuery = "";
   for (let i = 0; i < data.length; i++) {
     const record = data[i];
-    if (!record.insights || !record.table) throw "missing data for insert";
+    if (!record.insights || !record.table || !record.headline)
+      throw "missing data for insert";
+    
     finalUpdateQuery += `
             INSERT INTO
               \`${projectId}.${datasetId}_bq.insights\`
             (insights, table, date)
             VALUES 
               ("${record.insights
+                  .replace(/"/g, '')
+                  .trim()}",
+                ${record.headline
                   .replace(/"/g, '')
                   .trim()}",
                 "${record.table}",

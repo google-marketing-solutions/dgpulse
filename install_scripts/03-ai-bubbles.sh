@@ -30,11 +30,11 @@ if bq --location=$DEFAULT_MULTI_REGION show --dataset dgpulse_ads_bq; then
 else
   # Create the dataset if it does not exist
   bq --location=$DEFAULT_MULTI_REGION mk -d dgpulse_ads_bq
-  # Create the exchange_rates table
+  # Create the insights table
   bq mk \
     -t \
     dgpulse_ads_bq.insights \
-    table:STRING,insights:STRING,date:DATE
+    table:STRING,insights:STRING,headline:STRING,date:DATE
 fi
 
 # step into youtube_aspect_ratio_fetcher with sub project scripts.
