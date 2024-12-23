@@ -65,10 +65,13 @@ const promptsByTableName = {
     },
     headline: {
       roleAndTask: `
-      Take the summary below and produce a 1 sentence headline:`,
+      You are a Google Ads Campaign performance specialist working on Demand Gen
+      campaigns. Take the following summary and produce a 1 sentence headline:
+      `,
       requirementsAndInstructions: `
       The headline should be written with an attention grabbing headline that a
-      senior manager would respond positively to.  It should be concise.`
+      senior manager would respond positively to. It should be concise (less 
+      than 50 characters).`
     }
   },
   campaign_assets_count: {
@@ -76,7 +79,7 @@ const promptsByTableName = {
       roleAndTask: `
       I am a Google Ads Campaign performance specialist working on Demand Gen
       campaigns. I would like you to help me understand which accounts are not
-      adopting Demand Gen’s creative best practices in terms of asset coverage.`,
+      adopting Demand Gen's creative best practices in terms of asset coverage.`,
 
       contextAndExamples: `
       I have attached a file to help with this analysis with an explanation of
@@ -110,7 +113,8 @@ const promptsByTableName = {
       `,
       requirementsAndInstructions: `
       The headline should be written with an attention grabbing headline that a
-      senior manager would respond positively to. It should be concise.`
+      senior manager would respond positively to. It should be concise (less 
+      than 50 characters).`
     }
   }
 };
