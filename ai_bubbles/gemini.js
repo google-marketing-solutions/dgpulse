@@ -74,7 +74,7 @@ const promptsByTableName = {
       than 50 characters).`
     }
   },
-  campaign_assets_count: {
+  campaigns_assets_count: {
     insights: {
       roleAndTask: `
       I am a Google Ads Campaign performance specialist working on Demand Gen
@@ -120,7 +120,7 @@ const promptsByTableName = {
 };
 
 async function getInsightsAndHeadlineForTable(table) {
-  const data = await bq.getCampaignData();
+  const data = await bq.getData();
   const uploadResult = await storeCsvForLater(data, table);
   const insights
     = await this.getRespectivePromptResponse(uploadResult, table);

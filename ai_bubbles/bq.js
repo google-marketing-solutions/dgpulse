@@ -23,9 +23,8 @@ const bigquery = new BigQuery({
   projectId,
 });
 
-async function getCampaignData() {
-  console.log("Querying BQ: campaign_data");
-  const query = `
+const lighterQueries = {
+  "campaign_data": `
     SELECT
       campaign_name,
       account_name,
@@ -37,7 +36,31 @@ async function getCampaignData() {
     FROM
       ${projectId}.${datasetId}_bq.campaign_data
     GROUP BY 1, 2, 3
-    ORDER BY date DESC`;
+    ORDER BY date DESC`,
+  
+  "campaigns_assets_count": `
+    SELECT 
+      campaign_name,
+      account_name,
+      has_product_feed,
+      dmaa_descriptions_count AS descriptions,
+      aga_headlines_count AS headlines,
+      dmaa_square_mkt_imgs_count AS square_images,
+      dmaa_mkt_imgs_count AS landscape_images,
+      dmaa_logo_imgs_count AS logos,
+      dmaa_portrait_mkt_imgs_count AS portrait_images,
+      landscape_video_count AS landscape_videos,
+      square_video_count AS square_videos,
+      portrait_video_count AS portrait_videos,
+      has_image_plus_video
+    FROM
+      ${projectId}.${datasetId}_bq.campaign_data
+  `
+}
+
+async function getData(table) {
+  console.log("Querying BQ: ", table);
+  const query = lighterQueries[table];
   return await executeQuery(query);
 }
 
@@ -95,7 +118,7 @@ async function executeQuery(query) {
 }
 
 module.exports = {
-  getCampaignData,
+  getData,
   insertIntoInsights,
   getInsertQueryForInsights
 };
