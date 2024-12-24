@@ -21,7 +21,11 @@ functions.http("aiBubblesGET", async (req, res) => {
 
   const inserts = [];
   // campaign_data is the table for the "Bid and Bugdet" in the UI:
-  inserts.push(await gemini.getInsightsAndHeadlineForTable('campaign_data'));
+  inserts.push(
+    await gemini.getInsightsAndHeadlineForTable('campaign_data'));
+  // campaign_assets_count represents "Creative Asset Coverage" in the UI:
+  inserts.push(
+    await gemini.getInsightsAndHighlightForTable('campaigns_assets_count'));
   
   await bq.insertIntoInsights(inserts);
 
