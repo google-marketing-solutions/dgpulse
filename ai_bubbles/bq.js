@@ -54,7 +54,7 @@ const lighterQueries = {
       portrait_video_count AS portrait_videos,
       has_image_plus_video
     FROM
-      ${projectId}.${datasetId}_bq.campaign_data
+      ${projectId}.${datasetId}_bq.campaigns_assets_count
   `
 }
 
