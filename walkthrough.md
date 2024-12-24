@@ -30,7 +30,7 @@ For details, see
 
 Enable the Google Ads API and the BigQuery API so that they're incorporated in the credentials you will generate in the next step.
 
-<walkthrough-enable-apis apis="bigquery.googleapis.com,googleads.googleapis.com,youtube.googleapis.com,cloudfunctions.googleapis.com,cloudscheduler.googleapis.com,workflows.googleapis.com,run.googleapis.com,cloudbuild.googleapis.com ">
+<walkthrough-enable-apis apis="bigquery.googleapis.com,googleads.googleapis.com,youtube.googleapis.com,cloudfunctions.googleapis.com,cloudscheduler.googleapis.com,workflows.googleapis.com,run.googleapis.com,cloudbuild.googleapis.com,cloudaicompanion.googleapis.com,generativelanguage.googleapis.com">
 </walkthrough-enable-apis>
 
 
@@ -151,7 +151,7 @@ Use [this link](https://groups.google.com/g/dgpulse/) to access the group URL an
 Run the following command and follow the steps:
 
 ```bash
-sh setup-wfs.sh
+sh install-or-upgrade.sh
 ```
 
 

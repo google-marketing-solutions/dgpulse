@@ -1,0 +1,30 @@
+{
+  "name": "ai_bubbles",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "start": "node --inspect node_modules/.bin/functions-framework --target=ytarfGET --signature-type=http"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.4.0",
+    "@google-cloud/bigquery-connection": "^3.1.0",
+    "@google-cloud/functions-framework": "^3.4.0",
+    "@google-cloud/storage": "^7.14.0",
+    "@google/generative-ai": "^0.21.0",
+    "json-2-csv": "^5.5.7",
+    "tmp": "^0.2.3"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^29.4.3"
+  },
+  "jest": {
+    "clearMocks": true,
+    "resetMocks": true,
+    "restoreMocks": true
+  }
+}

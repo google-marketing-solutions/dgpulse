@@ -13,16 +13,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# This is a script to update code from git and re-run all queries.
 set -e
 
-git pull
-if [ -f "./deploy-queries.sh" ]; then
-    # If deploy-queries.sh exists, run it
-    ./deploy-queries.sh
-else
-    # If deploy-queries.sh does not exist, run deploy-scripts.sh
-    ./deploy-scripts.sh
-fi
-./run-wf.sh
+echo "----"
+echo "Initializing Google Ads data ETL Workflow..."
+echo "Estimated time: 10 minutes"
+npm init gaarf-wf@latest -- --answers=answers.json
