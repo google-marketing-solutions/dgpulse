@@ -120,7 +120,7 @@ const promptsByTableName = {
 };
 
 async function getInsightsAndHeadlineForTable(table) {
-  const data = await bq.getData();
+  const data = await bq.getData(table);
   const uploadResult = await storeCsvForLater(data, table);
   const insights
     = await this.getRespectivePromptResponse(uploadResult, table);
