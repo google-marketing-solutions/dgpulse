@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "start": "node --inspect node_modules/.bin/functions-framework --target=ytarfGET --signature-type=http"
+    "start": "node --inspect node_modules/.bin/functions-framework --target=ytarfGET --signature-type=http --projectId=hroliveira-dgpulse-oct24"
   },
   "author": "",
   "license": "ISC",
