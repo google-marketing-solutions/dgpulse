@@ -1,12 +1,12 @@
 /*
  Copyright 2024 Google LLC
- 
+
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
- 
+
  https://www.apache.org/licenses/LICENSE-2.0
- 
+
  Unless required by applicable law or agreed to in writing, software
  distributed under the License is distributed on an "AS IS" BASIS,
  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,7 +16,7 @@
 /*
  This script will be used by gaarf to fetch ad_group_ad_asset_view
  for a given date range from Google Ads API and store in a BQ Table.
- 
+
  @param {start_date} The start date of the date range.
  @param {end_date} The end date of the date range.
  */

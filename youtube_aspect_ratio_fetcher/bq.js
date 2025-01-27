@@ -26,7 +26,7 @@ const bigquery = new BigQuery({
 async function getCampaignsAssetsCount() {
   console.log("Querying BQ: campaigns_assets_count");
   const query = `
-        SELECT 
+        SELECT
             campaign_id,
             account_id,
             dmaa_square_mkt_imgs_count,
@@ -52,7 +52,7 @@ async function getVideoAssets() {
 async function getAdGroupAds() {
   console.log("Querying BQ: ad_group_ad");
   const query = `
-        SELECT 
+        SELECT
             account_id,
             campaign_id,
             dvra_videos
@@ -87,7 +87,7 @@ function getUpdateQueryForCampaignsAssetsCount(campaignsAssetsCounts) {
     finalUpdateQuery += `
             UPDATE
                 \`${projectId}.${datasetId}_bq.campaigns_assets_count\`
-            SET 
+            SET
                 square_video_count = ${cac.square_video_count},
                 portrait_video_count = ${cac.portrait_video_count},
                 landscape_video_count = ${cac.landscape_video_count},
@@ -122,7 +122,7 @@ function getUpdateQueryForAssetAspectRatio(assetFromAdGroupAdsWithVideoRatio) {
     finalUpdateQuery += `
             UPDATE
                 \`${projectId}.${datasetId}_bq.assets_performance\`
-            SET 
+            SET
                 asset_type_inferred = "${assetTypeInferred}"
             WHERE asset_id = ${assetWithRatio.assetId};`;
   }

@@ -80,7 +80,7 @@ gcloud functions deploy dgpulse-ai-bubbles \
   --no-allow-unauthenticated \
   --timeout=3600 \
   --set-env-vars GEMINI_API_KEY=$GEMINI_API_KEY,GCP_PROJECT_ID=$GCP_PROJECT_ID
-  
+
 AI_BUBBLES_FUNCTION_URL=$(gcloud functions describe \
   dgpulse-ai-bubbles \
   --gen2 \
