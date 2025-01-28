@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 /*
- This script will create a dataset for the post processing queries and it will organize 
+ This script will create a dataset for the post processing queries and it will organize
  data from campaigns and link external account ids to ocid (OperatingCustomerId)
  to generate the deep link URLs.
- 
+
  @param {bq_dataset} to be replaced by the answers.json's respective value (e.g.:dgpulse).
  */
 
