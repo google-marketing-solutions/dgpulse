@@ -37,9 +37,9 @@ const lighterQueries = {
       ${projectId}.${datasetId}_bq.campaign_data
     GROUP BY 1, 2, 3
     ORDER BY date DESC`,
-  
+
   "campaigns_assets_count": `
-    SELECT 
+    SELECT
       campaign_name,
       account_name,
       has_product_feed,
@@ -109,7 +109,7 @@ function getInsertQueryForInsights(data) {
             INSERT INTO
               \`${projectId}.${datasetId}_bq.insights\`
             (insights, headline, table, date)
-            VALUES 
+            VALUES
               ("${escapedInsights}",
               "${escapedHeadline}",
               "${record.table}",

@@ -24,11 +24,13 @@ describe("getInsertQueryForInsights", () => {
     const data = [
       {
         insights: "test1",
-        table: "anything1"
+        table: "anything1",
+        headline: "headline1"
       },
       {
         insights: "test2",
-        table: "anything2"
+        table: "anything2",
+        headline: "headline2"
       }
     ]
 

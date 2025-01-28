@@ -34,10 +34,10 @@ const promptsByTableName = {
       best practices?`,
 
       contextAndExamples: `
-      I have attached a file to help with this analysis 
+      I have attached a file to help with this analysis
       with an explanation of what's included.  If you do not receive a file,
       please let me know.
-      
+
       Bid & Budget contains campaign performance data including conversions,
       daily budget and whether a campaign has a lookalike audience.
 
@@ -70,7 +70,7 @@ const promptsByTableName = {
       `,
       requirementsAndInstructions: `
       The headline should be written with an attention grabbing headline that a
-      senior manager would respond positively to. It should be concise (less 
+      senior manager would respond positively to. It should be concise (less
       than 50 characters).`
     }
   },
@@ -84,10 +84,10 @@ const promptsByTableName = {
       contextAndExamples: `
       I have attached a file to help with this analysis with an explanation of
       what's included.  If you do not receive a file, please let me know.
-      
+
       The file contains creative asset coverage information as well as a column
       to indicate whether a product feed is included.
-      
+
       The best practice for Demand Gen campaigns is as follows:
       Use Image & Video together for better performance. Including 3 of each
       image format (vertical, horizontal), 3 of each video format (horizontal,
@@ -113,7 +113,7 @@ const promptsByTableName = {
       `,
       requirementsAndInstructions: `
       The headline should be written with an attention grabbing headline that a
-      senior manager would respond positively to. It should be concise (less 
+      senior manager would respond positively to. It should be concise (less
       than 50 characters).`
     }
   }
@@ -138,7 +138,7 @@ async function getRespectivePromptResponse(uploadResult, table, insights) {
     console.log('geminiTextResponse:', geminiTextResponse);
 
     return geminiTextResponse;
-    
+
   } catch (error) {
     console.error('Error:', error);
   }
@@ -172,9 +172,9 @@ async function getGeminiResponseFromCSV(
   const prompt = promptsByTableName[table][promptType].roleAndTask
     + (promptsByTableName[table][promptType].contextAndExamples || insights)
     + promptsByTableName[table][promptType].requirementsAndInstructions;
-    
+
   console.log('prompt:' + promptType + " -- "+ prompt)
-  
+
   const result = await model.generateContent([
     prompt,
     {

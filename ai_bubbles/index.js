@@ -26,10 +26,8 @@ functions.http("aiBubblesGET", async (req, res) => {
   // campaign_assets_count represents "Creative Asset Coverage" in the UI:
   inserts.push(
     await gemini.getInsightsAndHeadlineForTable('campaigns_assets_count'));
-  
+
   await bq.insertIntoInsights(inserts);
 
   res.send("Finished");
 });
-
-
