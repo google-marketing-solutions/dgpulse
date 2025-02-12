@@ -36,7 +36,7 @@ joining [this group](https://groups.google.com/g/dgpulse/),
 [click here](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC)
 to see it in action.
 
-[![DG-Pulse](https://services.google.com/fh/files/misc/dgpulse-animated-preview.gif)](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC)
+[![DG-Pulse](https://services.google.com/fh/files/misc/dgpulse-animated-preview-2.gif)](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC)
 
 - LookerStudio dashboard based on your Google Ads and You Tube data.
 
@@ -59,7 +59,7 @@ to see it in action.
    [Google Cloud Console](https://console.cloud.google.com/), **make sure it is
    connected to a billing account**
 
-### Installation
+## Installation
 
 To do your first installation, click on the blue Deploy button and follow the
 instructions:
@@ -93,7 +93,7 @@ make a copy of it and point the data sources to your own GCP's BigQuery.
 
 ### What Google Cloud components are deployed automatically
 
-![What Google Cloud components are deployed automatically](https://services.google.com/fh/files/misc/dgpulse-arch-2.png)
+![What Google Cloud components are deployed automatically](https://services.google.com/fh/files/misc/dgpulse-arch-2-1.png)
 
 ### In depth: Gaarf → Storage
 
@@ -101,7 +101,7 @@ make a copy of it and point the data sources to your own GCP's BigQuery.
 
 ### In depth: Gaarf → Scheduler + Workflow
 
-![In depth: Gaarf → Scheduler + Workflow](https://services.google.com/fh/files/misc/dgpulse-arch-4.png)
+![In depth: Gaarf → Scheduler + Workflow](https://services.google.com/fh/files/misc/dgpulse-arch-4-1.png)
 
 ### In depth: Gaarf → Run
 
