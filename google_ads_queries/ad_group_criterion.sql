@@ -22,7 +22,7 @@
  */
 SELECT
   ad_group_criterion.criterion_id AS criterion_id,
-  ad_group_criterion.user_list.user_list ~ 0 AS user_list_id
+  ad_group_criterion.user_list.user_list~0 AS user_list_id
 FROM
   ad_group_criterion
 WHERE
