@@ -36,8 +36,10 @@ WITH
         LENGTH(asset_type_inferred)
           - STRPOS(REVERSE(asset_type_inferred), '~') + 2)
         AS asset_type_inferred,
+      SUM(impressions) AS impressions,
       SUM(clicks) AS clicks,
       SUM(conversions) AS conversions,
+      SUM(conversions_value) AS conversions_value,
       SUM(ctr) AS ctr,
       SUM(cost) AS cost,
     FROM `{bq_dataset}.adgroupad_asset_view` AS AAV
@@ -80,8 +82,10 @@ SELECT
       THEN "CALL TO ACTION"
     ELSE asset_type_inferred
   END AS asset_type_inferred,
+  impressions,
   clicks,
   conversions,
+  conversions_value,
   ctr,
   cost / 1e6 AS cost
 FROM AssetsPerformance

@@ -31,9 +31,11 @@ AS (
         CS.campaign_id AS campaign_id,
         CS.campaign_name AS campaign_name,
         AM.date,
+        AM.impressions,
         AM.clicks,
         (AM.cost / 1e6) AS cost,
         AM.conversions,
+        AM.conversions_value,
         AM.vt_conversions,
         AM.roas,
         AM.audience_name,
@@ -58,9 +60,11 @@ AS (
     audience_name,
     audience_type,
     ocid,
+    SUM(impressions) AS impressions,
     SUM(clicks) AS clicks,
     SUM(cost) AS cost,
     SUM(conversions) AS conversions,
+    SUM(conversions_value) AS conversions_value,
     SUM(vt_conversions) AS vt_conversions,
     SUM(roas) AS roas
   FROM AudPerf
