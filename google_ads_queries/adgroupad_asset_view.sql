@@ -22,7 +22,9 @@
  */
 SELECT
     segments.date AS date,
+    metrics.impressions AS impressions,
     metrics.conversions AS conversions,
+    metrics.conversions_value AS conversions_value,
     metrics.clicks AS clicks,
     metrics.ctr AS ctr,
     metrics.cost_micros AS cost,
