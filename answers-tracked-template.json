@@ -1,0 +1,36 @@
+{
+  "use_current_project": true,
+  "name": "dgpulse",
+  "gcs_bucket": "",
+  "path_to_ads_queries": "google_ads_queries",
+  "path_to_bq_queries": "bq_queries",
+  "custom_ids_query_path": "get-accounts.sql",
+  "path_to_googleads_config": "google-ads.yaml",
+  "cf_memory": "2048MB",
+  "deploy_scripts": true,
+  "deploy_wf": true,
+  "output_dataset": "dgpulse_ads",
+  "ads_macro": {
+    "start_date": ":YYYYMMDD-90",
+    "end_date": ":YYYYMMDD-1"
+  },
+  "bq_macro": {
+    "bq_dataset": "dgpulse_ads"
+  },
+  "schedule_wf": true,
+  "schedule_time": "04:00",
+  "run_job": false,
+  "run_wf": true,
+  "clone_dashboard": true,
+  "dashboard_id": "10488af5-95fd-4d5e-9cc8-bf6c0042c52d",
+  "dashboard_name": "dgpulse",
+  "dashboard_dataset": "dgpulse_ads_bq",
+  "dashboard_datasources": {
+    "campaign_data": "campaign_data",
+    "campaigns_assets_count": "campaigns_assets_count",
+    "audience_performance": "audience_performance",
+    "account_conversion_action": "account_conversion_action",
+    "insights": "insights",
+    "assets_performance": "assets_performance"
+  }
+}
