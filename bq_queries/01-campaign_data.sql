@@ -101,9 +101,18 @@ SELECT
   END AS has_lookalike_audience
 FROM
   `{bq_dataset}.campaign_settings` AS C
-  LEFT JOIN targets AS T ON C.account_id = T.account_id AND C.campaign_id = T.campaign_id
-  LEFT JOIN change_events AS CE ON C.campaign_id = CE.campaign_id AND C.date = CE.change_date
-  LEFT JOIN `{bq_dataset}.ocid_mapping` AS OCID ON OCID.customer_id = C.account_id
-  LEFT JOIN `{bq_dataset}.customer` AS CUST ON CUST.account_id = C.account_id
-  LEFT JOIN `{bq_dataset}_reference_data.exchange_rates` AS ER ON CUST.currency_code = ER.target_currency
-  LEFT JOIN campaigns_with_lookalikes AS CWL ON C.campaign_id = CWL.campaign_id;
+  LEFT JOIN targets AS T
+    ON C.account_id = T.account_id
+    AND C.campaign_id = T.campaign_id
+  LEFT JOIN change_events AS CE
+    ON C.campaign_id = CE.campaign_id
+    AND C.account_id = CE.account_id
+    AND C.date = CE.change_date
+  LEFT JOIN `{bq_dataset}.ocid_mapping` AS OCID
+    ON OCID.customer_id = C.account_id
+  LEFT JOIN `{bq_dataset}.customer` AS CUST
+    ON CUST.account_id = C.account_id
+  LEFT JOIN `{bq_dataset}_reference_data.exchange_rates` AS ER
+    ON CUST.currency_code = ER.target_currency
+  LEFT JOIN campaigns_with_lookalikes AS CWL
+    ON C.campaign_id = CWL.campaign_id;
