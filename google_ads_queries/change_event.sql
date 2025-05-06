@@ -13,7 +13,17 @@
 -- limitations under the License.
 
 
--- This is a GAARF capability that makes it possible
--- to add links to the dashboard later.
--- GAARF docs: https://github.com/google/ads-api-report-fetcher
-SELECT * FROM builtin.ocid_mapping;
+SELECT
+  customer.id AS account_id,
+  change_event.change_date_time AS date,
+  campaign.id AS campaign_id
+FROM change_event
+WHERE
+  -- This needs to be set as static 29 days sliding window.
+  -- change_event cannot be queried for longer than that.
+  change_event.change_date_time >= '${today()-period('P29D')}'
+  AND change_event.change_date_time <= '${today()}'
+  AND change_event.resource_change_operation = 'UPDATE'
+  AND campaign.advertising_channel_type = 'DEMAND_GEN'
+  AND campaign.status = 'ENABLED'
+LIMIT 10000
