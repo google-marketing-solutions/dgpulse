@@ -21,7 +21,7 @@ FROM change_event
 WHERE
   -- This needs to be set as static 29 days sliding window.
   -- change_event cannot be queried for longer than that.
-  change_event.change_date_time >= '${today()-period('P29D')}' 
+  change_event.change_date_time >= '${today()-period('P29D')}'
   AND change_event.change_date_time <= '${today()}'
   AND change_event.resource_change_operation = 'UPDATE'
   AND campaign.advertising_channel_type = 'DEMAND_GEN'
