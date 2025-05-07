@@ -73,11 +73,13 @@ change_events AS (
   SELECT
     COUNT(*) AS change_count_by_date,
     campaign_id,
+    account_id,
     FORMAT_DATETIME('%Y-%m-%d', CAST(date AS DATETIME)) AS change_date
   FROM `{bq_dataset}.change_event`
   GROUP BY
     change_date,
-    campaign_id
+    campaign_id,
+    account_id
 )
 SELECT
   C.date,
