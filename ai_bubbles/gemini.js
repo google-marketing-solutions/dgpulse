@@ -168,7 +168,7 @@ async function uploadFileToGoogleAiStorage(csvName, table) {
 async function getGeminiResponseFromCSV(
   uploadResult, table, insights) {
   const genAI = new GoogleGenerativeAI(GOOGLE_GENERATIVEAI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
   const promptType = insights ? 'headline' : 'insights';
   const prompt = promptsByTableName[table][promptType].roleAndTask
     + (promptsByTableName[table][promptType].contextAndExamples || insights)
