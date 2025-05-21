@@ -17,9 +17,19 @@ set -e
 
 git pull
 
-#TODO: Request region from user prompt and provide it to gaarf later:
 DEFAULT_MULTI_REGION="EU"
-GCP_REGION="europe-west1"
+GCP_REGION=`jq -r '.gcp_region' < answers.json`
+
+if [[ "$GCP_REGION" == *us* ]]; then
+  DEFAULT_MULTI_REGION="US"
+elif [[ "$GCP_REGION" == *europe* ]]; then
+  DEFAULT_MULTI_REGION="EU"
+elif [[ "$GCP_REGION" == *asia* ]]; then
+  DEFAULT_MULTI_REGION="ASIA"
+else
+  echo "warning: Wrong region"
+fi
+
 
 GCP_PROJECT_ID=$(gcloud config get-value project) && \
 GCP_PROJECT_NUMBER=$(gcloud projects list \

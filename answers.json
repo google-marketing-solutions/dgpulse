@@ -1,6 +1,7 @@
 {
   "use_current_project": true,
   "name": "dgpulse",
+  "gcp_region": "europe-west1",
   "gcs_bucket": "",
   "path_to_ads_queries": "google_ads_queries",
   "path_to_bq_queries": "bq_queries",
