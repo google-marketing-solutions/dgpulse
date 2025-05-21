@@ -35,7 +35,7 @@ const lighterQueries = {
       SUM(conversions) AS conversions,
       AVG(tcpa) AS cpa
     FROM
-      ${projectId}.${datasetId}_bq.campaign_data
+      \`${projectId}.${datasetId}_bq.campaign_data\`
     GROUP BY 1, 2, 3
     ORDER BY date DESC`,
 
@@ -55,14 +55,19 @@ const lighterQueries = {
       portrait_video_count AS portrait_videos,
       has_image_plus_video
     FROM
-      ${projectId}.${datasetId}_bq.campaigns_assets_count
+      \`${projectId}.${datasetId}_bq.campaigns_assets_count\`
   `
 }
 
 async function getData(table) {
   console.log("Querying BQ: ", table);
   const query = lighterQueries[table];
-  return await executeQuery(query);
+  try {
+    return await executeQuery(query);
+  } catch(e) {
+    console.error(e);
+    throw e;
+  }
 }
 
 function escapeSQLString(str) {
