@@ -27,7 +27,7 @@ elif [[ "$GCP_REGION" == *europe* ]]; then
 elif [[ "$GCP_REGION" == *asia* ]]; then
   DEFAULT_MULTI_REGION="ASIA"
 else
-echo "$region"
+  echo "warning: Wrong region"
 fi
 
 
