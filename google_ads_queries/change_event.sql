@@ -19,9 +19,11 @@ SELECT
   campaign.id AS campaign_id
 FROM change_event
 WHERE
-  -- This needs to be set as static 29 days sliding window.
-  -- change_event cannot be queried for longer than that.
-  change_event.change_date_time >= '${today()-period('P29D')}'
+  -- This needs to be set as static 28 days sliding window.
+  -- change_event cannot be queried for longer than than 30
+  -- days, and 28 days is used as the safest option to avoid
+  -- hitting this limit.
+  change_event.change_date_time >= '${today()-period('P28D')}'
   AND change_event.change_date_time <= '${today()}'
   AND change_event.resource_change_operation = 'UPDATE'
   AND campaign.advertising_channel_type = 'DEMAND_GEN'
