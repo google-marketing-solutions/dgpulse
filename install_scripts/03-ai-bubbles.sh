@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2024 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,13 +30,13 @@ if bq --location=$DEFAULT_MULTI_REGION show --dataset dgpulse_ads_bq; then
 else
   # Create the dataset if it does not exist
   bq --location=$DEFAULT_MULTI_REGION mk -d dgpulse_ads_bq
-fi
 
-# Create the insights table
-bq mk \
-  -t \
-  dgpulse_ads_bq.insights \
-  table:STRING,insights:STRING,headline:STRING,date:DATE
+  # Create the insights table
+  bq mk \
+    -t \
+    dgpulse_ads_bq.insights \
+    table:STRING,insights:STRING,headline:STRING,date:DATE
+fi
 
 # step into ai_bubbles with sub project scripts.
 cd ai_bubbles

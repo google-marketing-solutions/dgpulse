@@ -1,17 +1,18 @@
-//  Copyright 2024 Google LLC
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//    https://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-
+/*
+ * Copyright 2025 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 const { BigQuery } = require("@google-cloud/bigquery");
 
 // TODO: solutionName should be dynamic.
@@ -34,7 +35,7 @@ const lighterQueries = {
       SUM(conversions) AS conversions,
       AVG(tcpa) AS cpa
     FROM
-      ${projectId}.${datasetId}_bq.campaign_data
+      \`${projectId}.${datasetId}_bq.campaign_data\`
     GROUP BY 1, 2, 3
     ORDER BY date DESC`,
 
@@ -54,14 +55,19 @@ const lighterQueries = {
       portrait_video_count AS portrait_videos,
       has_image_plus_video
     FROM
-      ${projectId}.${datasetId}_bq.campaigns_assets_count
+      \`${projectId}.${datasetId}_bq.campaigns_assets_count\`
   `
 }
 
 async function getData(table) {
   console.log("Querying BQ: ", table);
   const query = lighterQueries[table];
-  return await executeQuery(query);
+  try {
+    return await executeQuery(query);
+  } catch(e) {
+    console.error(e);
+    throw e;
+  }
 }
 
 function escapeSQLString(str) {

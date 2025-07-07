@@ -13,11 +13,19 @@
 -- limitations under the License.
 
 
-
 SELECT
   customer.id AS account_id,
-  asset.id AS asset_id,
-  asset.youtube_video_asset.youtube_video_id AS video_id
-FROM
-  asset
-WHERE asset.type = "YOUTUBE_VIDEO"
+  change_event.change_date_time AS date,
+  campaign.id AS campaign_id
+FROM change_event
+WHERE
+  -- This needs to be set as static 28 days sliding window.
+  -- change_event cannot be queried for longer than than 30
+  -- days, and 28 days is used as the safest option to avoid
+  -- hitting this limit.
+  change_event.change_date_time >= '${today()-period('P28D')}'
+  AND change_event.change_date_time <= '${today()}'
+  AND change_event.resource_change_operation = 'UPDATE'
+  AND campaign.advertising_channel_type = 'DEMAND_GEN'
+  AND campaign.status = 'ENABLED'
+LIMIT 10000
