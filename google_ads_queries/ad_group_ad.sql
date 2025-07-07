@@ -19,7 +19,6 @@ data from Google Ads API and store in a BQ Table.
 
 SELECT
   ad_group_ad.ad.id AS aga_id,
-  ad_group.name AS ag_name,
   ad_group_ad.ad.type AS aga_type,
   ad_group_ad.ad.demand_gen_multi_asset_ad.portrait_marketing_images:asset AS dmaa_portrait_mkt_imgs,
   ad_group_ad.ad.demand_gen_multi_asset_ad.square_marketing_images:asset AS dmaa_square_mkt_imgs,
@@ -35,7 +34,9 @@ SELECT
   customer.id AS account_id,
   campaign.id AS campaign_id,
   ad_group.id AS ag_id,
-  campaign.name AS campaign_name
+  campaign.name AS campaign_name,
+  ad_group.demand_gen_ad_group_settings.channel_controls.channel_config AS cc_config,
+  ad_group.demand_gen_ad_group_settings.channel_controls.channel_strategy AS cc_strategy
 FROM
   ad_group_ad
 WHERE
