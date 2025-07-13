@@ -39,7 +39,9 @@ SELECT
   metrics.cost_micros AS cost,
   metrics.conversions AS conversions,
   metrics.conversions_value AS conversions_value,
-  metrics.all_conversions_value AS all_conversions_value
+  metrics.all_conversions_value AS all_conversions_value,
+
+  campaign.bidding_strategy_system_status AS bidding_strategy_system_status
 FROM campaign
 WHERE
   campaign.advertising_channel_type = "DEMAND_GEN"

@@ -100,7 +100,11 @@ SELECT
   CASE
     WHEN CWL.campaign_id IS NOT NULL THEN 'YES'
     ELSE 'NO'
-  END AS has_lookalike_audience
+  END AS has_lookalike_audience,
+  CASE
+    WHEN C.bidding_strategy_system_status = 'LIMITED_BY_BUDGET' THEN 'YES'
+    ELSE 'NO'
+  END AS is_limited_by_budget
 FROM
   `{bq_dataset}.campaign_settings` AS C
   LEFT JOIN targets AS T
