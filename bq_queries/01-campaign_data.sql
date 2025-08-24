@@ -66,7 +66,7 @@ channel_controls AS (
       ELSE 'All Channels'
     END AS selected_channels
   FROM
-    `{bq_dataset}.ad_group_ad_9626159015`
+    `{bq_dataset}.ad_group_ad`
   GROUP BY
     campaign_id
 ),
