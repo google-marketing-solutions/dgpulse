@@ -225,7 +225,9 @@ steps:
   ![Share Dashboard](https://services.google.com/fh/files/misc/pmaximizer-impl-img10.png)
   to share with teammates.
 
-### How much does it cost? It heavily depends on how much data you have and how
+### How much does it cost?
+
+It heavily depends on how much data you have and how
 often it's used. If you check the Architecture of Components section, there are
 5 cloud components: Run, Scheduler, Workflows, Storage and BigQuery. For a large
 amount of data (for example thousands of accounts, campaigns and assets), we do
