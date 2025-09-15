@@ -110,6 +110,7 @@ SELECT
   C.conversions,
   OCID.ocid,
   CE.change_count_by_date,
+  CC.selected_channels,
   IF(CWL.campaign_id IS NOT NULL, 'YES', 'NO')
     AS has_lookalike_audience,
   IF(C.bidding_strategy_system_status = 'LIMITED_BY_BUDGET', 'YES', 'NO')
