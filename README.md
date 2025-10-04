@@ -119,6 +119,16 @@ https://services.google.com/fh/files/misc/dgpulse-arch-7.jpeg
 
 ## Troubleshooting
 
+### How to use Service Accounts during installation?
+
+Glad you asked! Service Accounts are a safe and reliable way to install DG Pulse instead of using User Accounts (humans). If you do that you will also be able to skip the whole "OAuth Consent Screen" installation instructions in the wizard.
+
+All you have to do is:
+1. in your Google Cloud Project, go to IAM, Service Account and create a Service Account (give it Owner access).
+2. Invite the email address automatically created for that Service Account to your Google Ads (as Read Only)
+3. During installation, when asked about which Service Account to use, use that Service Account email address.
+4. Also during installation, select "**Yes**" for "Do you want to use Secret Manager?".
+
 ### What technical skills do I need to deploy the dashboard?
 
 You do not need any technical skills to deploy the dashboard as it’s fully
