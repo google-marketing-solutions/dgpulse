@@ -37,4 +37,5 @@ SELECT
   WHERE segments.date >= "{start_date}"
   AND segments.date <= "{end_date}"
   AND campaign.advertising_channel_type = "DEMAND_GEN"
+  AND metrics.cost_micros > 0
 -- SQLSTYLE: Notice that semi-colon (;) at the end of the script is not allowed by gaarf.
