@@ -32,7 +32,8 @@ SELECT
   metrics.all_conversions_value_per_cost AS roas,
   ad_group_criterion.criterion_id AS criterion_id,
   ad_group_criterion.type AS audience_type,
-  ad_group_criterion.display_name AS audience_name
+  ad_group_criterion.display_name AS audience_name,
+  ad_group.optimized_targeting_enabled AS optimized_targeting_enabled
 FROM
   ad_group_audience_view
 WHERE

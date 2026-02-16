@@ -38,6 +38,7 @@ AS (
         AM.roas,
         AM.audience_name,
         AM.audience_type,
+        AM.optimized_targeting_enabled,
         OCID.ocid
       FROM
         `{bq_dataset}.audience_metrics` AS AM
@@ -57,6 +58,7 @@ AS (
     date,
     audience_name,
     audience_type,
+    optimized_targeting_enabled,
     ocid,
     SUM(impressions) AS impressions,
     SUM(clicks) AS clicks,
@@ -74,5 +76,6 @@ AS (
     date,
     audience_name,
     audience_type,
+    optimized_targeting_enabled,
     ocid
 );
