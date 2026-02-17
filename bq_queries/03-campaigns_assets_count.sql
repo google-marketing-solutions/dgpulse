@@ -78,6 +78,18 @@ OR REPLACE TABLE `{bq_dataset}_bq.campaigns_assets_count` AS (
       VideoAspectRatio
     GROUP BY
       campaign_id
+  ),
+  PartnershipStatus AS (
+    SELECT
+      VAR.campaign_id,
+      IF(LOGICAL_OR(PL.video_id IS NOT NULL), 'Y', 'N') AS partnership_status
+    FROM
+      `{bq_dataset}_bq.video_aspect_ratio` AS VAR
+    LEFT JOIN
+      `{bq_dataset}.partnership_links` AS PL
+      ON VAR.video_id = PL.video_id
+    GROUP BY
+      1
   )
   SELECT
     AdGroupAd.campaign_id,
@@ -110,10 +122,12 @@ OR REPLACE TABLE `{bq_dataset}_bq.campaigns_assets_count` AS (
       ),
       'YES',
       'NO'
-    ) AS has_image_plus_video
+    ) AS has_image_plus_video,
+    IFNULL(PartnershipStatus.partnership_status, 'N') AS partnership_status
   FROM
     AdGroupAd
     INNER JOIN OperatingCustomerId ON OperatingCustomerId.account_id = AdGroupAd.account_id
     INNER JOIN CampaignData ON CampaignData.campaign_id = AdGroupAd.campaign_id
     LEFT JOIN VideoAspectRatioCount ON VideoAspectRatioCount.campaign_id = AdGroupAd.campaign_id
+    LEFT JOIN PartnershipStatus ON PartnershipStatus.campaign_id = AdGroupAd.campaign_id
 );
