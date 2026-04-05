@@ -1,0 +1,165 @@
+#!/bin/bash
+# DV360 Pulse Installation Script
+# This script automates the deployment to Google Cloud Run and GCS.
+
+set -e
+
+echo "------------------------------------------------"
+echo "DV360 DG Pulse - Installation Script"
+echo "------------------------------------------------"
+
+# 1. Ask for user inputs (or use env vars if provided)
+if [ -z "$PARTNER_ID" ]; then
+  read -p "Enter Partner ID: " PARTNER_ID
+fi
+
+# Auto-detect client_id and client_secret from client_secret.json if present
+if [ -f "client_secret.json" ]; then
+  echo "Found client_secret.json. Attempting to extract credentials..."
+  
+  if [ -z "$CLIENT_ID" ]; then
+    CLIENT_ID=$(node -e "const d=require('fs').readFileSync('client_secret.json'); const c=JSON.parse(d).installed||JSON.parse(d).web||JSON.parse(d); console.log(c.client_id||'')" 2>/dev/null)
+    if [ -n "$CLIENT_ID" ]; then
+      echo "Using Client ID from client_secret.json"
+    fi
+  fi
+  
+  if [ -z "$CLIENT_SECRET" ]; then
+    CLIENT_SECRET=$(node -e "const d=require('fs').readFileSync('client_secret.json'); const c=JSON.parse(d).installed||JSON.parse(d).web||JSON.parse(d); console.log(c.client_secret||'')" 2>/dev/null)
+    if [ -n "$CLIENT_SECRET" ]; then
+      echo "Using Client Secret from client_secret.json"
+    fi
+  fi
+fi
+
+if [ -z "$CLIENT_ID" ]; then
+  read -p "Enter Client ID: " CLIENT_ID
+fi
+if [ -z "$CLIENT_SECRET" ]; then
+  read -p "Enter Client Secret: " CLIENT_SECRET
+fi
+if [ -z "$REFRESH_TOKEN" ]; then
+  read -p "Enter Refresh Token: " REFRESH_TOKEN
+fi
+
+# 2. Infer project ID and region
+PROJECT_ID=$(gcloud config get-value project)
+REGION="us-central1"
+NODE_VERSION="22"
+
+echo "Using Project ID: ${PROJECT_ID}"
+echo "Using Region: ${REGION}"
+
+# Enable necessary APIs
+echo "Enabling necessary APIs..."
+gcloud services enable \
+  artifactregistry.googleapis.com \
+  cloudfunctions.googleapis.com \
+  run.googleapis.com \
+  cloudscheduler.googleapis.com \
+  storage.googleapis.com \
+  displayvideo.googleapis.com
+
+# 3. Create client_secret.json locally if it doesn't exist
+if [ ! -f "client_secret.json" ]; then
+  echo "Generating client_secret.json..."
+  cat <<EOF > client_secret.json
+{
+  "installed": {
+    "client_id": "${CLIENT_ID}",
+    "project_id": "${PROJECT_ID}",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_secret": "${CLIENT_SECRET}",
+    "redirect_uris": ["http://localhost"]
+  }
+}
+EOF
+else
+  echo "client_secret.json already exists. Skipping generation."
+fi
+
+# 4. Create GCS bucket and upload file
+BUCKET_NAME="${PROJECT_ID}-dv360-dgpulse"
+echo "Creating GCS bucket: ${BUCKET_NAME}..."
+# Check if bucket exists, if not create it
+if ! gsutil ls -b gs://${BUCKET_NAME} > /dev/null 2>&1; then
+  gsutil mb -l ${REGION} gs://${BUCKET_NAME}
+else
+  echo "Bucket already exists."
+fi
+
+echo "Uploading client_secret.json to GCS..."
+gsutil cp client_secret.json gs://${BUCKET_NAME}/client_secret.json
+
+# 4b. Create Pub/Sub Topic and BigQuery Dataset/Table
+TOPIC_NAME="dv360-dgpulse-advertiser-topic"
+echo "Creating Pub/Sub topic: ${TOPIC_NAME}..."
+gcloud pubsub topics create ${TOPIC_NAME} || echo "Topic already exists."
+
+DATASET_ID="dv360_dgpulse"
+TABLE_ID="campaigns"
+echo "Creating BigQuery dataset: ${DATASET_ID}..."
+bq mk --dataset --location=${REGION} ${PROJECT_ID}:${DATASET_ID} || echo "Dataset already exists."
+
+echo "Creating BigQuery table: ${DATASET_ID}.${TABLE_ID}..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID} campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING || echo "Table already exists."
+
+# 5. Deploy as a Cloud Run Function
+echo "Deploying Cloud Function: dv360-dgpulse..."
+gcloud functions deploy dv360-dgpulse \
+  --gen2 \
+  --runtime=nodejs${NODE_VERSION} \
+  --region=${REGION} \
+  --source=. \
+  --entry-point=fetchAdvertisers \
+  --trigger-http \
+  --no-allow-unauthenticated \
+  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},PARTNER_ID=${PARTNER_ID},TOPIC_NAME=${TOPIC_NAME}
+
+# 6. Get the service URL
+SERVICE_URL=$(gcloud functions describe dv360-dgpulse --region=${REGION} --gen2 --format='value(serviceConfig.uri)')
+echo "Service URL: ${SERVICE_URL}"
+
+# 6b. Deploy Cloud Function for processing advertisers
+echo "Deploying Cloud Function: process-advertiser..."
+gcloud functions deploy dv360-dgpulse-process-advertiser \
+  --gen2 \
+  --runtime=nodejs${NODE_VERSION} \
+  --region=${REGION} \
+  --source=. \
+  --entry-point=processAdvertiser \
+  --trigger-topic=${TOPIC_NAME} \
+  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID}
+
+# 7. Create Cloud Scheduler job
+JOB_NAME="dv360-dgpulse-daily-sync"
+echo "Creating Cloud Scheduler job: ${JOB_NAME}..."
+
+# Infer Service Account or ask user?
+# Usually, dgpulse uses the default compute service account or a dedicated one.
+# For simplicity, we'll try to find the project number.
+PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
+SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+if ! gcloud scheduler jobs describe ${JOB_NAME} --location=${REGION} > /dev/null 2>&1; then
+  gcloud scheduler jobs create http ${JOB_NAME} \
+    --location=${REGION} \
+    --http-method="GET" \
+    --schedule="0 6 * * *" \
+    --uri="${SERVICE_URL}" \
+    --oidc-service-account-email=${SERVICE_ACCOUNT} \
+    --oidc-token-audience="${SERVICE_URL}"
+else
+  echo "Job already exists. Updating..."
+  gcloud scheduler jobs update http ${JOB_NAME} \
+    --location=${REGION} \
+    --uri="${SERVICE_URL}"
+fi
+
+echo "------------------------------------------------"
+echo "Installation Complete!"
+echo "Your DV360 DG Pulse service is deployed at: ${SERVICE_URL}"
+echo "The daily sync job is scheduled to run at 6:00 AM daily."
+echo "------------------------------------------------"
