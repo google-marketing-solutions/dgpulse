@@ -58,7 +58,8 @@ gcloud services enable \
   run.googleapis.com \
   cloudscheduler.googleapis.com \
   storage.googleapis.com \
-  displayvideo.googleapis.com
+  displayvideo.googleapis.com \
+  bigquerydatatransfer.googleapis.com
 
 # 3. Create client_secret.json locally if it doesn't exist
 if [ ! -f "client_secret.json" ]; then
@@ -105,6 +106,14 @@ bq mk --dataset --location=${REGION} ${PROJECT_ID}:${DATASET_ID} || echo "Datase
 
 echo "Creating BigQuery table: ${DATASET_ID}.${TABLE_ID}..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID} campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING || echo "Table already exists."
+
+echo "Creating BigQuery Data Transfer for DV360..."
+# This command will prompt the user for authorization if not already authorized.
+bq mk --transfer_config \
+    --target_dataset="${DATASET_ID}" \
+    --display_name="DV360 Pulse Data Transfer" \
+    --data_source=display_video_360 \
+    --params='{"partner_id":"'"${PARTNER_ID}"'"}'
 
 # 5. Deploy as a Cloud Run Function
 echo "Deploying Cloud Function: dv360-dgpulse..."
@@ -157,6 +166,16 @@ else
     --location=${REGION} \
     --uri="${SERVICE_URL}"
 fi
+
+echo "Creating Scheduled Query for materialization..."
+# Read the SQL file and replace placeholders
+MATERIALIZATION_QUERY=$(cat materialize_campaigns.sql | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")
+
+bq mk --scheduled_query \
+    --display_name="DV360 Pulse Materialization" \
+    --query="${MATERIALIZATION_QUERY}" \
+    --schedule="every 24 hours" \
+    --schedule_time="08:00" # Runs at 8 AM, 2 hours after the metadata sync
 
 echo "------------------------------------------------"
 echo "Installation Complete!"
