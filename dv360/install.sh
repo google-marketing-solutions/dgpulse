@@ -13,6 +13,12 @@ if [ -z "$PARTNER_ID" ]; then
   read -p "Enter Partner ID: " PARTNER_ID
 fi
 
+# 2. Ask for user inputs (or use env vars if provided)
+if [ -z "$DV360_DTV2_BUCKET" ]; then
+  read -p "Enter DV360 DTV2 Bucket Name: " DV360_DTV2_BUCKET
+fi
+
+
 # Auto-detect client_id and client_secret from client_secret.json if present
 if [ -f "client_secret.json" ]; then
   echo "Found client_secret.json. Attempting to extract credentials..."
@@ -59,7 +65,9 @@ gcloud services enable \
   cloudscheduler.googleapis.com \
   storage.googleapis.com \
   displayvideo.googleapis.com \
-  bigquerydatatransfer.googleapis.com
+  bigquerydatatransfer.googleapis.com \
+  eventarc.googleapis.com \
+  eventarcpublishing.googleapis.com --project="${PROJECT_ID}"
 
 # 3. Create client_secret.json locally if it doesn't exist
 if [ ! -f "client_secret.json" ]; then
@@ -112,8 +120,8 @@ echo "Creating BigQuery Data Transfer for DV360..."
 bq mk --transfer_config \
     --target_dataset="${DATASET_ID}" \
     --display_name="DV360 Pulse Data Transfer" \
-    --data_source=display_video_360 \
-    --params='{"partner_id":"'"${PARTNER_ID}"'"}'
+    --data_source=displayvideo \
+    --params='{"bucket":"'"${DV360_DTV2_BUCKET}"'","displayvideo_id":"'"${PARTNER_ID}"'"}'
 
 # 5. Deploy as a Cloud Run Function
 echo "Deploying Cloud Function: dv360-dgpulse..."
@@ -171,11 +179,21 @@ echo "Creating Scheduled Query for materialization..."
 # Read the SQL file and replace placeholders
 MATERIALIZATION_QUERY=$(cat materialize_campaigns.sql | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")
 
-bq mk --scheduled_query \
-    --display_name="DV360 Pulse Materialization" \
-    --query="${MATERIALIZATION_QUERY}" \
-    --schedule="every 24 hours" \
-    --schedule_time="08:00" # Runs at 8 AM, 2 hours after the metadata sync
+# Escape double quotes and newlines to make the SQL safe to embed in a JSON string
+JSON_ESCAPED_QUERY=$(echo "${MATERIALIZATION_QUERY}" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+
+# Construct the --params JSON string using printf for safety
+PARAMS=$(printf '{"query":"%s", "destination_table_name_template":"campaigns", "write_disposition":"WRITE_TRUNCATE"}' "${JSON_ESCAPED_QUERY}")
+
+# Create the scheduled query using BigQuery Data Transfer Service
+bq mk --transfer_config \
+    --project_id="${PROJECT_ID}" \
+    --data_source=scheduled_query \
+    --target_dataset="${DATASET_ID}" \
+    --display_name="Materialize DV360 Campaigns Daily" \
+    --params="${PARAMS}" \
+    --schedule="every day 08:00" # Runs at 8 AM, 2 hours after the metadata sync
+    
 
 echo "------------------------------------------------"
 echo "Installation Complete!"
