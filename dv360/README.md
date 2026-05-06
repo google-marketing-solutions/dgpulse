@@ -2,6 +2,29 @@
 
 A serverless application to fetch campaign data from Display & Video 360 (DV360) and store it in BigQuery for analysis. It uses a message-driven architecture with Cloud Pub/Sub to parallelize the extraction of data by advertiser.
 
+## Requirements
+
+Before you begin, please ensure you meet the following requirements:
+
+1.  **Google Cloud Project:** You must have a Google Cloud Project with the necessary permissions to enable APIs, create BigQuery datasets/tables, create Cloud Storage buckets, deploy Cloud Functions, and set up BigQuery Data Transfers.
+
+2.  **Display & Video 360 Data Transfer v2 (DTv2) Enabled:** This solution relies on data from Display & Video 360 Data Transfer v2 files.
+    *   **Prerequisite:** Your organization *must* have access to DV360 DTv2 files. These files contain detailed event-level data and are delivered by the Display & Video 360 team to a specific Google Cloud Storage bucket.
+    *   **Obtaining Access:** The process to enable DV360 DTv2 and get access to the GCS bucket depends on your contract:
+        *   **If you have a direct contract with Display & Video 360:** Contact DV360 support to request the setup of DV360 DTv2 files.
+        *   **If you do not have a direct contract:** Contact your agency or reseller to arrange access to DV360 DTv2 files.
+    *   **Cost:** Be aware that additional charges might apply for using the DV360 Data Transfer service.
+    *   **GCS Bucket Name:** Upon successful setup, you will be provided with the name of the Google Cloud Storage bucket where your DTv2 files are delivered. This bucket name typically follows the pattern `dcdt_-dbm_partnerPARTNER_ID` or `dcdt_-dbm_advertiserADVERTISER_ID`. **You will need to provide this exact bucket name during the installation script.**
+
+    > **IMPORTANT:** For more details on DV360 Data Transfer prerequisites and how to get started, please review the official Google Cloud documentation: [BigQuery Data Transfer Service - Display & Video 360 Transfer - Before you begin](https://docs.cloud.google.com/bigquery/docs/display-video-transfer#before_you_begin)
+
+3.  **DV360 Partner ID:** You will need to provide the DV360 Partner ID you want to monitor during the installation.
+
+4.  **OAuth 2.0 Credentials:** While the long-term plan is to move to Service Account authentication, the current version requires a `client_secret.json` and a Refresh Token. Ensure you have these available.
+
+By ensuring these requirements are met, the installation process will run smoothly and the solution will be able to access the necessary DV360 data.
+
+
 ## Getting Started
 
 Follow these steps to deploy and run the DV360 campaign extraction pipeline:
