@@ -58,7 +58,7 @@ GEMINI_KEY_CREATE_LOGS=$(gcloud alpha services api-keys create \
     2>&1)
 
 # Extract the API key value from the logs.
-GEMINI_API_KEY=$(echo "$GEMINI_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
+GEMINI_API_KEY=$(echo "$GEMINI_KEY_CREATE_LOGS" | sed -n 's/.*"keyString":"\([^"]*\)".*/\1/p')
 
 echo "API Key created: ${GEMINI_API_KEY}"
 
