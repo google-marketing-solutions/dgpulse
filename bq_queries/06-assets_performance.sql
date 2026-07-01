@@ -40,7 +40,7 @@ WITH
       SUM(clicks) AS clicks,
       SUM(conversions) AS conversions,
       SUM(conversions_value) AS conversions_value,
-      SUM(ctr) AS ctr,
+      SAFE_DIVIDE(SUM(clicks), SUM(impressions)) AS ctr,
       SUM(cost) AS cost,
     FROM `{bq_dataset}.adgroupad_asset_view` AS AAV
     LEFT JOIN `{bq_dataset}.asset` AS A

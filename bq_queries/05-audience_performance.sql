@@ -35,7 +35,7 @@ AS (
         AM.conversions,
         AM.conversions_value,
         AM.vt_conversions,
-        AM.roas,
+        AM.all_conversions_value,
         AM.audience_name,
         AM.audience_type,
         OCID.ocid
@@ -64,7 +64,8 @@ AS (
     SUM(conversions) AS conversions,
     SUM(conversions_value) AS conversions_value,
     SUM(vt_conversions) AS vt_conversions,
-    SUM(roas) AS roas
+    SUM(all_conversions_value) AS all_conversions_value,
+    SAFE_DIVIDE(SUM(all_conversions_value), SUM(cost)) AS roas
   FROM AudPerf
   GROUP BY
     account_name,
