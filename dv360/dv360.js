@@ -264,6 +264,7 @@ class DV360Client {
           'FILTER_DATE',
           'FILTER_PARTNER',
           'FILTER_ADVERTISER',
+          'FILTER_ADVERTISER_CURRENCY',
           'FILTER_MEDIA_PLAN',
           'FILTER_CREATIVE_ID'
         ],
