@@ -190,8 +190,8 @@ MATERIALIZATION_QUERY=$(cat materialize_campaigns.sql | sed "s/__PROJECT_ID__/${
 # Escape double quotes and newlines to make the SQL safe to embed in a JSON string
 JSON_ESCAPED_QUERY=$(echo "${MATERIALIZATION_QUERY}" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
 
-# Construct the --params JSON string using printf for safety
-PARAMS=$(printf '{"query":"%s", "destination_table_name_template":"campaigns", "write_disposition":"WRITE_TRUNCATE"}' "${JSON_ESCAPED_QUERY}")
+# Construct the --params JSON string without destination_table_name_template since SQL contains DDL (CREATE OR REPLACE TABLE)
+PARAMS=$(printf '{"query":"%s"}' "${JSON_ESCAPED_QUERY}")
 
 # Create the scheduled query using BigQuery Data Transfer Service
 bq mk --transfer_config \
