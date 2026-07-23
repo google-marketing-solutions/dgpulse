@@ -237,6 +237,18 @@ class DV360Client {
       console.warn('Unable to list existing DBM queries, proceeding to create new query:', e.message);
     }
 
+    const now = new Date();
+    const startDate = {
+      year: now.getUTCFullYear(),
+      month: now.getUTCMonth() + 1,
+      day: now.getUTCDate()
+    };
+    const endDate = {
+      year: now.getUTCFullYear() + 5,
+      month: 12,
+      day: 31
+    };
+
     const queryObj = {
       metadata: {
         title: reportTitle,
@@ -255,7 +267,7 @@ class DV360Client {
         metrics: [
           'METRIC_IMPRESSIONS',
           'METRIC_CLICKS',
-          'METRIC_REVENUE_ADVERTISER',
+          'METRIC_MEDIA_COST_ADVERTISER',
           'METRIC_TOTAL_CONVERSIONS'
         ],
         filters: [
@@ -263,7 +275,9 @@ class DV360Client {
         ]
       },
       schedule: {
-        frequency: 'DAILY'
+        frequency: 'DAILY',
+        startDate: startDate,
+        endDate: endDate
       }
     };
 
