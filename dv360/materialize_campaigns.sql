@@ -9,6 +9,14 @@ WITH aggregated_stats AS (
     SUM(Total_Conversions) AS conversions
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   GROUP BY 1, 2
+),
+line_item_counts AS (
+  SELECT 
+    campaignId,
+    COUNT(lineItemId) AS line_item_count,
+    IF(LOGICAL_OR(entityStatus = 'ENTITY_STATUS_PAUSED'), 'YES', 'NO') AS is_limited_by_budget
+  FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  GROUP BY campaignId
 )
 SELECT 
   meta.campaignId AS campaign_id,
@@ -17,6 +25,8 @@ SELECT
   meta.advertiserId AS advertiser_id,
   meta.advertiserId AS account_id,
   meta.advertiserId AS account_name,
+  COALESCE(lic.is_limited_by_budget, 'NO') AS is_limited_by_budget,
+  COALESCE(lic.line_item_count, 0) AS line_item_count,
   COALESCE(stats.partner_id, '__PARTNER_ID__') AS partner_id,
   COALESCE(stats.impressions, 0) AS impressions,
   COALESCE(stats.clicks, 0) AS clicks,
@@ -27,4 +37,6 @@ SELECT
   SAFE_DIVIDE(COALESCE(stats.cost, 0) * 1000, COALESCE(stats.impressions, 0)) AS cpm
 FROM `__PROJECT_ID__.__DATASET_ID__.campaigns` meta
 LEFT JOIN aggregated_stats stats
-  ON meta.advertiserId = stats.advertiser_id;
+  ON meta.advertiserId = stats.advertiser_id
+LEFT JOIN line_item_counts lic
+  ON meta.campaignId = lic.campaignId;
