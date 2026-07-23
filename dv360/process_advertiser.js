@@ -58,26 +58,57 @@ exports.processAdvertiser = async (event, context) => {
 
     try {
         const client = await initializeClient();
+
+        // 1. Campaigns
         console.log(`Fetching campaigns for advertiser ${advertiserId}...`);
         const campaigns = await client.listAllCampaigns(advertiserId);
-
-        console.log(`Fetched ${campaigns.length} campaigns. Saving to BigQuery...`);
-
-        const rows = campaigns.map(campaign => ({
+        const campaignRows = campaigns.map(campaign => ({
             campaignId: campaign.campaignId,
             advertiserId: campaign.advertiserId,
             entityStatus: campaign.entityStatus,
             displayName: campaign.displayName
         }));
-
-        if (rows.length > 0) {
-            await bigquery
-                .dataset(DATASET_ID)
-                .table(TABLE_ID)
-                .insert(rows);
-            console.log(`Successfully inserted ${rows.length} rows into BigQuery.`);
+        if (campaignRows.length > 0) {
+            await bigquery.dataset(DATASET_ID).table('campaigns').insert(campaignRows);
+            console.log(`Successfully inserted ${campaignRows.length} campaigns into BigQuery.`);
         } else {
             console.log('No campaigns found to insert.');
+        }
+
+        // 2. Line Items
+        console.log(`Fetching line items for advertiser ${advertiserId}...`);
+        const lineItems = await client.listAllLineItems(advertiserId);
+        const lineItemRows = lineItems.map(li => ({
+            lineItemId: li.lineItemId,
+            campaignId: li.campaignId,
+            advertiserId: li.advertiserId,
+            entityStatus: li.entityStatus,
+            displayName: li.displayName,
+            lineItemType: li.lineItemType
+        }));
+        if (lineItemRows.length > 0) {
+            await bigquery.dataset(DATASET_ID).table('line_items').insert(lineItemRows);
+            console.log(`Successfully inserted ${lineItemRows.length} line items into BigQuery.`);
+        } else {
+            console.log('No line items found to insert.');
+        }
+
+        // 3. Creatives
+        console.log(`Fetching creatives for advertiser ${advertiserId}...`);
+        const creatives = await client.listAllCreatives(advertiserId);
+        const creativeRows = creatives.map(cr => ({
+            creativeId: cr.creativeId,
+            advertiserId: cr.advertiserId,
+            entityStatus: cr.entityStatus,
+            displayName: cr.displayName,
+            creativeType: cr.creativeType,
+            hostingSource: cr.hostingSource
+        }));
+        if (creativeRows.length > 0) {
+            await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows);
+            console.log(`Successfully inserted ${creativeRows.length} creatives into BigQuery.`);
+        } else {
+            console.log('No creatives found to insert.');
         }
 
     } catch (error) {

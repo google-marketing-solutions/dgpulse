@@ -8,7 +8,10 @@ const http = require('http');
 
 const KEY_PATH = './client_secret.json'; // Ensure this matches your filename
 const keys = JSON.parse(fs.readFileSync(KEY_PATH));
-const SCOPES = ['https://www.googleapis.com/auth/display-video'];
+const SCOPES = [
+  'https://www.googleapis.com/auth/display-video',
+  'https://www.googleapis.com/auth/doubleclickbidmanager'
+];
 
 // Use a fixed port for the local server
 const PORT = 3000;

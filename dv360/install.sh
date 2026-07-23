@@ -65,6 +65,7 @@ gcloud services enable \
   cloudscheduler.googleapis.com \
   storage.googleapis.com \
   displayvideo.googleapis.com \
+  doubleclickbidmanager.googleapis.com \
   bigquerydatatransfer.googleapis.com \
   eventarc.googleapis.com \
   eventarcpublishing.googleapis.com --project="${PROJECT_ID}"
@@ -102,6 +103,9 @@ fi
 echo "Uploading client_secret.json to GCS..."
 gsutil cp client_secret.json gs://${BUCKET_NAME}/client_secret.json
 
+echo "Setting up daily DBM performance report query..."
+BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node create_report.js
+
 # 4b. Create Pub/Sub Topic and BigQuery Dataset/Table
 TOPIC_NAME="dv360-dgpulse-advertiser-topic"
 echo "Creating Pub/Sub topic: ${TOPIC_NAME}..."
@@ -114,6 +118,18 @@ bq mk --dataset --location=${REGION} ${PROJECT_ID}:${DATASET_ID} || echo "Datase
 
 echo "Creating BigQuery table: ${DATASET_ID}.${TABLE_ID}..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID} campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING || echo "Table already exists."
+
+echo "Creating BigQuery table: ${DATASET_ID}.dbm_performance..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.dbm_performance \
+  Report_Day:DATE,Partner:STRING,Partner_Id:INTEGER,Advertiser:STRING,Advertiser_Id:INTEGER,Insertion_Order:STRING,Insertion_Order_Id:INTEGER,Creative_Id:INTEGER,Revenue:FLOAT,Impressions:INTEGER,Clicks:INTEGER,Total_Conversions:FLOAT || echo "Table dbm_performance already exists."
+
+echo "Creating BigQuery table: ${DATASET_ID}.line_items..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.line_items \
+  lineItemId:STRING,campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,lineItemType:STRING || echo "Table line_items already exists."
+
+echo "Creating BigQuery table: ${DATASET_ID}.creatives..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \
+  creativeId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,creativeType:STRING,hostingSource:STRING || echo "Table creatives already exists."
 
 echo "Creating BigQuery Data Transfer for DV360..."
 # This command will prompt the user for authorization if not already authorized.

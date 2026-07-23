@@ -83,3 +83,4 @@ exports.fetchAdvertisers = async (req, res) => {
 };
 
 exports.processAdvertiser = require('./process_advertiser').processAdvertiser;
+exports.setupDbmReport = require('./create_report').setupDbmReport;

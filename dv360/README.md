@@ -8,21 +8,19 @@ Before you begin, please ensure you meet the following requirements:
 
 1.  **Google Cloud Project:** You must have a Google Cloud Project with the necessary permissions to enable APIs, create BigQuery datasets/tables, create Cloud Storage buckets, deploy Cloud Functions, and set up BigQuery Data Transfers.
 
-2.  **Display & Video 360 Data Transfer v2 (DTv2) Enabled:** This solution relies on data from Display & Video 360 Data Transfer v2 files.
-    *   **Prerequisite:** Your organization *must* have access to DV360 DTv2 files. These files contain detailed event-level data and are delivered by the Display & Video 360 team to a specific Google Cloud Storage bucket.
-    *   **Obtaining Access:** The process to enable DV360 DTv2 and get access to the GCS bucket depends on your contract:
-        *   **If you have a direct contract with Display & Video 360:** Contact DV360 support to request the setup of DV360 DTv2 files.
-        *   **If you do not have a direct contract:** Contact your agency or reseller to arrange access to DV360 DTv2 files.
-    *   **Cost:** Be aware that additional charges might apply for using the DV360 Data Transfer service.
-    *   **GCS Bucket Name:** Upon successful setup, you will be provided with the name of the Google Cloud Storage bucket where your DTv2 files are delivered. This bucket name typically follows the pattern `dcdt_-dbm_partnerPARTNER_ID` or `dcdt_-dbm_advertiserADVERTISER_ID`. **You will need to provide this exact bucket name during the installation script.**
-
-    > **IMPORTANT:** For more details on DV360 Data Transfer prerequisites and how to get started, please review the official Google Cloud documentation: [BigQuery Data Transfer Service - Display & Video 360 Transfer - Before you begin](https://docs.cloud.google.com/bigquery/docs/display-video-transfer#before_you_begin)
+2.  **Enabled Google Cloud APIs:**
+    *   Display & Video 360 API (`displayvideo.googleapis.com`)
+    *   DoubleClick Bid Manager API (`doubleclickbidmanager.googleapis.com`)
 
 3.  **DV360 Partner ID:** You will need to provide the DV360 Partner ID you want to monitor during the installation.
 
-4.  **OAuth 2.0 Credentials:** While the long-term plan is to move to Service Account authentication, the current version requires a `client_secret.json` and a Refresh Token. Ensure you have these available.
+4.  **OAuth 2.0 Credentials & Scopes:**
+    *   `client_secret.json` and a Refresh Token are required.
+    *   Required Scopes:
+        *   `https://www.googleapis.com/auth/display-video`
+        *   `https://www.googleapis.com/auth/doubleclickbidmanager`
 
-By ensuring these requirements are met, the installation process will run smoothly and the solution will be able to access the necessary DV360 data.
+By ensuring these requirements are met, the installation process will run smoothly and the solution will be able to access the necessary DV360 data and scheduled DBM reports.
 
 
 ## Getting Started
@@ -32,66 +30,53 @@ Follow these steps to deploy and run the DV360 campaign extraction pipeline:
 1.  **Prepare Credentials**:
     If you don't have a `REFRESH_TOKEN`, `CLIENT_ID` and `CLIENT_SECRET` yet, follow these steps:
     *   Go to the **APIs & Services** -> **Credentials** tab in the Google Cloud Console.
-    *   Complete the **OAuth consent screen** if you haven't already.
+    *   Complete the **OAuth consent screen** if you haven't already. Ensure both Display & Video 360 API and DoubleClick Bid Manager API scopes are granted.
     *   Click **+ CREATE CREDENTIALS** -> **OAuth client ID**.
     *   Select **Web application** as the application type.
-    *   Add `http://localhost` to the **Authorized redirect URIs**.
+    *   Add `http://localhost:3000` to the **Authorized redirect URIs**.
     *   Click create, and then download the JSON from the credentials list.
-    *   Rename the downloaded file to `client_secret.json` and place it in the project root. e.g. use ```nano client_secret.json```, paste the content and save it by pressing ```Ctrl + X```, then ```Y```, then ```Enter```.
+    *   Rename the downloaded file to `client_secret.json` and place it in the project root.
     *   Run `npm install` to install the required dependencies.
     *   Run `node auth.js`. Visit the printed URL to authorize. The script will automatically capture the code on port 3000 and print your `refresh_token`.
 
 2.  **Run the Installation Script**:
-    Run the deployment script. It will interactively prompt you for the inputs below or read them from your environment variables:
+    Run the deployment script (`./install.sh`). It will interactively prompt you for the inputs below or read them from your environment variables:
     *   `PARTNER_ID`: Your DV360 partner ID.
     *   `CLIENT_ID`: Your OAuth 2.0 Client ID.
     *   `CLIENT_SECRET`: Your OAuth 2.0 Client Secret.
     *   `REFRESH_TOKEN`: Your OAuth 2.0 Refresh Token.
 
     The script will automatically handle:
-    *   Enabling necessary Google Cloud APIs.
+    *   Enabling necessary Google Cloud APIs (including DV360 and DBM APIs).
     *   Creating a Google Cloud Storage bucket and uploading credentials.
+    *   Executing `create_report.js` to create the daily DBM performance report query.
     *   Creating the required Pub/Sub topics.
-    *   Creating the BigQuery dataset and table.
-    *   Deploying both the fetch and process Cloud Run functions.
-    *   Setting up a Cloud Scheduler job to run the pipeline daily.
+    *   Creating BigQuery tables (`campaigns`, `line_items`, `creatives`, `dbm_performance`).
+    *   Deploying fetch and process Cloud Functions with exponential backoff for rate limits.
+    *   Setting up Cloud Scheduler jobs for daily extraction and materialization.
 
 ## Project Structure
 
-The project consists of the following JavaScript files:
-
 ### 1. `auth.js`
-*   **Role**: Setup & Authentication Helper (optional)
-*   **Description**: A local CLI script used to generate initial OAuth2 refresh tokens for DV360 authentication. Run this locally to authorize the app and get credentials for deployment.
+*   **Role**: Setup & Authentication Helper
+*   **Description**: A local CLI script used to generate initial OAuth2 refresh tokens for DV360 and DBM API authentication.
 
 ### 2. `dv360.js`
 *   **Role**: API Client Wrapper
-*   **Description**: A utility client class to handle interaction with the DV360 API. It manages OAuth2 credentials and provides helper methods for paginated listing of advertisers and campaigns.
+*   **Description**: Handles interaction with the DV360 API and DBM API v2 with automatic rate limiting retries (exponential backoff). Provides helper methods for paginated listing of advertisers, campaigns, line items, creatives, and DBM reporting queries.
 
-### 3. `index.js`
+### 3. `create_report.js`
+*   **Role**: DBM Report Automation
+*   **Description**: Automates creation of a daily scheduled DBM performance query (`TYPE_GENERAL`, grouped by Date, Partner, Advertiser, Media Plan, Creative ID) and triggers initial report execution.
+
+### 4. `index.js`
 *   **Role**: Entry Point & Publisher
-*   **Description**: The entry point for the DV360 data fetch process. It fetches all advertiser IDs for a partner and publishes them to a Pub/Sub topic for parallel processing. It also exposes the `processAdvertiser` function.
+*   **Description**: Entry point for the DV360 data fetch process. Fetches all advertiser IDs for a partner and publishes them to Pub/Sub for parallel processing. Exposes `processAdvertiser` and `setupDbmReport`.
 
-### 4. `process_advertiser.js`
+### 5. `process_advertiser.js`
 *   **Role**: Background Worker
-*   **Description**: Handles the processing of individual DV360 advertisers. It is triggered by Pub/Sub messages containing an `advertiserId`, fetches all campaigns for that advertiser, and inserts them into BigQuery.
+*   **Description**: Handles processing of individual DV360 advertisers triggered by Pub/Sub messages. Fetches campaigns, line items, and creatives for each advertiser and writes them into BigQuery.
 
-
-## Architecture
-
-```mermaid
-graph TD
-    subgraph Google Cloud Platform
-        Scheduler[Cloud Scheduler] -->|Daily Trigger| Publisher[Cloud Run: Publisher <br/> index.js]
-        Publisher -->|Publish Advertiser ID| PubSub[Cloud Pub/Sub]
-        PubSub -->|Trigger| Worker[Cloud Run: Worker <br/> process_advertiser.js]
-        Worker -->|Insert Data| BigQuery[(BigQuery)]
-    end
-
-    subgraph External APIs
-        DV360[DV360 API]
-    end
-
-    Publisher -->|Fetch Advertisers| DV360
-    Worker -->|Fetch Campaigns| DV360
-```
+### 6. `materialize_campaigns.sql` & `materialize_assets.sql`
+*   **Role**: SQL Transformation & Materialization
+*   **Description**: Joins BigQuery metadata tables with `dbm_performance` report metrics to produce `final_campaign_performance` and `final_assets_performance` datasets for Looker Studio dashboards.
