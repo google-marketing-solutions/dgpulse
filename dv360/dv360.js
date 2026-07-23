@@ -11,17 +11,18 @@ class DV360Client {
    * @param {string} refreshToken
    */
   constructor(clientId, clientSecret, refreshToken) {
-    // Determine if clientId is an object (keys.installed) or individual strings
-    let cid, csec;
+    let cid, csec, redirectUri;
     if (typeof clientId === 'object' && clientId !== null) {
       cid = clientId.client_id;
       csec = clientId.client_secret;
+      redirectUri = (clientId.redirect_uris && clientId.redirect_uris[0]) || 'http://localhost:3000';
     } else {
       cid = clientId;
       csec = clientSecret;
+      redirectUri = 'http://localhost:3000';
     }
 
-    this.oauth2Client = new google.auth.OAuth2(cid, csec, 'http://localhost');
+    this.oauth2Client = new google.auth.OAuth2(cid, csec, redirectUri);
 
     this.oauth2Client.setCredentials({
       refresh_token: refreshToken
@@ -243,7 +244,7 @@ class DV360Client {
         format: 'CSV'
       },
       params: {
-        type: 'TYPE_GENERAL',
+        type: 'STANDARD',
         groupBys: [
           'FILTER_DATE',
           'FILTER_PARTNER',

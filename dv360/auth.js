@@ -24,6 +24,7 @@ const oauth2Client = new google.auth.OAuth2(
 
 const authUrl = oauth2Client.generateAuthUrl({
   access_type: 'offline', // Critical to get a refresh_token
+  prompt: 'consent', // Added to force consent screen
   scope: SCOPES,
 });
 

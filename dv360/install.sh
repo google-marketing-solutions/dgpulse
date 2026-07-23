@@ -99,6 +99,9 @@ fi
 echo "Uploading client_secret.json to GCS..."
 gsutil cp client_secret.json gs://${BUCKET_NAME}/client_secret.json
 
+echo "Installing Node.js dependencies..."
+npm install
+
 echo "Setting up daily DBM performance report query..."
 BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node create_report.js
 
