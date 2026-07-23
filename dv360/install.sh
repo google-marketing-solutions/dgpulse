@@ -13,10 +13,6 @@ if [ -z "$PARTNER_ID" ]; then
   read -p "Enter Partner ID: " PARTNER_ID
 fi
 
-# 2. Ask for user inputs (or use env vars if provided)
-if [ -z "$DV360_DTV2_BUCKET" ]; then
-  read -p "Enter DV360 DTV2 Bucket Name: " DV360_DTV2_BUCKET
-fi
 
 
 # Auto-detect client_id and client_secret from client_secret.json if present
@@ -131,13 +127,6 @@ echo "Creating BigQuery table: ${DATASET_ID}.creatives..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \
   creativeId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,creativeType:STRING,hostingSource:STRING || echo "Table creatives already exists."
 
-echo "Creating BigQuery Data Transfer for DV360..."
-# This command will prompt the user for authorization if not already authorized.
-bq mk --transfer_config \
-    --target_dataset="${DATASET_ID}" \
-    --display_name="DV360 Pulse Data Transfer" \
-    --data_source=displayvideo \
-    --params='{"bucket":"'"${DV360_DTV2_BUCKET}"'","displayvideo_id":"'"${PARTNER_ID}"'"}'
 
 # 5. Deploy as a Cloud Run Function
 echo "Deploying Cloud Function: dv360-dgpulse..."
