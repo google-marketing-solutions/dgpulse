@@ -237,6 +237,9 @@ class DV360Client {
       console.warn('Unable to list existing DBM queries, proceeding to create new query:', e.message);
     }
 
+    // DBM API v2 requires explicit startDate and endDate for recurring 'DAILY' queries.
+    // Setting endDate to Dec 31st, 5 years into the future creates a perpetual schedule
+    // so the data sync runs continuously without expiring or requiring manual renewal.
     const now = new Date();
     const startDate = {
       year: now.getUTCFullYear(),
