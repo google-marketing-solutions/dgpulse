@@ -1,6 +1,7 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_assets_performance` AS
 WITH creative_stats AS (
   SELECT 
+    COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Creative_Id AS STRING) AS creative_id,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     CAST(Partner_Id AS STRING) AS partner_id,
@@ -10,9 +11,10 @@ WITH creative_stats AS (
     SUM(Total_Conversions) AS conversions
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   WHERE Creative_Id IS NOT NULL AND Creative_Id > 0
-  GROUP BY 1, 2, 3
+  GROUP BY 1, 2, 3, 4
 )
 SELECT 
+  COALESCE(cs.date, CURRENT_DATE()) AS date,
   c.creativeId AS asset_id,
   c.displayName AS asset_name,
   c.creativeType AS asset_type,

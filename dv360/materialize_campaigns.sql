@@ -1,6 +1,7 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_campaign_performance` AS
 WITH aggregated_stats AS (
   SELECT 
+    COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Partner_Id AS STRING) AS partner_id,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     SUM(Impressions) AS impressions,
@@ -8,7 +9,7 @@ WITH aggregated_stats AS (
     SUM(Revenue) AS cost,
     SUM(Total_Conversions) AS conversions
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
-  GROUP BY 1, 2
+  GROUP BY 1, 2, 3
 ),
 line_item_counts AS (
   SELECT 
@@ -19,6 +20,7 @@ line_item_counts AS (
   GROUP BY campaignId
 )
 SELECT 
+  COALESCE(stats.date, CURRENT_DATE()) AS date,
   meta.campaignId AS campaign_id,
   meta.displayName AS campaign_name,
   meta.entityStatus AS entity_status,

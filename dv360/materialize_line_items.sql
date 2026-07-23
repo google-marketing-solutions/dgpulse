@@ -1,6 +1,7 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_line_items_performance` AS
 WITH li_stats AS (
   SELECT 
+    COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     CAST(Partner_Id AS STRING) AS partner_id,
     SUM(Impressions) AS impressions,
@@ -8,9 +9,10 @@ WITH li_stats AS (
     SUM(Revenue) AS cost,
     SUM(Total_Conversions) AS conversions
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
-  GROUP BY 1, 2
+  GROUP BY 1, 2, 3
 )
 SELECT 
+  COALESCE(s.date, CURRENT_DATE()) AS date,
   li.lineItemId AS line_item_id,
   li.displayName AS line_item_name,
   li.lineItemType AS line_item_type,
