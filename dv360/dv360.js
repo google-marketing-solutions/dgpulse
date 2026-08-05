@@ -266,13 +266,19 @@ class DV360Client {
           'FILTER_ADVERTISER',
           'FILTER_ADVERTISER_CURRENCY',
           'FILTER_MEDIA_PLAN',
-          'FILTER_CREATIVE_ID'
+          'FILTER_INSERTION_ORDER',
+          'FILTER_CREATIVE_ID',
+          'FILTER_DEVICE_TYPE',
+          'FILTER_INVENTORY_SOURCE_NAME'
         ],
         metrics: [
           'METRIC_IMPRESSIONS',
           'METRIC_CLICKS',
           'METRIC_MEDIA_COST_ADVERTISER',
-          'METRIC_TOTAL_CONVERSIONS'
+          'METRIC_TOTAL_CONVERSIONS',
+          'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
+          'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
+          'METRIC_TRUEVIEW_VIEWS'
         ],
         filters: [
           { type: 'FILTER_PARTNER', value: String(partnerId) }
