@@ -22,6 +22,25 @@ line_item_counts AS (
     IF(LOGICAL_OR(lineItemType LIKE '%DEMAND_GEN%'), 'YES', 'NO') AS has_demand_gen_line_item
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   GROUP BY campaignId
+),
+latest_settings AS (
+  SELECT 
+    advertiserId,
+    ANY_VALUE(displayName) AS advertiser_name,
+    ANY_VALUE(has_crm_audience) AS has_crm_audience,
+    ANY_VALUE(has_ga_audience) AS has_ga_audience,
+    ANY_VALUE(floodlight_optimization_enabled) AS floodlight_optimization_enabled,
+    ANY_VALUE(auto_tagging_enabled) AS auto_tagging_enabled,
+    ANY_VALUE(ec_enabled) AS ec_enabled
+  FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
+  GROUP BY advertiserId
+),
+latest_advertisers AS (
+  SELECT 
+    advertiserId,
+    ANY_VALUE(displayName) AS displayName
+  FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
+  GROUP BY advertiserId
 )
 SELECT 
   COALESCE(stats.date, CURRENT_DATE()) AS date,
@@ -30,14 +49,15 @@ SELECT
   meta.entityStatus AS entity_status,
   meta.advertiserId AS advertiser_id,
   meta.advertiserId AS account_id,
-  meta.advertiserId AS account_name,
+  COALESCE(sett.advertiser_name, adv.displayName, meta.advertiserId) AS account_name,
   COALESCE(lic.is_limited_by_budget, 'NO') AS is_limited_by_budget,
   COALESCE(lic.line_item_count, 0) AS line_item_count,
   COALESCE(lic.has_demand_gen_line_item, 'NO') AS has_demand_gen_line_item,
-  'NO' AS data_manager_crm_connected,
-  'NO' AS data_manager_ga_connected,
+  COALESCE(sett.has_crm_audience, 'NO') AS data_manager_crm_connected,
+  COALESCE(sett.has_ga_audience, 'NO') AS data_manager_ga_connected,
   CASE 
     WHEN COALESCE(lic.has_demand_gen_line_item, 'NO') = 'NO' THEN 'N/A'
+    WHEN COALESCE(sett.has_crm_audience, 'NO') = 'YES' OR COALESCE(sett.has_ga_audience, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS data_strength_status,
   COALESCE(stats.partner_id, '__PARTNER_ID__') AS partner_id,
@@ -57,4 +77,8 @@ FROM `__PROJECT_ID__.__DATASET_ID__.campaigns` meta
 LEFT JOIN aggregated_stats stats
   ON meta.advertiserId = stats.advertiser_id
 LEFT JOIN line_item_counts lic
-  ON meta.campaignId = lic.campaignId;
+  ON meta.campaignId = lic.campaignId
+LEFT JOIN latest_settings sett
+  ON meta.advertiserId = sett.advertiserId
+LEFT JOIN latest_advertisers adv
+  ON meta.advertiserId = adv.advertiserId;

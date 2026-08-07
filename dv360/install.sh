@@ -115,6 +115,14 @@ TABLE_ID="campaigns"
 echo "Creating BigQuery dataset: ${DATASET_ID}..."
 bq mk --dataset --location=${REGION} ${PROJECT_ID}:${DATASET_ID} || echo "Dataset already exists."
 
+echo "Creating BigQuery table: ${DATASET_ID}.advertisers..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.advertisers \
+  advertiserId:STRING,displayName:STRING,entityStatus:STRING,partnerId:STRING,cmFloodlightConfigId:STRING,cmFloodlightLinkingAuthorized:BOOLEAN || echo "Table advertisers already exists."
+
+echo "Creating BigQuery table: ${DATASET_ID}.advertiser_settings..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.advertiser_settings \
+  advertiserId:STRING,displayName:STRING,partnerId:STRING,has_crm_audience:STRING,has_ga_audience:STRING,floodlight_optimization_enabled:STRING,auto_tagging_enabled:STRING,ec_enabled:STRING || echo "Table advertiser_settings already exists."
+
 echo "Creating BigQuery table: ${DATASET_ID}.${TABLE_ID}..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID} campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING || echo "Table already exists."
 

@@ -213,6 +213,78 @@ class DV360Client {
   }
 
   /**
+   * Fetches full details for a specific advertiser.
+   * @param {string} advertiserId
+   * @returns {Promise<Object>} Advertiser object
+   */
+  async getAdvertiser(advertiserId) {
+    const response = await this.executeWithBackoff(() =>
+      this.dv360.advertisers.get({ advertiserId: advertiserId })
+    );
+    return response.data;
+  }
+
+  /**
+   * Fetches all 1st and 3rd party audience lists for a given advertiser.
+   * Used to check for active CRM / 1PD and Google Analytics linked audiences.
+   * @param {string} advertiserId
+   * @returns {Promise<Object[]>}
+   */
+  async getFirstAndThirdPartyAudiences(advertiserId) {
+    let audiences = [];
+    let nextPageToken = null;
+    try {
+      do {
+        const response = await this.executeWithBackoff(() =>
+          this.dv360.firstAndThirdPartyAudiences.list({
+            advertiserId: advertiserId,
+            pageToken: nextPageToken,
+            pageSize: 100
+          })
+        );
+        if (response.data.firstAndThirdPartyAudiences) {
+          audiences = audiences.concat(response.data.firstAndThirdPartyAudiences);
+        }
+        nextPageToken = response.data.nextPageToken;
+      } while (nextPageToken);
+    } catch (e) {
+      console.warn(`Warning fetching audiences for advertiser ${advertiserId}:`, e.message);
+    }
+    return audiences;
+  }
+
+  /**
+   * Fetches all Floodlight activities under a Floodlight group.
+   * Used to check for Enhanced Conversions and web tag implementations.
+   * @param {string} floodlightGroupId
+   * @param {string} partnerId
+   * @returns {Promise<Object[]>}
+   */
+  async getFloodlightActivities(floodlightGroupId, partnerId) {
+    let activities = [];
+    let nextPageToken = null;
+    try {
+      do {
+        const response = await this.executeWithBackoff(() =>
+          this.dv360.floodlightGroups.floodlightActivities.list({
+            floodlightGroupId: floodlightGroupId,
+            partnerId: partnerId,
+            pageToken: nextPageToken,
+            pageSize: 100
+          })
+        );
+        if (response.data.floodlightActivities) {
+          activities = activities.concat(response.data.floodlightActivities);
+        }
+        nextPageToken = response.data.nextPageToken;
+      } while (nextPageToken);
+    } catch (e) {
+      console.warn(`Warning fetching floodlight activities for group ${floodlightGroupId}:`, e.message);
+    }
+    return activities;
+  }
+
+  /**
    * Creates or retrieves an existing daily DBM report query for a partner.
    * @param {string} partnerId
    * @returns {Promise<{queryId: string, isNew: boolean}>}

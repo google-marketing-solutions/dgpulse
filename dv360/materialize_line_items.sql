@@ -17,6 +17,25 @@ WITH li_stats AS (
     SUM(COALESCE(TrueView_Views, 0)) AS trueview_views
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   GROUP BY 1, 2, 3
+),
+latest_settings AS (
+  SELECT 
+    advertiserId,
+    ANY_VALUE(displayName) AS advertiser_name,
+    ANY_VALUE(has_crm_audience) AS has_crm_audience,
+    ANY_VALUE(has_ga_audience) AS has_ga_audience,
+    ANY_VALUE(floodlight_optimization_enabled) AS floodlight_optimization_enabled,
+    ANY_VALUE(auto_tagging_enabled) AS auto_tagging_enabled,
+    ANY_VALUE(ec_enabled) AS ec_enabled
+  FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
+  GROUP BY advertiserId
+),
+latest_advertisers AS (
+  SELECT 
+    advertiserId,
+    ANY_VALUE(displayName) AS displayName
+  FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
+  GROUP BY advertiserId
 )
 SELECT 
   COALESCE(s.date, CURRENT_DATE()) AS date,
@@ -24,17 +43,19 @@ SELECT
   li.displayName AS line_item_name,
   li.lineItemType AS line_item_type,
   IF(li.lineItemType LIKE '%DEMAND_GEN%', 'YES', 'NO') AS is_demand_gen,
-  'NO' AS data_manager_crm_connected,
-  'NO' AS data_manager_ga_connected,
+  COALESCE(sett.has_crm_audience, 'NO') AS data_manager_crm_connected,
+  COALESCE(sett.has_ga_audience, 'NO') AS data_manager_ga_connected,
   CASE 
     WHEN li.lineItemType NOT LIKE '%DEMAND_GEN%' THEN 'N/A'
+    WHEN COALESCE(sett.has_crm_audience, 'NO') = 'YES' OR COALESCE(sett.has_ga_audience, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS data_strength_status,
-  'NO' AS ec_enabled,
-  'NO' AS floodlight_optimization_enabled,
-  'NO' AS auto_tagging_enabled,
+  COALESCE(sett.ec_enabled, 'NO') AS ec_enabled,
+  COALESCE(sett.floodlight_optimization_enabled, 'NO') AS floodlight_optimization_enabled,
+  COALESCE(sett.auto_tagging_enabled, 'NO') AS auto_tagging_enabled,
   CASE 
     WHEN li.lineItemType NOT LIKE '%DEMAND_GEN%' THEN 'N/A'
+    WHEN COALESCE(sett.ec_enabled, 'NO') = 'YES' AND COALESCE(sett.floodlight_optimization_enabled, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS activation_data_strength_status,
   li.entityStatus AS entity_status,
@@ -47,7 +68,7 @@ SELECT
   c.displayName AS campaign_name,
   li.advertiserId AS advertiser_id,
   li.advertiserId AS account_id,
-  li.advertiserId AS account_name,
+  COALESCE(sett.advertiser_name, adv.displayName, li.advertiserId) AS account_name,
   COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
   COALESCE(s.impressions, 0) AS impressions,
   COALESCE(s.clicks, 0) AS clicks,
@@ -65,4 +86,8 @@ FROM `__PROJECT_ID__.__DATASET_ID__.line_items` li
 LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.campaigns` c
   ON li.campaignId = c.campaignId
 LEFT JOIN li_stats s
-  ON li.advertiserId = s.advertiser_id;
+  ON li.advertiserId = s.advertiser_id
+LEFT JOIN latest_settings sett
+  ON li.advertiserId = sett.advertiserId
+LEFT JOIN latest_advertisers adv
+  ON li.advertiserId = adv.advertiserId;

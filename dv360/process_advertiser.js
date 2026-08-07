@@ -111,6 +111,65 @@ exports.processAdvertiser = async (event, context) => {
             console.log('No creatives found to insert.');
         }
 
+        // 4. Advertiser Details, Data Manager Audiences & Floodlight Configuration
+        console.log(`Fetching advertiser settings & audiences for ${advertiserId}...`);
+        let advDetails = null;
+        try {
+            advDetails = await client.getAdvertiser(advertiserId);
+        } catch (e) {
+            console.warn(`Could not get advertiser details for ${advertiserId}:`, e.message);
+        }
+
+        const audiences = await client.getFirstAndThirdPartyAudiences(advertiserId);
+        const hasCrmAudience = audiences.some(aud => 
+            aud.audienceType === 'CUSTOMER_MATCH_CONTACT_INFO' ||
+            aud.audienceType === 'CUSTOMER_MATCH_DEVICE_ID' ||
+            aud.audienceType === 'CUSTOMER_MATCH_USER_ID' ||
+            aud.audienceSource === 'AUDIENCE_SOURCE_CUSTOMER_MATCH' ||
+            aud.audienceSource === 'AUDIENCE_SOURCE_THIRD_PARTY'
+        );
+        const hasGaAudience = audiences.some(aud => 
+            aud.audienceSource === 'AUDIENCE_SOURCE_GOOGLE_ANALYTICS' ||
+            (aud.displayName && aud.displayName.toLowerCase().includes('google analytics')) ||
+            (aud.displayName && aud.displayName.toLowerCase().includes('ga4'))
+        );
+
+        let floodlightOptEnabled = false;
+        let cmFloodlightConfigId = null;
+        if (advDetails && advDetails.adServerConfig && advDetails.adServerConfig.cmHybridConfig) {
+            cmFloodlightConfigId = advDetails.adServerConfig.cmHybridConfig.cmFloodlightConfigId;
+            floodlightOptEnabled = Boolean(advDetails.adServerConfig.cmHybridConfig.cmFloodlightLinkingAuthorized);
+        }
+
+        let ecEnabled = false;
+        if (cmFloodlightConfigId) {
+            const partnerId = (data && data.partnerId) || (advDetails && advDetails.partnerId);
+            const activities = await client.getFloodlightActivities(cmFloodlightConfigId, partnerId);
+            ecEnabled = activities.some(act => 
+                act.servingStatus === 'ENTITY_STATUS_ACTIVE' || 
+                act.servingStatus === 'ENABLED' ||
+                (act.floodlightActivityConfig && act.floodlightActivityConfig.enhancedConversionsEnabled)
+            );
+        }
+
+        const settingsRow = {
+            advertiserId: String(advertiserId),
+            displayName: (advDetails && advDetails.displayName) || String(advertiserId),
+            partnerId: (advDetails && advDetails.partnerId) || String(data.partnerId || ''),
+            has_crm_audience: hasCrmAudience ? 'YES' : 'NO',
+            has_ga_audience: hasGaAudience ? 'YES' : 'NO',
+            floodlight_optimization_enabled: floodlightOptEnabled ? 'YES' : 'NO',
+            auto_tagging_enabled: 'YES',
+            ec_enabled: ecEnabled ? 'YES' : 'NO'
+        };
+
+        try {
+            await bigquery.dataset(DATASET_ID).table('advertiser_settings').insert([settingsRow]);
+            console.log(`Successfully inserted advertiser_settings for ${advertiserId} into BigQuery.`);
+        } catch (settErr) {
+            console.warn(`Warning inserting advertiser_settings into BigQuery for ${advertiserId}:`, settErr.message);
+        }
+
     } catch (error) {
         console.error(`Error processing advertiser ${advertiserId}:`, error.message);
     }

@@ -4,11 +4,13 @@
  * Also exposes the 'processAdvertiser' function by re-exporting it.
  */
 const { Storage } = require('@google-cloud/storage');
+const { BigQuery } = require('@google-cloud/bigquery');
 const DV360Client = require('./dv360');
 const { PubSub } = require('@google-cloud/pubsub');
 
 const storage = new Storage();
 const pubsub = new PubSub();
+const bigquery = new BigQuery();
 
 // Configuration from environment variables
 const TOPIC_NAME = process.env.TOPIC_NAME || 'dv360-advertiser-topic';
@@ -16,6 +18,7 @@ const BUCKET_NAME = process.env.BUCKET_NAME;
 const CLIENT_SECRET_FILE = process.env.CLIENT_SECRET_FILE || 'client_secret.json';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
 const PARTNER_ID = process.env.PARTNER_ID;
+const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
 
 let dv360Client = null;
 
@@ -58,11 +61,29 @@ exports.fetchAdvertisers = async (req, res) => {
     try {
         const client = await initializeClient();
         console.log(`Fetching advertisers for partner ${partnerId}...`);
-        const advertiserIds = await client.listAllAdvertiserIds(partnerId);
+        const advertisers = await client.listAllAdvertisers(partnerId);
 
-        console.log(`Publishing ${advertiserIds.length} advertisers to Pub/Sub topic ${TOPIC_NAME}...`);
-        for (const id of advertiserIds) {
-            const data = JSON.stringify({ advertiserId: id });
+        const advertiserRows = advertisers.map(adv => ({
+            advertiserId: adv.advertiserId,
+            displayName: adv.displayName || '',
+            entityStatus: adv.entityStatus || '',
+            partnerId: adv.partnerId || String(partnerId),
+            cmFloodlightConfigId: (adv.adServerConfig && adv.adServerConfig.cmHybridConfig && adv.adServerConfig.cmHybridConfig.cmFloodlightConfigId) || '',
+            cmFloodlightLinkingAuthorized: Boolean(adv.adServerConfig && adv.adServerConfig.cmHybridConfig && adv.adServerConfig.cmHybridConfig.cmFloodlightLinkingAuthorized)
+        }));
+
+        if (advertiserRows.length > 0) {
+            try {
+                await bigquery.dataset(DATASET_ID).table('advertisers').insert(advertiserRows);
+                console.log(`Successfully inserted ${advertiserRows.length} advertisers into BigQuery.`);
+            } catch (bqErr) {
+                console.warn('Warning inserting advertisers into BigQuery:', bqErr.message);
+            }
+        }
+
+        console.log(`Publishing ${advertisers.length} advertisers to Pub/Sub topic ${TOPIC_NAME}...`);
+        for (const adv of advertisers) {
+            const data = JSON.stringify({ advertiserId: adv.advertiserId, partnerId });
             const dataBuffer = Buffer.from(data);
             await pubsub.topic(TOPIC_NAME).publishMessage({ data: dataBuffer });
         }
@@ -70,8 +91,8 @@ exports.fetchAdvertisers = async (req, res) => {
         res.json({
             success: true,
             partnerId,
-            count: advertiserIds.length,
-            message: `Triggered processing for ${advertiserIds.length} advertisers.`
+            count: advertisers.length,
+            message: `Triggered processing for ${advertisers.length} advertisers.`
         });
     } catch (error) {
         console.error('Error:', error.message);
