@@ -23,6 +23,13 @@ SELECT
   li.lineItemId AS line_item_id,
   li.displayName AS line_item_name,
   li.lineItemType AS line_item_type,
+  IF(li.lineItemType LIKE '%DEMAND_GEN%', 'YES', 'NO') AS is_demand_gen,
+  'NO' AS data_manager_crm_connected,
+  'NO' AS data_manager_ga_connected,
+  CASE 
+    WHEN li.lineItemType NOT LIKE '%DEMAND_GEN%' THEN 'N/A'
+    ELSE 'NEEDS_ACTION'
+  END AS data_strength_status,
   li.entityStatus AS entity_status,
   IF(li.entityStatus = 'ENTITY_STATUS_PAUSED', 'YES', 'NO') AS is_limited_by_budget,
   s.insertion_order_id,

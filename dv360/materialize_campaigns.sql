@@ -18,7 +18,8 @@ line_item_counts AS (
   SELECT 
     campaignId,
     COUNT(lineItemId) AS line_item_count,
-    IF(LOGICAL_OR(entityStatus = 'ENTITY_STATUS_PAUSED'), 'YES', 'NO') AS is_limited_by_budget
+    IF(LOGICAL_OR(entityStatus = 'ENTITY_STATUS_PAUSED'), 'YES', 'NO') AS is_limited_by_budget,
+    IF(LOGICAL_OR(lineItemType LIKE '%DEMAND_GEN%'), 'YES', 'NO') AS has_demand_gen_line_item
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   GROUP BY campaignId
 )
@@ -32,6 +33,13 @@ SELECT
   meta.advertiserId AS account_name,
   COALESCE(lic.is_limited_by_budget, 'NO') AS is_limited_by_budget,
   COALESCE(lic.line_item_count, 0) AS line_item_count,
+  COALESCE(lic.has_demand_gen_line_item, 'NO') AS has_demand_gen_line_item,
+  'NO' AS data_manager_crm_connected,
+  'NO' AS data_manager_ga_connected,
+  CASE 
+    WHEN COALESCE(lic.has_demand_gen_line_item, 'NO') = 'NO' THEN 'N/A'
+    ELSE 'NEEDS_ACTION'
+  END AS data_strength_status,
   COALESCE(stats.partner_id, '__PARTNER_ID__') AS partner_id,
   COALESCE(stats.impressions, 0) AS impressions,
   COALESCE(stats.clicks, 0) AS clicks,
