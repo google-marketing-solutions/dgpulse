@@ -30,6 +30,13 @@ SELECT
     WHEN li.lineItemType NOT LIKE '%DEMAND_GEN%' THEN 'N/A'
     ELSE 'NEEDS_ACTION'
   END AS data_strength_status,
+  'NO' AS ec_enabled,
+  'NO' AS floodlight_optimization_enabled,
+  'NO' AS auto_tagging_enabled,
+  CASE 
+    WHEN li.lineItemType NOT LIKE '%DEMAND_GEN%' THEN 'N/A'
+    ELSE 'NEEDS_ACTION'
+  END AS activation_data_strength_status,
   li.entityStatus AS entity_status,
   IF(li.entityStatus = 'ENTITY_STATUS_PAUSED', 'YES', 'NO') AS is_limited_by_budget,
   s.insertion_order_id,
