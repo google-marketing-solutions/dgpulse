@@ -128,7 +128,7 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID} campaignId:STRING,advertis
 
 echo "Creating BigQuery table: ${DATASET_ID}.dbm_performance..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.dbm_performance \
-  Report_Day:DATE,Partner:STRING,Partner_Id:INTEGER,Advertiser:STRING,Advertiser_Id:INTEGER,Advertiser_Currency:STRING,Media_Plan:STRING,Media_Plan_Id:INTEGER,Insertion_Order:STRING,Insertion_Order_Id:INTEGER,Creative_Id:INTEGER,Device_Type:STRING,Inventory_Source:STRING,Revenue:FLOAT,Impressions:INTEGER,Clicks:INTEGER,Total_Conversions:FLOAT,Active_View_Viewable_Impressions:INTEGER,Active_View_Measurable_Impressions:INTEGER,TrueView_Views:INTEGER || echo "Table dbm_performance already exists."
+  Report_Day:DATE,Partner:STRING,Partner_Id:INTEGER,Advertiser:STRING,Advertiser_Id:INTEGER,Advertiser_Currency:STRING,Media_Plan:STRING,Media_Plan_Id:INTEGER,Insertion_Order:STRING,Insertion_Order_Id:INTEGER,Creative_Id:INTEGER,Device_Type:STRING,Inventory_Source:STRING,Revenue:FLOAT,Impressions:INTEGER,Clicks:INTEGER,Total_Conversions:FLOAT,Active_View_Viewable_Impressions:INTEGER,Active_View_Measurable_Impressions:INTEGER,Active_View_Eligible_Impressions:INTEGER,TrueView_Views:INTEGER,Video_Plays:INTEGER,Video_First_Quartile_Completes:INTEGER,Video_Midpoints:INTEGER,Video_Third_Quartile_Completes:INTEGER,Video_Completions:INTEGER,Video_Completion_Rate:FLOAT,Post_Click_Conversions:FLOAT,Post_View_Conversions:FLOAT,CM_Post_Click_Revenue:FLOAT,CM_Post_View_Revenue:FLOAT,Percentage_From_Current_IO_Goal:FLOAT,TrueView_Lost_IS_Budget:FLOAT,TrueView_Lost_IS_Rank:FLOAT || echo "Table dbm_performance already exists."
 
 echo "Creating BigQuery table: ${DATASET_ID}.insertion_orders..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.insertion_orders \

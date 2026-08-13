@@ -15,7 +15,20 @@ WITH li_stats AS (
     SUM(Total_Conversions) AS conversions,
     SUM(COALESCE(Active_View_Viewable_Impressions, 0)) AS active_view_viewable_impressions,
     SUM(COALESCE(Active_View_Measurable_Impressions, 0)) AS active_view_measurable_impressions,
-    SUM(COALESCE(TrueView_Views, 0)) AS trueview_views
+    SUM(COALESCE(Active_View_Eligible_Impressions, 0)) AS active_view_eligible_impressions,
+    SUM(COALESCE(TrueView_Views, 0)) AS trueview_views,
+    SUM(COALESCE(Video_Plays, 0)) AS video_plays,
+    SUM(COALESCE(Video_First_Quartile_Completes, 0)) AS video_first_quartile_completes,
+    SUM(COALESCE(Video_Midpoints, 0)) AS video_midpoints,
+    SUM(COALESCE(Video_Third_Quartile_Completes, 0)) AS video_third_quartile_completes,
+    SUM(COALESCE(Video_Completions, 0)) AS video_completions,
+    SUM(COALESCE(Post_Click_Conversions, 0)) AS post_click_conversions,
+    SUM(COALESCE(Post_View_Conversions, 0)) AS post_view_conversions,
+    SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
+    SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue,
+    AVG(Percentage_From_Current_IO_Goal) AS io_goal_pacing_pct,
+    AVG(TrueView_Lost_IS_Budget) AS lost_is_budget,
+    AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   GROUP BY 1, 2, 3
 ),
@@ -87,18 +100,44 @@ SELECT
   COALESCE(sett.advertiser_name, adv.displayName, li.advertiserId) AS account_name,
   COALESCE(s.currency_code, 'USD') AS currency_code,
   COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
+
+  -- Delivery & Cost
   COALESCE(s.impressions, 0) AS impressions,
   COALESCE(s.clicks, 0) AS clicks,
   COALESCE(s.cost, 0) AS cost,
-  COALESCE(s.conversions, 0) AS conversions,
-  COALESCE(s.active_view_viewable_impressions, 0) AS active_view_viewable_impressions,
-  COALESCE(s.active_view_measurable_impressions, 0) AS active_view_measurable_impressions,
-  SAFE_DIVIDE(COALESCE(s.active_view_viewable_impressions, 0), NULLIF(COALESCE(s.active_view_measurable_impressions, 0), 0)) AS viewability_rate,
-  COALESCE(s.trueview_views, 0) AS trueview_views,
-  SAFE_DIVIDE(COALESCE(s.trueview_views, 0), NULLIF(COALESCE(s.impressions, 0), 0)) AS vtr,
   SAFE_DIVIDE(COALESCE(s.clicks, 0), NULLIF(COALESCE(s.impressions, 0), 0)) AS ctr,
   SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS cpc,
-  SAFE_DIVIDE(COALESCE(s.cost, 0) * 1000, NULLIF(COALESCE(s.impressions, 0), 0)) AS cpm
+  SAFE_DIVIDE(COALESCE(s.cost, 0) * 1000, NULLIF(COALESCE(s.impressions, 0), 0)) AS cpm,
+
+  -- Media Quality & Viewability
+  COALESCE(s.active_view_viewable_impressions, 0) AS active_view_viewable_impressions,
+  COALESCE(s.active_view_measurable_impressions, 0) AS active_view_measurable_impressions,
+  COALESCE(s.active_view_eligible_impressions, 0) AS active_view_eligible_impressions,
+  SAFE_DIVIDE(COALESCE(s.active_view_viewable_impressions, 0), NULLIF(COALESCE(s.active_view_measurable_impressions, 0), 0)) AS viewability_rate,
+  SAFE_DIVIDE(COALESCE(s.active_view_measurable_impressions, 0), NULLIF(COALESCE(s.active_view_eligible_impressions, 0), 0)) AS measurable_rate,
+
+  -- Video & YouTube Delivery
+  COALESCE(s.trueview_views, 0) AS trueview_views,
+  SAFE_DIVIDE(COALESCE(s.trueview_views, 0), NULLIF(COALESCE(s.impressions, 0), 0)) AS vtr,
+  COALESCE(s.video_plays, 0) AS video_plays,
+  COALESCE(s.video_first_quartile_completes, 0) AS video_first_quartile_completes,
+  COALESCE(s.video_midpoints, 0) AS video_midpoints,
+  COALESCE(s.video_third_quartile_completes, 0) AS video_third_quartile_completes,
+  COALESCE(s.video_completions, 0) AS video_completions,
+  SAFE_DIVIDE(COALESCE(s.video_completions, 0), NULLIF(COALESCE(s.video_plays, 0), 0)) AS video_completion_rate,
+
+  -- Attribution Breakdown (Post-Click vs. Post-View)
+  COALESCE(s.conversions, 0) AS conversions,
+  COALESCE(s.post_click_conversions, 0) AS post_click_conversions,
+  COALESCE(s.post_view_conversions, 0) AS post_view_conversions,
+  COALESCE(s.post_click_revenue, 0) AS post_click_revenue,
+  COALESCE(s.post_view_revenue, 0) AS post_view_revenue,
+  SAFE_DIVIDE(COALESCE(s.post_click_conversions, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS post_click_conv_rate,
+
+  -- Headroom & Pacing
+  s.io_goal_pacing_pct,
+  s.lost_is_budget,
+  s.lost_is_rank
 FROM `__PROJECT_ID__.__DATASET_ID__.line_items` li
 LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.campaigns` c
   ON li.campaignId = c.campaignId
