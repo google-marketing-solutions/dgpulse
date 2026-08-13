@@ -130,6 +130,10 @@ echo "Creating BigQuery table: ${DATASET_ID}.dbm_performance..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.dbm_performance \
   Report_Day:DATE,Partner:STRING,Partner_Id:INTEGER,Advertiser:STRING,Advertiser_Id:INTEGER,Advertiser_Currency:STRING,Media_Plan:STRING,Media_Plan_Id:INTEGER,Insertion_Order:STRING,Insertion_Order_Id:INTEGER,Creative_Id:INTEGER,Device_Type:STRING,Inventory_Source:STRING,Revenue:FLOAT,Impressions:INTEGER,Clicks:INTEGER,Total_Conversions:FLOAT,Active_View_Viewable_Impressions:INTEGER,Active_View_Measurable_Impressions:INTEGER,TrueView_Views:INTEGER || echo "Table dbm_performance already exists."
 
+echo "Creating BigQuery table: ${DATASET_ID}.insertion_orders..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.insertion_orders \
+  insertionOrderId:STRING,advertiserId:STRING,campaignId:STRING,displayName:STRING,entityStatus:STRING,pacingType:STRING,pacingPeriod:STRING,dailyMaxAmount:FLOAT,budgetUnit:STRING,automationType:STRING,budgetAmount:FLOAT,startDate:DATE,endDate:DATE || echo "Table insertion_orders already exists."
+
 echo "Creating BigQuery table: ${DATASET_ID}.line_items..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.line_items \
   lineItemId:STRING,campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,lineItemType:STRING || echo "Table line_items already exists."

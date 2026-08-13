@@ -184,6 +184,35 @@ class DV360Client {
   }
 
   /**
+   * Fetches all insertion orders for a given advertiser.
+   * Handles pagination automatically.
+   * @param {string} advertiserId
+   * @returns {Promise<Object[]>} List of insertion order objects
+   */
+  async listAllInsertionOrders(advertiserId) {
+    let insertionOrders = [];
+    let nextPageToken = null;
+
+    do {
+      const response = await this.executeWithBackoff(() =>
+        this.dv360.advertisers.insertionOrders.list({
+          advertiserId: advertiserId,
+          pageToken: nextPageToken,
+          pageSize: 100
+        })
+      );
+
+      if (response.data.insertionOrders) {
+        insertionOrders = insertionOrders.concat(response.data.insertionOrders);
+      }
+
+      nextPageToken = response.data.nextPageToken;
+    } while (nextPageToken);
+
+    return insertionOrders;
+  }
+
+  /**
    * Fetches all creatives for a given advertiser.
    * Handles pagination automatically.
    * @param {string} advertiserId

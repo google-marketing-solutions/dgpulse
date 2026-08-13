@@ -36,6 +36,18 @@ latest_advertisers AS (
     ANY_VALUE(displayName) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
+),
+latest_ios AS (
+  SELECT 
+    insertionOrderId AS insertion_order_id,
+    ANY_VALUE(displayName) AS insertion_order_name,
+    ANY_VALUE(pacingType) AS pacing_type,
+    ANY_VALUE(pacingPeriod) AS pacing_period,
+    ANY_VALUE(budgetAmount) AS budget_amount,
+    ANY_VALUE(startDate) AS start_date,
+    ANY_VALUE(endDate) AS end_date
+  FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
+  GROUP BY 1
 )
 SELECT 
   COALESCE(s.date, CURRENT_DATE()) AS date,
@@ -60,8 +72,11 @@ SELECT
   END AS activation_data_strength_status,
   li.entityStatus AS entity_status,
   IF(li.entityStatus = 'ENTITY_STATUS_PAUSED', 'YES', 'NO') AS is_limited_by_budget,
-  s.insertion_order_id,
-  s.insertion_order_name,
+  COALESCE(s.insertion_order_id, io.insertion_order_id) AS insertion_order_id,
+  COALESCE(io.insertion_order_name, s.insertion_order_name) AS insertion_order_name,
+  io.pacing_type AS io_pacing_type,
+  io.pacing_period AS io_pacing_period,
+  io.budget_amount AS io_budget_amount,
   s.device_type,
   s.inventory_source,
   li.campaignId AS campaign_id,
@@ -76,12 +91,12 @@ SELECT
   COALESCE(s.conversions, 0) AS conversions,
   COALESCE(s.active_view_viewable_impressions, 0) AS active_view_viewable_impressions,
   COALESCE(s.active_view_measurable_impressions, 0) AS active_view_measurable_impressions,
-  SAFE_DIVIDE(COALESCE(s.active_view_viewable_impressions, 0), COALESCE(s.active_view_measurable_impressions, 0)) AS viewability_rate,
+  SAFE_DIVIDE(COALESCE(s.active_view_viewable_impressions, 0), NULLIF(COALESCE(s.active_view_measurable_impressions, 0), 0)) AS viewability_rate,
   COALESCE(s.trueview_views, 0) AS trueview_views,
-  SAFE_DIVIDE(COALESCE(s.trueview_views, 0), COALESCE(s.impressions, 0)) AS vtr,
-  SAFE_DIVIDE(COALESCE(s.clicks, 0), COALESCE(s.impressions, 0)) AS ctr,
-  SAFE_DIVIDE(COALESCE(s.cost, 0), COALESCE(s.clicks, 0)) AS cpc,
-  SAFE_DIVIDE(COALESCE(s.cost, 0) * 1000, COALESCE(s.impressions, 0)) AS cpm
+  SAFE_DIVIDE(COALESCE(s.trueview_views, 0), NULLIF(COALESCE(s.impressions, 0), 0)) AS vtr,
+  SAFE_DIVIDE(COALESCE(s.clicks, 0), NULLIF(COALESCE(s.impressions, 0), 0)) AS ctr,
+  SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS cpc,
+  SAFE_DIVIDE(COALESCE(s.cost, 0) * 1000, NULLIF(COALESCE(s.impressions, 0), 0)) AS cpm
 FROM `__PROJECT_ID__.__DATASET_ID__.line_items` li
 LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.campaigns` c
   ON li.campaignId = c.campaignId
@@ -90,4 +105,6 @@ LEFT JOIN li_stats s
 LEFT JOIN latest_settings sett
   ON li.advertiserId = sett.advertiserId
 LEFT JOIN latest_advertisers adv
-  ON li.advertiserId = adv.advertiserId;
+  ON li.advertiserId = adv.advertiserId
+LEFT JOIN latest_ios io
+  ON s.insertion_order_id = io.insertion_order_id;

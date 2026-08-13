@@ -93,6 +93,52 @@ exports.processAdvertiser = async (event, context) => {
             console.log('No line items found to insert.');
         }
 
+        // 2b. Insertion Orders & Budget Pacing
+        console.log(`Fetching insertion orders for advertiser ${advertiserId}...`);
+        const insertionOrders = await client.listAllInsertionOrders(advertiserId);
+        const ioRows = insertionOrders.map(io => {
+            let budgetAmount = 0;
+            let startDate = null;
+            let endDate = null;
+
+            if (io.budget && io.budget.budgetSegments && io.budget.budgetSegments.length > 0) {
+                let totalMicros = 0;
+                for (const seg of io.budget.budgetSegments) {
+                    if (seg.budgetAmountMicros) totalMicros += Number(seg.budgetAmountMicros);
+                    const s = seg.dateRange && seg.dateRange.startDate ?
+                        `${seg.dateRange.startDate.year}-${String(seg.dateRange.startDate.month).padStart(2, '0')}-${String(seg.dateRange.startDate.day).padStart(2, '0')}` : null;
+                    const e = seg.dateRange && seg.dateRange.endDate ?
+                        `${seg.dateRange.endDate.year}-${String(seg.dateRange.endDate.month).padStart(2, '0')}-${String(seg.dateRange.endDate.day).padStart(2, '0')}` : null;
+                    if (s && (!startDate || s < startDate)) startDate = s;
+                    if (e && (!endDate || e > endDate)) endDate = e;
+                }
+                budgetAmount = totalMicros / 1000000;
+            }
+
+            return {
+                insertionOrderId: String(io.insertionOrderId),
+                advertiserId: String(io.advertiserId),
+                campaignId: String(io.campaignId),
+                displayName: io.displayName || '',
+                entityStatus: io.entityStatus || '',
+                pacingType: (io.pacing && io.pacing.pacingType) || '',
+                pacingPeriod: (io.pacing && io.pacing.pacingPeriod) || '',
+                dailyMaxAmount: (io.pacing && io.pacing.dailyMaxMicros) ? Number(io.pacing.dailyMaxMicros) / 1000000 : null,
+                budgetUnit: (io.budget && io.budget.budgetUnit) || '',
+                automationType: (io.budget && io.budget.automationType) || '',
+                budgetAmount: budgetAmount,
+                startDate: startDate,
+                endDate: endDate
+            };
+        });
+
+        if (ioRows.length > 0) {
+            await bigquery.dataset(DATASET_ID).table('insertion_orders').insert(ioRows);
+            console.log(`Successfully inserted ${ioRows.length} insertion orders into BigQuery.`);
+        } else {
+            console.log('No insertion orders found to insert.');
+        }
+
         // 3. Creatives
         console.log(`Fetching creatives for advertiser ${advertiserId}...`);
         const creatives = await client.listAllCreatives(advertiserId);
