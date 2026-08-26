@@ -188,14 +188,42 @@ exports.processAdvertiser = async (event, context) => {
         }
 
         let ecEnabled = false;
+        let webTagType = 'WEB_TAG_TYPE_NONE';
+        let gtgStatus = 'NOT_CONFIGURED';
+        let gtgReadiness = 'NOT_CONFIGURED';
+
         if (cmFloodlightConfigId) {
             const partnerId = (data && data.partnerId) || (advDetails && advDetails.partnerId);
+            
+            // 1. Fetch Floodlight Group to inspect webTagType (Google Tag / Dynamic vs. Legacy Image)
+            try {
+                const group = await client.getFloodlightGroup(cmFloodlightConfigId, partnerId);
+                if (group && group.webTagType) {
+                    webTagType = group.webTagType;
+                }
+            } catch (grpErr) {
+                console.warn(`Warning fetching floodlight group ${cmFloodlightConfigId}:`, grpErr.message);
+            }
+
+            // 2. Fetch Floodlight Activities to check for Enhanced Conversions
             const activities = await client.getFloodlightActivities(cmFloodlightConfigId, partnerId);
             ecEnabled = activities.some(act => 
                 act.servingStatus === 'ENTITY_STATUS_ACTIVE' || 
                 act.servingStatus === 'ENABLED' ||
                 (act.floodlightActivityConfig && act.floodlightActivityConfig.enhancedConversionsEnabled)
             );
+
+            // 3. Evaluate Google Tag Gateway (GTG / First-Party Mode) Readiness
+            if (webTagType === 'WEB_TAG_TYPE_DYNAMIC') {
+                gtgReadiness = 'READY';
+                gtgStatus = 'ACTIVE';
+            } else if (webTagType === 'WEB_TAG_TYPE_IMAGE') {
+                gtgReadiness = 'LEGACY_TAGS_DETECTED';
+                gtgStatus = 'NEEDS_ACTION';
+            } else {
+                gtgReadiness = 'NOT_CONFIGURED';
+                gtgStatus = 'NOT_CONFIGURED';
+            }
         }
 
         const settingsRow = {
@@ -206,7 +234,10 @@ exports.processAdvertiser = async (event, context) => {
             has_ga_audience: hasGaAudience ? 'YES' : 'NO',
             floodlight_optimization_enabled: floodlightOptEnabled ? 'YES' : 'NO',
             auto_tagging_enabled: 'YES',
-            ec_enabled: ecEnabled ? 'YES' : 'NO'
+            ec_enabled: ecEnabled ? 'YES' : 'NO',
+            gtg_status: gtgStatus,
+            gtg_readiness: gtgReadiness,
+            web_tag_type: webTagType
         };
 
         try {

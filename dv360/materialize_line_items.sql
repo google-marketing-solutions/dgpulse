@@ -40,7 +40,10 @@ latest_settings AS (
     ANY_VALUE(has_ga_audience) AS has_ga_audience,
     ANY_VALUE(floodlight_optimization_enabled) AS floodlight_optimization_enabled,
     ANY_VALUE(auto_tagging_enabled) AS auto_tagging_enabled,
-    ANY_VALUE(ec_enabled) AS ec_enabled
+    ANY_VALUE(ec_enabled) AS ec_enabled,
+    ANY_VALUE(gtg_status) AS gtg_status,
+    ANY_VALUE(gtg_readiness) AS gtg_readiness,
+    ANY_VALUE(web_tag_type) AS web_tag_type
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 ),
@@ -79,6 +82,9 @@ SELECT
   COALESCE(sett.ec_enabled, 'NO') AS ec_enabled,
   COALESCE(sett.floodlight_optimization_enabled, 'NO') AS floodlight_optimization_enabled,
   COALESCE(sett.auto_tagging_enabled, 'NO') AS auto_tagging_enabled,
+  COALESCE(sett.gtg_status, 'NOT_CONFIGURED') AS gtg_status,
+  COALESCE(sett.gtg_readiness, 'NOT_CONFIGURED') AS gtg_readiness,
+  COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   CASE 
     WHEN li.lineItemType NOT LIKE '%DEMAND_GEN%' THEN 'N/A'
     WHEN COALESCE(sett.ec_enabled, 'NO') = 'YES' AND COALESCE(sett.floodlight_optimization_enabled, 'NO') = 'YES' THEN 'PASSED'

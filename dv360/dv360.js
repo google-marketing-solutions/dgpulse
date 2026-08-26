@@ -314,6 +314,27 @@ class DV360Client {
   }
 
   /**
+   * Fetches Floodlight group configuration including webTagType and lookback windows.
+   * @param {string} floodlightGroupId
+   * @param {string} partnerId
+   * @returns {Promise<Object|null>}
+   */
+  async getFloodlightGroup(floodlightGroupId, partnerId) {
+    try {
+      const response = await this.executeWithBackoff(() =>
+        this.dv360.floodlightGroups.get({
+          floodlightGroupId: floodlightGroupId,
+          partnerId: partnerId
+        })
+      );
+      return response.data;
+    } catch (e) {
+      console.warn(`Warning fetching floodlight group ${floodlightGroupId}:`, e.message);
+      return null;
+    }
+  }
+
+  /**
    * Creates or retrieves an existing daily DBM report query for a partner.
    * @param {string} partnerId
    * @returns {Promise<{queryId: string, isNew: boolean}>}
