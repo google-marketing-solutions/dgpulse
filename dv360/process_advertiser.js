@@ -190,7 +190,6 @@ exports.processAdvertiser = async (event, context) => {
         let ecEnabled = false;
         let webTagType = 'WEB_TAG_TYPE_NONE';
         let gtgStatus = 'NOT_CONFIGURED';
-        let gtgReadiness = 'NOT_CONFIGURED';
 
         if (cmFloodlightConfigId) {
             const partnerId = (data && data.partnerId) || (advDetails && advDetails.partnerId);
@@ -215,13 +214,10 @@ exports.processAdvertiser = async (event, context) => {
 
             // 3. Evaluate Google Tag Gateway (GTG / First-Party Mode) Readiness
             if (webTagType === 'WEB_TAG_TYPE_DYNAMIC') {
-                gtgReadiness = 'READY';
-                gtgStatus = 'ACTIVE';
+                gtgStatus = 'READY';
             } else if (webTagType === 'WEB_TAG_TYPE_IMAGE') {
-                gtgReadiness = 'LEGACY_TAGS_DETECTED';
-                gtgStatus = 'NEEDS_ACTION';
+                gtgStatus = 'NEEDS_TAG_UPGRADE';
             } else {
-                gtgReadiness = 'NOT_CONFIGURED';
                 gtgStatus = 'NOT_CONFIGURED';
             }
         }
@@ -236,7 +232,6 @@ exports.processAdvertiser = async (event, context) => {
             auto_tagging_enabled: 'YES',
             ec_enabled: ecEnabled ? 'YES' : 'NO',
             gtg_status: gtgStatus,
-            gtg_readiness: gtgReadiness,
             web_tag_type: webTagType
         };
 

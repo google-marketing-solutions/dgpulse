@@ -57,7 +57,6 @@ latest_settings AS (
   SELECT 
     advertiserId,
     ANY_VALUE(gtg_status) AS gtg_status,
-    ANY_VALUE(gtg_readiness) AS gtg_readiness,
     ANY_VALUE(web_tag_type) AS web_tag_type
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
@@ -73,7 +72,6 @@ SELECT
   io.advertiser_id AS account_id,
   COALESCE(adv.displayName, io.advertiser_id) AS account_name,
   COALESCE(sett.gtg_status, 'NOT_CONFIGURED') AS gtg_status,
-  COALESCE(sett.gtg_readiness, 'NOT_CONFIGURED') AS gtg_readiness,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
   COALESCE(s.currency_code, 'USD') AS currency_code,

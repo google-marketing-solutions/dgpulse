@@ -121,7 +121,7 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.advertisers \
 
 echo "Creating BigQuery table: ${DATASET_ID}.advertiser_settings..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.advertiser_settings \
-  advertiserId:STRING,displayName:STRING,partnerId:STRING,has_crm_audience:STRING,has_ga_audience:STRING,floodlight_optimization_enabled:STRING,auto_tagging_enabled:STRING,ec_enabled:STRING,gtg_status:STRING,gtg_readiness:STRING,web_tag_type:STRING || echo "Table advertiser_settings already exists."
+  advertiserId:STRING,displayName:STRING,partnerId:STRING,has_crm_audience:STRING,has_ga_audience:STRING,floodlight_optimization_enabled:STRING,auto_tagging_enabled:STRING,ec_enabled:STRING,gtg_status:STRING,web_tag_type:STRING || echo "Table advertiser_settings already exists."
 
 echo "Creating BigQuery table: ${DATASET_ID}.${TABLE_ID}..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID} campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING || echo "Table already exists."
