@@ -16,18 +16,18 @@ fi
 
 
 # Auto-detect client_id and client_secret from client_secret.json if present
-if [ -f "client_secret.json" ]; then
+if [ -f "client_secret.json" ] && [ -s "client_secret.json" ]; then
   echo "Found client_secret.json. Attempting to extract credentials..."
   
   if [ -z "$CLIENT_ID" ]; then
-    CLIENT_ID=$(node -e "const d=require('fs').readFileSync('client_secret.json'); const c=JSON.parse(d).installed||JSON.parse(d).web||JSON.parse(d); console.log(c.client_id||'')" 2>/dev/null)
+    CLIENT_ID=$(node -e "try { const d=require('fs').readFileSync('client_secret.json'); const c=JSON.parse(d).installed||JSON.parse(d).web||JSON.parse(d); console.log(c.client_id||''); } catch(e) { process.exit(0); }" 2>/dev/null || true)
     if [ -n "$CLIENT_ID" ]; then
       echo "Using Client ID from client_secret.json"
     fi
   fi
   
   if [ -z "$CLIENT_SECRET" ]; then
-    CLIENT_SECRET=$(node -e "const d=require('fs').readFileSync('client_secret.json'); const c=JSON.parse(d).installed||JSON.parse(d).web||JSON.parse(d); console.log(c.client_secret||'')" 2>/dev/null)
+    CLIENT_SECRET=$(node -e "try { const d=require('fs').readFileSync('client_secret.json'); const c=JSON.parse(d).installed||JSON.parse(d).web||JSON.parse(d); console.log(c.client_secret||''); } catch(e) { process.exit(0); }" 2>/dev/null || true)
     if [ -n "$CLIENT_SECRET" ]; then
       echo "Using Client Secret from client_secret.json"
     fi
