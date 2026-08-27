@@ -60,15 +60,22 @@ A serverless monitoring and performance analytics pipeline for **Display & Video
 
 Before deploying, ensure you have:
 
-1. **Google Cloud Project**: With billing enabled.
-2. **DV360 Partner Access**: Your DV360 Partner ID (e.g. `796100066`).
-3. **OAuth 2.0 Credentials**:
-   * Create an OAuth 2.0 Client ID (type **Web Application**) in Google Cloud Console (**APIs & Services** -> **Credentials**).
-   * Add `http://localhost:3000` to the **Authorized redirect URIs**.
-   * Download the JSON file, rename it to `client_secret.json`, and place it in the `dv360/` directory.
-   * Required Scopes:
-     * `https://www.googleapis.com/auth/display-video`
-     * `https://www.googleapis.com/auth/doubleclickbidmanager`
+1. **Google Cloud Project**: A GCP project with billing enabled.
+2. **DV360 Partner Access**: Your DV360 Partner ID.
+3. **OAuth 2.0 Credentials & Consent Screen Setup**:
+   * In the Google Cloud Console, navigate to **APIs & Services** ➔ **OAuth consent screen**:
+     * Select **Internal** (if deploying within your Google Workspace organization) or **External** (if using standard Gmail accounts).
+     * Enter an App name (e.g., `DGPulse DV360`) and your developer contact email.
+     * Click **Add or Remove Scopes** and add:
+       * `https://www.googleapis.com/auth/display-video`
+       * `https://www.googleapis.com/auth/doubleclickbidmanager`
+     * *(If using External user type)*: On the **Test users** screen, add your email address so you are permitted to authorize during testing.
+   * Navigate to **APIs & Services** ➔ **Credentials**:
+     * Click **+ CREATE CREDENTIALS** ➔ **OAuth client ID**.
+     * Select **Web application** as the application type.
+     * Under **Authorized redirect URIs**, click **+ ADD URI** and enter: `http://localhost:3000`
+     * Click **CREATE**, then download the client secret JSON file.
+     * Rename the downloaded file to `client_secret.json` and place it inside the `dv360/` directory.
 
 ---
 
@@ -86,7 +93,7 @@ node auth.js
 ### 2. Run the Automated Installer
 In Google Cloud Shell:
 ```bash
-export PARTNER_ID="796100066"
+export PARTNER_ID="<YOUR_DV360_PARTNER_ID>"
 export REFRESH_TOKEN="<PASTE_YOUR_REFRESH_TOKEN>"
 
 chmod +x install.sh
