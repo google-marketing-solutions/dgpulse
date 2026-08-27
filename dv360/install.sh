@@ -142,6 +142,10 @@ echo "Creating BigQuery table: ${DATASET_ID}.creatives..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \
   creativeId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,creativeType:STRING,hostingSource:STRING || echo "Table creatives already exists."
 
+echo "Creating BigQuery table: ${DATASET_ID}.floodlight_activities..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.floodlight_activities \
+  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,tagModernizationStatus:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
+
 
 # 5. Deploy as a Cloud Run Function
 echo "Deploying Cloud Function: dv360-dgpulse..."

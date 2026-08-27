@@ -194,9 +194,10 @@ exports.processAdvertiser = async (event, context) => {
         if (cmFloodlightConfigId) {
             const partnerId = (data && data.partnerId) || (advDetails && advDetails.partnerId);
             
-            // 1. Fetch Floodlight Group to inspect webTagType (Google Tag / Dynamic vs. Legacy Image)
+            // 1. Fetch Floodlight Group to inspect webTagType and lookback window
+            let group = null;
             try {
-                const group = await client.getFloodlightGroup(cmFloodlightConfigId, partnerId);
+                group = await client.getFloodlightGroup(cmFloodlightConfigId, partnerId);
                 if (group && group.webTagType) {
                     webTagType = group.webTagType;
                 }
@@ -204,7 +205,10 @@ exports.processAdvertiser = async (event, context) => {
                 console.warn(`Warning fetching floodlight group ${cmFloodlightConfigId}:`, grpErr.message);
             }
 
-            // 2. Fetch Floodlight Activities to check for Enhanced Conversions
+            const clickDays = (group && group.lookbackWindow && group.lookbackWindow.clickDays != null) ? Number(group.lookbackWindow.clickDays) : 30;
+            const impressionDays = (group && group.lookbackWindow && group.lookbackWindow.impressionDays != null) ? Number(group.lookbackWindow.impressionDays) : 30;
+
+            // 2. Fetch Floodlight Activities to check for Enhanced Conversions & Audit
             const activities = await client.getFloodlightActivities(cmFloodlightConfigId, partnerId);
             ecEnabled = activities.some(act => 
                 act.servingStatus === 'ENTITY_STATUS_ACTIVE' || 
@@ -219,6 +223,50 @@ exports.processAdvertiser = async (event, context) => {
                 gtgStatus = 'NEEDS_TAG_UPGRADE';
             } else {
                 gtgStatus = 'NOT_CONFIGURED';
+            }
+
+            // 4. Stream Floodlight Activities for Audit Scan Table
+            const todayStr = new Date().toISOString().split('T')[0];
+            const activityRows = activities.map(act => {
+                const isLegacy = webTagType === 'WEB_TAG_TYPE_IMAGE';
+                const tagModStatus = webTagType === 'WEB_TAG_TYPE_DYNAMIC' ? 'MODERN_GOOGLE_TAG' : (isLegacy ? 'LEGACY_IMAGE_TAG' : 'UNKNOWN');
+                
+                let attrStatus = 'STANDARD_WINDOW';
+                if (clickDays === 0 || impressionDays === 0) {
+                    attrStatus = 'ZERO_DAY_WINDOW_WARNING';
+                } else if (clickDays > 30 || impressionDays > 30) {
+                    attrStatus = 'EXTENDED_LOOKBACK';
+                }
+
+                const sslCompliant = act.sslRequired !== false;
+                const remarketingActive = act.remarketingConfigs ? act.remarketingConfigs.some(r => r.remarketingEnabled) : false;
+
+                return {
+                    floodlightActivityId: String(act.floodlightActivityId),
+                    advertiserId: String(advertiserId),
+                    partnerId: String(partnerId || ''),
+                    floodlightGroupId: String(cmFloodlightConfigId),
+                    activityName: act.displayName || String(act.floodlightActivityId),
+                    servingStatus: act.servingStatus || 'UNKNOWN',
+                    webTagType: webTagType,
+                    tagModernizationStatus: tagModStatus,
+                    clickLookbackDays: clickDays,
+                    impressionLookbackDays: impressionDays,
+                    attributionLookbackStatus: attrStatus,
+                    sslRequired: act.sslRequired ? 'YES' : 'NO',
+                    sslComplianceStatus: sslCompliant ? 'SSL_COMPLIANT' : 'NON_SSL_COMPLIANT_WARNING',
+                    remarketingEnabled: remarketingActive ? 'YES' : 'NO',
+                    auditDate: todayStr
+                };
+            });
+
+            if (activityRows.length > 0) {
+                try {
+                    await bigquery.dataset(DATASET_ID).table('floodlight_activities').insert(activityRows);
+                    console.log(`Successfully inserted ${activityRows.length} floodlight activities for ${advertiserId} into BigQuery.`);
+                } catch (actErr) {
+                    console.warn(`Warning inserting floodlight_activities into BigQuery for ${advertiserId}:`, actErr.message);
+                }
             }
         }
 
