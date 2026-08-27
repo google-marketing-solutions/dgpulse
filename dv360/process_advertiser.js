@@ -161,18 +161,26 @@ function extractImageUrl(cr) {
         // 3. Creatives
         console.log(`Fetching creatives for advertiser ${advertiserId}...`);
         const creatives = await client.listAllCreatives(advertiserId);
-        const creativeRows = creatives.map(cr => ({
-            creativeId: cr.creativeId,
-            advertiserId: cr.advertiserId,
-            entityStatus: cr.entityStatus,
-            displayName: cr.displayName,
-            creativeType: cr.creativeType,
-            hostingSource: cr.hostingSource,
-            dimensions: (cr.dimensions && cr.dimensions.widthPixels && cr.dimensions.heightPixels)
-                ? `${cr.dimensions.widthPixels}x${cr.dimensions.heightPixels}`
-                : 'RESPONSIVE/NATIVE',
-            imageUrl: extractImageUrl(cr) || ''
-        }));
+        const creativeRows = creatives.map(cr => {
+            let dims = 'RESPONSIVE/NATIVE';
+            if (cr.dimensions && cr.dimensions.widthPixels > 0 && cr.dimensions.heightPixels > 0) {
+                dims = `${cr.dimensions.widthPixels}x${cr.dimensions.heightPixels}`;
+            } else if (cr.creativeType && cr.creativeType.includes('VIDEO')) {
+                dims = 'VIDEO (RESPONSIVE)';
+            } else if (cr.creativeType && cr.creativeType.includes('AUDIO')) {
+                dims = 'AUDIO (N/A)';
+            }
+            return {
+                creativeId: cr.creativeId,
+                advertiserId: cr.advertiserId,
+                entityStatus: cr.entityStatus,
+                displayName: cr.displayName,
+                creativeType: cr.creativeType,
+                hostingSource: cr.hostingSource,
+                dimensions: dims,
+                imageUrl: extractImageUrl(cr) || ''
+            };
+        });
         if (creativeRows.length > 0) {
             await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows);
             console.log(`Successfully inserted ${creativeRows.length} creatives into BigQuery.`);
