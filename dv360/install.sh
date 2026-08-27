@@ -163,6 +163,16 @@ gcloud functions deploy dv360-dgpulse \
 SERVICE_URL=$(gcloud functions describe dv360-dgpulse --region=${REGION} --gen2 --format='value(serviceConfig.uri)')
 echo "Service URL: ${SERVICE_URL}"
 
+PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
+SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+# Ensure the Cloud Scheduler service account has permission to invoke the service via OIDC
+echo "Granting run.invoker to ${SERVICE_ACCOUNT}..."
+gcloud run services add-iam-policy-binding dv360-dgpulse \
+  --region=${REGION} \
+  --member="serviceAccount:${SERVICE_ACCOUNT}" \
+  --role="roles/run.invoker" > /dev/null 2>&1 || true
+
 # 6b. Deploy Cloud Function for processing advertisers
 echo "Deploying Cloud Function: process-advertiser..."
 gcloud functions deploy dv360-dgpulse-process-advertiser \
@@ -177,12 +187,6 @@ gcloud functions deploy dv360-dgpulse-process-advertiser \
 # 7. Create Cloud Scheduler job
 JOB_NAME="dv360-dgpulse-daily-sync"
 echo "Creating Cloud Scheduler job: ${JOB_NAME}..."
-
-# Infer Service Account or ask user?
-# Usually, dgpulse uses the default compute service account or a dedicated one.
-# For simplicity, we'll try to find the project number.
-PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
-SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
 if ! gcloud scheduler jobs describe ${JOB_NAME} --location=${REGION} > /dev/null 2>&1; then
   gcloud scheduler jobs create http ${JOB_NAME} \
