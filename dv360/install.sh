@@ -199,28 +199,50 @@ else
     --uri="${SERVICE_URL}"
 fi
 
-echo "Creating Scheduled Query for materialization..."
-# Read the SQL file and replace placeholders
-MATERIALIZATION_QUERY=$(cat materialize_campaigns.sql | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")
+echo "Running initial materialization queries..."
+for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_floodlight_activities.sql; do
+  echo "Materializing: $sql"
+  bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")" || echo "Warning: $sql initial materialization skipped (will run once API/DBM data is populated)."
+done
 
-# Escape double quotes and newlines to make the SQL safe to embed in a JSON string
-JSON_ESCAPED_QUERY=$(echo "${MATERIALIZATION_QUERY}" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
-
-# Construct the --params JSON string without destination_table_name_template since SQL contains DDL (CREATE OR REPLACE TABLE)
-PARAMS=$(printf '{"query":"%s"}' "${JSON_ESCAPED_QUERY}")
-
-# Create the scheduled query using BigQuery Data Transfer Service
-bq mk --transfer_config \
-    --project_id="${PROJECT_ID}" \
-    --data_source=scheduled_query \
-    --target_dataset="${DATASET_ID}" \
-    --display_name="Materialize DV360 Campaigns Daily" \
-    --params="${PARAMS}" \
-    --schedule="every day 08:00" # Runs at 8 AM, 2 hours after the metadata sync
+echo "Creating Scheduled Queries for daily materialization..."
+for sql_file in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_floodlight_activities.sql; do
+  view_name=$(basename "$sql_file" .sql)
+  display_name="Materialize DV360 ${view_name} Daily"
+  
+  if ! bq ls --transfer_config --transfer_location=${REGION} --project_id=${PROJECT_ID} 2>/dev/null | grep -q "${display_name}"; then
+    QUERY=$(cat "$sql_file" | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")
+    JSON_QUERY=$(echo "${QUERY}" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+    PARAMS=$(printf '{"query":"%s"}' "${JSON_QUERY}")
     
+    bq mk --transfer_config \
+      --project_id="${PROJECT_ID}" \
+      --data_source=scheduled_query \
+      --target_dataset="${DATASET_ID}" \
+      --display_name="${display_name}" \
+      --params="${PARAMS}" \
+      --schedule="every day 08:00" || echo "Warning: Failed to create transfer config for ${display_name}"
+  else
+    echo "Scheduled query for ${display_name} already exists."
+  fi
+done
+
+LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=5e126b6a-33fc-4d0a-80cb-7ce6bc990001\
+&ds.campaign_performance.connector=bigQuery&ds.campaign_performance.projectId=${PROJECT_ID}&ds.campaign_performance.datasetId=${DATASET_ID}&ds.campaign_performance.type=TABLE&ds.campaign_performance.tableId=final_campaign_performance&ds.campaign_performance.refreshFields=false\
+&ds.line_items_performance.connector=bigQuery&ds.line_items_performance.projectId=${PROJECT_ID}&ds.line_items_performance.datasetId=${DATASET_ID}&ds.line_items_performance.type=TABLE&ds.line_items_performance.tableId=final_line_items_performance&ds.line_items_performance.refreshFields=false\
+&ds.insertion_orders_performance.connector=bigQuery&ds.insertion_orders_performance.projectId=${PROJECT_ID}&ds.insertion_orders_performance.datasetId=${DATASET_ID}&ds.insertion_orders_performance.type=TABLE&ds.insertion_orders_performance.tableId=final_insertion_orders_performance&ds.insertion_orders_performance.refreshFields=false\
+&ds.assets_performance.connector=bigQuery&ds.assets_performance.projectId=${PROJECT_ID}&ds.assets_performance.datasetId=${DATASET_ID}&ds.assets_performance.type=TABLE&ds.assets_performance.tableId=final_assets_performance&ds.assets_performance.refreshFields=false\
+&ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${PROJECT_ID}&ds.floodlight_audit.datasetId=${DATASET_ID}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false"
 
 echo "------------------------------------------------"
-echo "Installation Complete!"
+echo "🎉 Installation & Deployment Complete!"
 echo "Your DV360 DG Pulse service is deployed at: ${SERVICE_URL}"
 echo "The daily sync job is scheduled to run at 6:00 AM daily."
-echo "------------------------------------------------"
+echo ""
+echo "================================================================="
+echo "📊 One-Click Looker Studio Dashboard Connection:"
+echo "Click the link below to automatically clone the report template and"
+echo "connect all 5 BigQuery tables for Partner ${PARTNER_ID}:"
+echo ""
+echo "${LOOKER_LINK}"
+echo "================================================================="

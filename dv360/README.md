@@ -1,82 +1,136 @@
 # DV360 Pulse
 
-A serverless application to fetch campaign data from Display & Video 360 (DV360) and store it in BigQuery for analysis. It uses a message-driven architecture with Cloud Pub/Sub to parallelize the extraction of data by advertiser.
+A serverless monitoring and performance analytics pipeline for **Display & Video 360 (DV360)**. It automates daily DBM reporting queries, extracts rich advertiser and creative metadata via the DV360 API v4, and materializes analytics tables into BigQuery for direct visualization in Looker Studio.
 
-## Requirements
+---
 
-Before you begin, please ensure you meet the following requirements:
+## Architecture Overview
 
-1.  **Google Cloud Project:** You must have a Google Cloud Project with the necessary permissions to enable APIs, create BigQuery datasets/tables, create Cloud Storage buckets, deploy Cloud Functions, and set up BigQuery Data Transfers.
+```
+                                  +------------------------------------+
+                                  |        Cloud Scheduler             |
+                                  | (Daily 6:00 AM Metadata Sync)      |
+                                  +-----------------+------------------+
+                                                    |
+                                                    v
+                                  +------------------------------------+
+                                  |   Cloud Function (fetchAdvertisers)|
+                                  +-----------------+------------------+
+                                                    |
+                                                    v
+                                  +------------------------------------+
+                                  |   Pub/Sub (dv360-advertiser-topic) |
+                                  +-----------------+------------------+
+                                                    |
+                                                    v
+                                  +------------------------------------+
+                                  |Cloud Function (processAdvertiser)  |
+                                  +-----------------+------------------+
+                                                    |
+                                                    v
+                                  +------------------------------------+
+                                  |      BigQuery Base Tables          |
+                                  |  - advertisers & settings          |
+                                  |  - campaigns & line_items          |
+                                  |  - insertion_orders & creatives    |
+                                  |  - floodlight_activities           |
+                                  |  - dbm_performance                |
+                                  +-----------------+------------------+
+                                                    |
+                                                    v
+                                  +------------------------------------+
+                                  |    BigQuery Materialized Views     |
+                                  |  - final_campaign_performance      |
+                                  |  - final_line_items_performance    |
+                                  |  - final_insertion_orders_perf     |
+                                  |  - final_assets_performance        |
+                                  |  - final_floodlight_activities     |
+                                  +-----------------+------------------+
+                                                    |
+                                                    v
+                                  +------------------------------------+
+                                  |   Looker Studio Template           |
+                                  |  (Connected via Linking API)       |
+                                  +-----------------+------------------+
+```
 
-2.  **Enabled Google Cloud APIs:**
-    *   Display & Video 360 API (`displayvideo.googleapis.com`)
-    *   DoubleClick Bid Manager API (`doubleclickbidmanager.googleapis.com`)
+---
 
-3.  **DV360 Partner ID:** You will need to provide the DV360 Partner ID you want to monitor during the installation.
+## Requirements & Prerequisites
 
-4.  **OAuth 2.0 Credentials & Scopes:**
-    *   `client_secret.json` and a Refresh Token are required.
-    *   Required Scopes:
-        *   `https://www.googleapis.com/auth/display-video`
-        *   `https://www.googleapis.com/auth/doubleclickbidmanager`
+Before deploying, ensure you have:
 
-By ensuring these requirements are met, the installation process will run smoothly and the solution will be able to access the necessary DV360 data and scheduled DBM reports.
+1. **Google Cloud Project**: With billing enabled.
+2. **DV360 Partner Access**: Your DV360 Partner ID (e.g. `796100066`).
+3. **OAuth 2.0 Credentials**:
+   * Create an OAuth 2.0 Client ID (type **Web Application**) in Google Cloud Console (**APIs & Services** -> **Credentials**).
+   * Add `http://localhost:3000` to the **Authorized redirect URIs**.
+   * Download the JSON file, rename it to `client_secret.json`, and place it in the `dv360/` directory.
+   * Required Scopes:
+     * `https://www.googleapis.com/auth/display-video`
+     * `https://www.googleapis.com/auth/doubleclickbidmanager`
 
+---
 
-## Getting Started
+## Step-by-Step Deployment (From Scratch)
 
-Follow these steps to deploy and run the DV360 campaign extraction pipeline:
+### 1. Authenticate & Obtain Refresh Token
+On your local machine (where port 3000 can receive the redirect):
+```bash
+npm install
+node auth.js
+```
+* Click the URL printed in the terminal, log in with your Google account that has DV360 access, and authorize.
+* Copy the printed `refresh_token`.
 
-1.  **Prepare Credentials**:
-    If you don't have a `REFRESH_TOKEN`, `CLIENT_ID` and `CLIENT_SECRET` yet, follow these steps:
-    *   Go to the **APIs & Services** -> **Credentials** tab in the Google Cloud Console.
-    *   Complete the **OAuth consent screen** if you haven't already. Ensure both Display & Video 360 API and DoubleClick Bid Manager API scopes are granted.
-    *   Click **+ CREATE CREDENTIALS** -> **OAuth client ID**.
-    *   Select **Web application** as the application type.
-    *   Add `http://localhost:3000` to the **Authorized redirect URIs**.
-    *   Click create, and then download the JSON from the credentials list.
-    *   Rename the downloaded file to `client_secret.json` and place it in the project root.
-    *   Run `npm install` to install the required dependencies.
-    *   Run `node auth.js`. Visit the printed URL to authorize. The script will automatically capture the code on port 3000 and print your `refresh_token`.
+### 2. Run the Automated Installer
+In Google Cloud Shell:
+```bash
+export PARTNER_ID="796100066"
+export REFRESH_TOKEN="<PASTE_YOUR_REFRESH_TOKEN>"
 
-2.  **Run the Installation Script**:
-    Run the deployment script (`./install.sh`). It will interactively prompt you for the inputs below or read them from your environment variables:
-    *   `PARTNER_ID`: Your DV360 partner ID.
-    *   `CLIENT_ID`: Your OAuth 2.0 Client ID.
-    *   `CLIENT_SECRET`: Your OAuth 2.0 Client Secret.
-    *   `REFRESH_TOKEN`: Your OAuth 2.0 Refresh Token.
+chmod +x install.sh
+./install.sh
+```
 
-    The script will automatically handle:
-    *   Enabling necessary Google Cloud APIs (including DV360 and DBM APIs).
-    *   Creating a Google Cloud Storage bucket and uploading credentials.
-    *   Executing `create_report.js` to create the daily DBM performance report query.
-    *   Creating the required Pub/Sub topics.
-    *   Creating BigQuery tables (`campaigns`, `line_items`, `creatives`, `dbm_performance`).
-    *   Deploying fetch and process Cloud Functions with exponential backoff for rate limits.
-    *   Setting up Cloud Scheduler jobs for daily extraction and materialization.
+The script automatically:
+* Enables all necessary GCP APIs (`displayvideo`, `doubleclickbidmanager`, `run`, `cloudfunctions`, `bigquerydatatransfer`, `cloudscheduler`).
+* Creates the Cloud Storage bucket and uploads `client_secret.json`.
+* Creates the recurring partner-level DBM query via `create_report.js`.
+* Sets up BigQuery dataset (`dv360_dgpulse`) and all 6 base schema tables.
+* Deploys the extraction and worker Cloud Functions (`dv360-dgpulse`, `dv360-dgpulse-process-advertiser`).
+* Configures Cloud Scheduler for daily execution at 6:00 AM.
+* Deploys daily BigQuery scheduled queries for all 5 materialized analytics views.
+* **Prints the One-Click Looker Studio Linking API URL**.
 
-## Project Structure
+---
 
-### 1. `auth.js`
-*   **Role**: Setup & Authentication Helper
-*   **Description**: A local CLI script used to generate initial OAuth2 refresh tokens for DV360 and DBM API authentication.
+## Looker Studio Linking API & Data Source Aliases
 
-### 2. `dv360.js`
-*   **Role**: API Client Wrapper
-*   **Description**: Handles interaction with the DV360 API and DBM API v2 with automatic rate limiting retries (exponential backoff). Provides helper methods for paginated listing of advertisers, campaigns, line items, creatives, and DBM reporting queries.
+The Looker Studio dashboard template ([Report Template ID: `5e126b6a-33fc-4d0a-80cb-7ce6bc990001`](https://datastudio.google.com/c/reporting/5e126b6a-33fc-4d0a-80cb-7ce6bc990001)) connects via the Google Data Studio Linking API. 
 
-### 3. `create_report.js`
-*   **Role**: DBM Report Automation
-*   **Description**: Automates creation of a daily scheduled DBM performance query (`TYPE_GENERAL`, grouped by Date, Partner, Advertiser, Media Plan, Creative ID) and triggers initial report execution.
+Each data source has a pre-configured alias that automatically binds to your project's BigQuery tables:
 
-### 4. `index.js`
-*   **Role**: Entry Point & Publisher
-*   **Description**: Entry point for the DV360 data fetch process. Fetches all advertiser IDs for a partner and publishes them to Pub/Sub for parallel processing. Exposes `processAdvertiser` and `setupDbmReport`.
+| Looker Data Source Name | Alias Name | Target BigQuery Table |
+| :--- | :--- | :--- |
+| **DV360 Campaign Performance** | `campaign_performance` | `final_campaign_performance` |
+| **DV360 Line Items Performance** | `line_items_performance` | `final_line_items_performance` |
+| **DV360 Insertion Orders Performance** | `insertion_orders_performance` | `final_insertion_orders_performance` |
+| **DV360 Asset Performance** | `assets_performance` | `final_assets_performance` |
+| **DV360 Floodlight Activities Audit** | `floodlight_audit` | `final_floodlight_activities_audit` |
 
-### 5. `process_advertiser.js`
-*   **Role**: Background Worker
-*   **Description**: Handles processing of individual DV360 advertisers triggered by Pub/Sub messages. Fetches campaigns, line items, and creatives for each advertiser and writes them into BigQuery.
+---
 
-### 6. `materialize_campaigns.sql` & `materialize_assets.sql`
-*   **Role**: SQL Transformation & Materialization
-*   **Description**: Joins BigQuery metadata tables with `dbm_performance` report metrics to produce `final_campaign_performance` and `final_assets_performance` datasets for Looker Studio dashboards.
+## Manual Sync & Maintenance Commands
+
+### Trigger Sync Immediately
+```bash
+gcloud scheduler jobs run dv360-dgpulse-daily-sync --location=us-central1
+```
+
+### Re-run Materialization Queries Manually
+```bash
+for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_floodlight_activities.sql; do
+  bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/$(gcloud config get-value project)/g" | sed "s/__DATASET_ID__/dv360_dgpulse/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")"
+done
+```
