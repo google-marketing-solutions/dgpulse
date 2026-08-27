@@ -139,6 +139,25 @@ exports.processAdvertiser = async (event, context) => {
             console.log('No insertion orders found to insert.');
         }
 
+function extractImageUrl(cr) {
+    if (!cr) return null;
+    if (cr.assets && Array.isArray(cr.assets)) {
+        for (const a of cr.assets) {
+            const content = a.asset && a.asset.content;
+            if (content) {
+                const ytMatch = content.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+                if (ytMatch && ytMatch[1]) {
+                    return `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+                }
+                if ((content.startsWith('http://') || content.startsWith('https://')) && content.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) {
+                    return content;
+                }
+            }
+        }
+    }
+    return null;
+}
+
         // 3. Creatives
         console.log(`Fetching creatives for advertiser ${advertiserId}...`);
         const creatives = await client.listAllCreatives(advertiserId);
@@ -148,7 +167,11 @@ exports.processAdvertiser = async (event, context) => {
             entityStatus: cr.entityStatus,
             displayName: cr.displayName,
             creativeType: cr.creativeType,
-            hostingSource: cr.hostingSource
+            hostingSource: cr.hostingSource,
+            dimensions: (cr.dimensions && cr.dimensions.widthPixels && cr.dimensions.heightPixels)
+                ? `${cr.dimensions.widthPixels}x${cr.dimensions.heightPixels}`
+                : 'RESPONSIVE/NATIVE',
+            imageUrl: extractImageUrl(cr) || ''
         }));
         if (creativeRows.length > 0) {
             await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows);

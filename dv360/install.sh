@@ -140,7 +140,7 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.line_items \
 
 echo "Creating BigQuery table: ${DATASET_ID}.creatives..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \
-  creativeId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,creativeType:STRING,hostingSource:STRING || echo "Table creatives already exists."
+  creativeId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,creativeType:STRING,hostingSource:STRING,dimensions:STRING,imageUrl:STRING || echo "Table creatives already exists."
 
 echo "Creating BigQuery table: ${DATASET_ID}.floodlight_activities..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.floodlight_activities \
