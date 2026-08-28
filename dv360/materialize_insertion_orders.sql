@@ -93,6 +93,7 @@ SELECT
   -- Flight Calculations
   DATE_DIFF(io.end_date, io.start_date, DAY) AS total_flight_days,
   DATE_DIFF(CURRENT_DATE(), io.start_date, DAY) AS elapsed_flight_days,
+  GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)) AS remaining_flight_days,
   SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) AS flight_elapsed_pct,
   SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)) AS budget_spent_pct,
   
@@ -102,23 +103,50 @@ SELECT
     NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
   ) * 100 AS pacing_index_pct,
   
-  -- Pacing Alert Status
+  -- Pacing Burn Rate & Delivery Velocity
+  SAFE_DIVIDE(io.budget_amount, NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) AS target_daily_budget,
+  SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) AS current_daily_burn_rate,
+  SAFE_DIVIDE(GREATEST(0, io.budget_amount - COALESCE(s.cost, 0)), NULLIF(GREATEST(1, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)), 0)) AS required_daily_burn_rate,
+  
+  -- Projected Spend & Budget at Risk (Troubleshooting Delivery Bottlenecks)
+  COALESCE(s.cost, 0) + (
+    SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
+    GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
+  ) AS projected_flight_spend,
+  
   CASE 
-    WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 'PAUSED'
-    WHEN io.budget_amount IS NULL OR io.budget_amount = 0 THEN 'NO_BUDGET_SET'
-    WHEN CURRENT_DATE() < io.start_date THEN 'UPCOMING'
-    WHEN CURRENT_DATE() > io.end_date AND COALESCE(s.cost, 0) < io.budget_amount THEN 'UNDERSPENT_FINISHED'
-    WHEN CURRENT_DATE() > io.end_date THEN 'COMPLETED'
-    WHEN COALESCE(s.cost, 0) >= io.budget_amount THEN 'BUDGET_EXHAUSTED'
+    WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
+    WHEN CURRENT_DATE() > io.end_date THEN GREATEST(0, io.budget_amount - COALESCE(s.cost, 0))
+    WHEN CURRENT_DATE() < io.start_date THEN 0
     WHEN SAFE_DIVIDE(
       SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
-    ) < 0.85 THEN 'UNDERPACING'
+    ) < 0.85 THEN GREATEST(0, io.budget_amount - (
+      COALESCE(s.cost, 0) + (
+        SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
+        GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
+      )
+    ))
+    ELSE 0
+  END AS budget_at_risk,
+
+  -- Pacing Alert Status (with visual indicator markers matching UI legends)
+  CASE 
+    WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN '⚪ PAUSED'
+    WHEN io.budget_amount IS NULL OR io.budget_amount = 0 THEN '⚪ NO_BUDGET_SET'
+    WHEN CURRENT_DATE() < io.start_date THEN '⚪ UPCOMING'
+    WHEN CURRENT_DATE() > io.end_date AND COALESCE(s.cost, 0) < io.budget_amount THEN '🟡 UNDERSPENT_FINISHED'
+    WHEN CURRENT_DATE() > io.end_date THEN '⚪ COMPLETED'
+    WHEN COALESCE(s.cost, 0) >= io.budget_amount THEN '🔴 BUDGET_EXHAUSTED'
     WHEN SAFE_DIVIDE(
       SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
-    ) > 1.15 THEN 'OVERPACING'
-    ELSE 'ON_TRACK'
+    ) < 0.85 THEN '🟡 UNDERPACING'
+    WHEN SAFE_DIVIDE(
+      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
+    ) > 1.15 THEN '🔴 OVERPACING'
+    ELSE '🟢 ON_TRACK'
   END AS pacing_status,
 
   -- Delivery & Cost
