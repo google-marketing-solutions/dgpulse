@@ -108,7 +108,7 @@ SELECT
   SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) AS current_daily_burn_rate,
   SAFE_DIVIDE(GREATEST(0, io.budget_amount - COALESCE(s.cost, 0)), NULLIF(GREATEST(1, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)), 0)) AS required_daily_burn_rate,
   
-  -- Projected Spend & Budget at Risk (Troubleshooting Delivery Bottlenecks)
+  -- Projected Spend & Budget at Risk (Strictly for LIVE Active Flights currently underpacing)
   COALESCE(s.cost, 0) + (
     SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
     GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
@@ -116,8 +116,9 @@ SELECT
   
   CASE 
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
-    WHEN CURRENT_DATE() > io.end_date THEN GREATEST(0, io.budget_amount - COALESCE(s.cost, 0))
+    WHEN io.budget_unit = 'BUDGET_UNIT_IMPRESSIONS' THEN 0
     WHEN CURRENT_DATE() < io.start_date THEN 0
+    WHEN CURRENT_DATE() > io.end_date THEN 0  -- Past completed flights are closed, not at risk
     WHEN SAFE_DIVIDE(
       SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
@@ -129,6 +130,23 @@ SELECT
     ))
     ELSE 0
   END AS budget_at_risk,
+
+  CASE 
+    WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
+    WHEN io.budget_unit = 'BUDGET_UNIT_IMPRESSIONS' THEN 0
+    WHEN CURRENT_DATE() < io.start_date THEN 0
+    WHEN CURRENT_DATE() > io.end_date THEN 0
+    WHEN SAFE_DIVIDE(
+      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
+    ) < 0.85 THEN GREATEST(0, io.budget_amount - (
+      COALESCE(s.cost, 0) + (
+        SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
+        GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
+      )
+    )) * COALESCE(SAFE_DIVIDE(s.cost_usd, NULLIF(s.cost, 0)), 1.0)
+    ELSE 0
+  END AS budget_at_risk_usd,
 
   -- Pacing Alert Status (with visual indicator markers matching UI legends)
   CASE 
