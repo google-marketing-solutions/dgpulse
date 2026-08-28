@@ -30,6 +30,19 @@ WITH creative_stats AS (
   WHERE Creative_Id IS NOT NULL AND Creative_Id > 0
   GROUP BY 1, 2, 3, 4
 ),
+latest_creatives AS (
+  SELECT 
+    creativeId,
+    ANY_VALUE(advertiserId) AS advertiserId,
+    ANY_VALUE(displayName) AS displayName,
+    ANY_VALUE(creativeType) AS creativeType,
+    ANY_VALUE(dimensions) AS dimensions,
+    ANY_VALUE(imageUrl) AS imageUrl,
+    ANY_VALUE(hostingSource) AS hostingSource,
+    ANY_VALUE(entityStatus) AS entityStatus
+  FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
+  GROUP BY creativeId
+),
 latest_advertisers AS (
   SELECT 
     advertiserId,
@@ -95,7 +108,7 @@ SELECT
   COALESCE(cs.post_click_revenue, 0) AS post_click_revenue,
   COALESCE(cs.post_view_revenue, 0) AS post_view_revenue,
   SAFE_DIVIDE(COALESCE(cs.post_click_conversions, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS post_click_conv_rate
-FROM `__PROJECT_ID__.__DATASET_ID__.creatives` c
+FROM latest_creatives c
 LEFT JOIN creative_stats cs
   ON c.creativeId = cs.creative_id
 LEFT JOIN latest_advertisers adv

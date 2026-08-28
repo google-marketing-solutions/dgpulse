@@ -28,7 +28,14 @@ WITH io_stats AS (
     AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
-  GROUP BY 1, 2, 3
+  GROUP BY 1
+),
+latest_campaigns AS (
+  SELECT 
+    campaignId,
+    ANY_VALUE(displayName) AS displayName
+  FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
+  GROUP BY campaignId
 ),
 latest_ios AS (
   SELECT 
@@ -208,7 +215,7 @@ SELECT
   s.lost_is_budget,
   s.lost_is_rank
 FROM latest_ios io
-LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.campaigns` c
+LEFT JOIN latest_campaigns c
   ON io.campaign_id = c.campaignId
 LEFT JOIN io_stats s
   ON io.insertion_order_id = s.insertion_order_id

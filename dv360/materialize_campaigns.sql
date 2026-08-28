@@ -52,6 +52,15 @@ latest_settings AS (
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 ),
+latest_campaigns AS (
+  SELECT 
+    campaignId,
+    ANY_VALUE(displayName) AS displayName,
+    ANY_VALUE(entityStatus) AS entityStatus,
+    ANY_VALUE(advertiserId) AS advertiserId
+  FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
+  GROUP BY campaignId
+),
 latest_advertisers AS (
   SELECT 
     advertiserId,
@@ -126,7 +135,7 @@ SELECT
   stats.io_goal_pacing_pct,
   stats.lost_is_budget,
   stats.lost_is_rank
-FROM `__PROJECT_ID__.__DATASET_ID__.campaigns` meta
+FROM latest_campaigns meta
 LEFT JOIN aggregated_stats stats
   ON meta.advertiserId = stats.advertiser_id
 LEFT JOIN line_item_counts lic

@@ -65,6 +65,24 @@ latest_ios AS (
     ANY_VALUE(endDate) AS end_date
   FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
   GROUP BY 1
+),
+latest_line_items AS (
+  SELECT 
+    lineItemId,
+    ANY_VALUE(displayName) AS displayName,
+    ANY_VALUE(lineItemType) AS lineItemType,
+    ANY_VALUE(entityStatus) AS entityStatus,
+    ANY_VALUE(campaignId) AS campaignId,
+    ANY_VALUE(advertiserId) AS advertiserId
+  FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  GROUP BY lineItemId
+),
+latest_campaigns AS (
+  SELECT 
+    campaignId,
+    ANY_VALUE(displayName) AS displayName
+  FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
+  GROUP BY campaignId
 )
 SELECT 
   COALESCE(s.date, CURRENT_DATE()) AS date,
@@ -150,8 +168,8 @@ SELECT
   s.io_goal_pacing_pct,
   s.lost_is_budget,
   s.lost_is_rank
-FROM `__PROJECT_ID__.__DATASET_ID__.line_items` li
-LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.campaigns` c
+FROM latest_line_items li
+LEFT JOIN latest_campaigns c
   ON li.campaignId = c.campaignId
 LEFT JOIN li_stats s
   ON li.advertiserId = s.advertiser_id
