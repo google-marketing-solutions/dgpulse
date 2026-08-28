@@ -99,21 +99,44 @@ SELECT
   
   -- Flight Calculations
   DATE_DIFF(io.end_date, io.start_date, DAY) AS total_flight_days,
-  DATE_DIFF(CURRENT_DATE(), io.start_date, DAY) AS elapsed_flight_days,
+  CASE 
+    WHEN CURRENT_DATE() < io.start_date THEN 0
+    WHEN CURRENT_DATE() > io.end_date THEN DATE_DIFF(io.end_date, io.start_date, DAY)
+    ELSE DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)
+  END AS elapsed_flight_days,
   GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)) AS remaining_flight_days,
-  SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) * 100 AS flight_elapsed_pct,
+  CASE 
+    WHEN CURRENT_DATE() < io.start_date THEN 0.0
+    WHEN CURRENT_DATE() > io.end_date THEN 100.0
+    ELSE SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) * 100
+  END AS flight_elapsed_pct,
   SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)) * 100 AS budget_spent_pct,
   
   -- Pacing Index % = (Budget Spent % / Flight Elapsed %)
-  SAFE_DIVIDE(
-    SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
-    NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
-  ) * 100 AS pacing_index_pct,
+  CASE 
+    WHEN CURRENT_DATE() < io.start_date THEN 0.0
+    WHEN CURRENT_DATE() > io.end_date THEN SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)) * 100
+    ELSE SAFE_DIVIDE(
+      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
+    ) * 100
+  END AS pacing_index_pct,
   
   -- Pacing Burn Rate & Delivery Velocity
   SAFE_DIVIDE(io.budget_amount, NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) AS target_daily_budget,
-  SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) AS current_daily_burn_rate,
-  SAFE_DIVIDE(GREATEST(0, io.budget_amount - COALESCE(s.cost, 0)), NULLIF(GREATEST(1, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)), 0)) AS required_daily_burn_rate,
+  CASE 
+    WHEN CURRENT_DATE() < io.start_date THEN 0.0
+    ELSE SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, CASE 
+      WHEN CURRENT_DATE() > io.end_date THEN DATE_DIFF(io.end_date, io.start_date, DAY)
+      ELSE DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)
+    END), 0))
+  END AS current_daily_burn_rate,
+  CASE 
+    WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0.0
+    WHEN CURRENT_DATE() > io.end_date THEN 0.0
+    WHEN CURRENT_DATE() < io.start_date THEN SAFE_DIVIDE(io.budget_amount, NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0))
+    ELSE SAFE_DIVIDE(GREATEST(0, io.budget_amount - COALESCE(s.cost, 0)), NULLIF(GREATEST(1, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)), 0))
+  END AS required_daily_burn_rate,
   
   -- Projected Spend & Budget at Risk (Strictly for LIVE Active Flights currently underpacing)
   COALESCE(s.cost, 0) + (
