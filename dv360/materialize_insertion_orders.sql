@@ -2,8 +2,8 @@ CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_pe
 WITH io_stats AS (
   SELECT 
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
-    CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    CAST(Partner_Id AS STRING) AS partner_id,
+    ANY_VALUE(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
+    ANY_VALUE(CAST(Partner_Id AS STRING)) AS partner_id,
     ANY_VALUE(Advertiser_Currency) AS currency_code,
     SUM(Impressions) AS impressions,
     SUM(Clicks) AS clicks,
@@ -101,8 +101,8 @@ SELECT
   DATE_DIFF(io.end_date, io.start_date, DAY) AS total_flight_days,
   DATE_DIFF(CURRENT_DATE(), io.start_date, DAY) AS elapsed_flight_days,
   GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)) AS remaining_flight_days,
-  SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) AS flight_elapsed_pct,
-  SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)) AS budget_spent_pct,
+  SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) * 100 AS flight_elapsed_pct,
+  SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)) * 100 AS budget_spent_pct,
   
   -- Pacing Index % = (Budget Spent % / Flight Elapsed %)
   SAFE_DIVIDE(
