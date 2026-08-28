@@ -81,7 +81,11 @@ SELECT
   COALESCE(sett.ec_enabled, 'NO') AS ec_enabled,
   COALESCE(sett.floodlight_optimization_enabled, 'NO') AS floodlight_optimization_enabled,
   COALESCE(sett.auto_tagging_enabled, 'NO') AS auto_tagging_enabled,
-  COALESCE(sett.gtg_status, 'NOT_CONFIGURED') AS gtg_status,
+  CASE 
+    WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
+    WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
+    ELSE '⚪ NOT_CONFIGURED'
+  END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   CASE 
     WHEN li.lineItemType NOT LIKE '%DEMAND_GEN%' THEN 'N/A'

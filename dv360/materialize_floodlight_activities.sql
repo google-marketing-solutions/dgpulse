@@ -30,7 +30,11 @@ SELECT
   fa.sslRequired AS ssl_required,
   fa.sslComplianceStatus AS ssl_compliance_status,
   fa.remarketingEnabled AS remarketing_enabled,
-  COALESCE(sett.gtg_status, 'NOT_CONFIGURED') AS gtg_status,
+  CASE 
+    WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
+    WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
+    ELSE '⚪ NOT_CONFIGURED'
+  END AS gtg_status,
   CASE 
     WHEN fa.servingStatus = 'FLOODLIGHT_ACTIVITY_SERVING_STATUS_DISABLED' THEN 'Disabled / Inactive Activity'
     WHEN fa.tagModernizationStatus = 'LEGACY_IMAGE_TAG' THEN '🔴 Upgrade to Modern Google Tag'

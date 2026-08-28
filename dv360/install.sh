@@ -225,6 +225,7 @@ for sql_file in materialize_campaigns.sql materialize_line_items.sql materialize
       --target_dataset="${DATASET_ID}" \
       --display_name="${display_name}" \
       --params="${PARAMS}" \
+      --service_account_name="${SERVICE_ACCOUNT}" \
       --schedule="every day 08:00" || echo "Warning: Failed to create transfer config for ${display_name}"
   else
     echo "Scheduled query for ${display_name} already exists."

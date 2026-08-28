@@ -72,7 +72,11 @@ SELECT
   COALESCE(lic.has_demand_gen_line_item, 'NO') AS has_demand_gen_line_item,
   COALESCE(sett.has_crm_audience, 'NO') AS data_manager_crm_connected,
   COALESCE(sett.has_ga_audience, 'NO') AS data_manager_ga_connected,
-  COALESCE(sett.gtg_status, 'NOT_CONFIGURED') AS gtg_status,
+  CASE 
+    WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
+    WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
+    ELSE '⚪ NOT_CONFIGURED'
+  END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   CASE 
     WHEN COALESCE(lic.has_demand_gen_line_item, 'NO') = 'NO' THEN 'N/A'

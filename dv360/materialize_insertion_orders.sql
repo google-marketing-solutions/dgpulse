@@ -71,7 +71,11 @@ SELECT
   io.advertiser_id,
   io.advertiser_id AS account_id,
   COALESCE(adv.displayName, io.advertiser_id) AS account_name,
-  COALESCE(sett.gtg_status, 'NOT_CONFIGURED') AS gtg_status,
+  CASE 
+    WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
+    WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
+    ELSE '⚪ NOT_CONFIGURED'
+  END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
   COALESCE(s.currency_code, 'USD') AS currency_code,
