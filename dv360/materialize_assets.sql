@@ -11,6 +11,7 @@ WITH creative_stats AS (
     SUM(Impressions) AS impressions,
     SUM(Clicks) AS clicks,
     SUM(Revenue) AS cost,
+    SUM(COALESCE(Revenue_USD, Revenue)) AS cost_usd,
     SUM(Total_Conversions) AS conversions,
     SUM(COALESCE(Active_View_Viewable_Impressions, 0)) AS active_view_viewable_impressions,
     SUM(COALESCE(Active_View_Measurable_Impressions, 0)) AS active_view_measurable_impressions,
@@ -63,9 +64,12 @@ SELECT
   COALESCE(cs.impressions, 0) AS impressions,
   COALESCE(cs.clicks, 0) AS clicks,
   COALESCE(cs.cost, 0) AS cost,
+  COALESCE(cs.cost_usd, 0) AS cost_usd,
   SAFE_DIVIDE(COALESCE(cs.clicks, 0), NULLIF(COALESCE(cs.impressions, 0), 0)) AS ctr,
   SAFE_DIVIDE(COALESCE(cs.cost, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS cpc,
+  SAFE_DIVIDE(COALESCE(cs.cost_usd, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS cpc_usd,
   SAFE_DIVIDE(COALESCE(cs.cost, 0) * 1000, NULLIF(COALESCE(cs.impressions, 0), 0)) AS cpm,
+  SAFE_DIVIDE(COALESCE(cs.cost_usd, 0) * 1000, NULLIF(COALESCE(cs.impressions, 0), 0)) AS cpm_usd,
 
   -- Media Quality & Viewability
   COALESCE(cs.active_view_viewable_impressions, 0) AS active_view_viewable_impressions,
