@@ -64,7 +64,8 @@ latest_campaigns AS (
 latest_advertisers AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS displayName
+    ANY_VALUE(displayName) AS displayName,
+    ANY_VALUE(currencyCode) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
@@ -85,7 +86,11 @@ SELECT
   meta.advertiserId AS advertiser_id,
   meta.advertiserId AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, meta.advertiserId) AS account_name,
-  COALESCE(stats.currency_code, ac.currency_code, 'USD') AS currency_code,
+  COALESCE(
+    stats.currency_code, 
+    NULLIF(adv.currency_code, ''), 
+    ac.currency_code
+  ) AS currency_code,
   COALESCE(lic.is_limited_by_budget, 'NO') AS is_limited_by_budget,
   COALESCE(lic.line_item_count, 0) AS line_item_count,
   COALESCE(lic.has_demand_gen_line_item, 'NO') AS has_demand_gen_line_item,

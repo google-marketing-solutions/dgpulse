@@ -305,6 +305,7 @@ function extractImageUrl(cr) {
             advertiserId: String(advertiserId),
             displayName: (advDetails && advDetails.displayName) || String(advertiserId),
             partnerId: (advDetails && advDetails.partnerId) || String(data.partnerId || ''),
+            currency_code: (advDetails && advDetails.generalConfig && advDetails.generalConfig.currencyCode) || '',
             has_crm_audience: hasCrmAudience ? 'YES' : 'NO',
             has_ga_audience: hasGaAudience ? 'YES' : 'NO',
             floodlight_optimization_enabled: floodlightOptEnabled ? 'YES' : 'NO',

@@ -68,6 +68,7 @@ exports.fetchAdvertisers = async (req, res) => {
             displayName: adv.displayName || '',
             entityStatus: adv.entityStatus || '',
             partnerId: adv.partnerId || String(partnerId),
+            currencyCode: (adv.generalConfig && adv.generalConfig.currencyCode) || '',
             cmFloodlightConfigId: (adv.adServerConfig && adv.adServerConfig.cmHybridConfig && adv.adServerConfig.cmHybridConfig.cmFloodlightConfigId) || '',
             cmFloodlightLinkingAuthorized: Boolean(adv.adServerConfig && adv.adServerConfig.cmHybridConfig && adv.adServerConfig.cmHybridConfig.cmFloodlightLinkingAuthorized)
         }));

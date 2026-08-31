@@ -57,7 +57,8 @@ latest_ios AS (
 latest_advertisers AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS displayName
+    ANY_VALUE(displayName) AS displayName,
+    ANY_VALUE(currencyCode) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
@@ -65,7 +66,8 @@ latest_settings AS (
   SELECT 
     advertiserId,
     ANY_VALUE(gtg_status) AS gtg_status,
-    ANY_VALUE(web_tag_type) AS web_tag_type
+    ANY_VALUE(web_tag_type) AS web_tag_type,
+    ANY_VALUE(currency_code) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 ),
@@ -95,7 +97,12 @@ SELECT
   END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
-  COALESCE(s.currency_code, ac.currency_code, 'USD') AS currency_code,
+  COALESCE(
+    s.currency_code, 
+    NULLIF(sett.currency_code, ''), 
+    NULLIF(adv.currency_code, ''), 
+    ac.currency_code
+  ) AS currency_code,
   io.pacing_type,
   io.pacing_period,
   io.daily_max_amount,
@@ -183,7 +190,7 @@ SELECT
         SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
         GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
       )
-    )) * COALESCE(SAFE_DIVIDE(s.cost_usd, NULLIF(s.cost, 0)), ac.fx_rate_to_usd, 1.0)
+    )) * COALESCE(SAFE_DIVIDE(s.cost_usd, NULLIF(s.cost, 0)), ac.fx_rate_to_usd, IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
     ELSE 0
   END AS budget_at_risk_usd,
 

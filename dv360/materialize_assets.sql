@@ -46,7 +46,8 @@ latest_creatives AS (
 latest_advertisers AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS displayName
+    ANY_VALUE(displayName) AS displayName,
+    ANY_VALUE(currencyCode) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
@@ -79,7 +80,11 @@ SELECT
   c.advertiserId AS advertiser_id,
   c.advertiserId AS account_id,
   COALESCE(adv.displayName, c.advertiserId) AS account_name,
-  COALESCE(cs.currency_code, ac.currency_code, 'USD') AS currency_code,
+  COALESCE(
+    cs.currency_code, 
+    NULLIF(adv.currency_code, ''), 
+    ac.currency_code
+  ) AS currency_code,
   COALESCE(cs.partner_id, '__PARTNER_ID__') AS partner_id,
 
   -- Delivery & Cost
