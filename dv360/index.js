@@ -89,11 +89,20 @@ exports.fetchAdvertisers = async (req, res) => {
             await pubsub.topic(TOPIC_NAME).publishMessage({ data: dataBuffer });
         }
 
+        // Sync and ingest latest DBM performance report into BigQuery
+        try {
+            console.log(`Syncing DBM performance report for partner ${partnerId}...`);
+            const { syncDbmPerformanceReport } = require('./create_report');
+            await syncDbmPerformanceReport(partnerId);
+        } catch (dbmErr) {
+            console.warn('Warning syncing DBM performance report:', dbmErr.message);
+        }
+
         res.json({
             success: true,
             partnerId,
             count: advertisers.length,
-            message: `Triggered processing for ${advertisers.length} advertisers.`
+            message: `Triggered processing for ${advertisers.length} advertisers and synced DBM report.`
         });
     } catch (error) {
         console.error('Error:', error.message);
@@ -106,3 +115,4 @@ exports.fetchAdvertisers = async (req, res) => {
 
 exports.processAdvertiser = require('./process_advertiser').processAdvertiser;
 exports.setupDbmReport = require('./create_report').setupDbmReport;
+exports.syncDbmPerformanceReport = require('./create_report').syncDbmPerformanceReport;

@@ -206,6 +206,9 @@ else
     --uri="${SERVICE_URL}"
 fi
 
+echo "Syncing DBM Performance Report into BigQuery..."
+node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."
+
 echo "Running initial materialization queries..."
 for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_floodlight_activities.sql; do
   echo "Materializing: $sql"
