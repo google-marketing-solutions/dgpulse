@@ -17,29 +17,73 @@ const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
 
 let dv360Client = null;
 
+const fs = require('fs');
+
 /**
- * Downloads client_secret.json from GCS and initializes DV360Client.
+ * Downloads client_secret.json from GCS or local filesystem and initializes DV360Client.
  */
 async function initializeClient() {
   if (dv360Client) return dv360Client;
 
-  if (!BUCKET_NAME || !REFRESH_TOKEN) {
-    throw new Error('Missing BUCKET_NAME or REFRESH_TOKEN environment variables.');
+  let bucketName = process.env.BUCKET_NAME;
+  let refreshToken = process.env.REFRESH_TOKEN;
+
+  // 1. Check local .env file if missing
+  if ((!bucketName || !refreshToken) && fs.existsSync('.env')) {
+    const envContent = fs.readFileSync('.env', 'utf8');
+    for (const line of envContent.split('\n')) {
+      const [k, v] = line.split('=');
+      if (k && v) {
+        if (!bucketName && k.trim() === 'BUCKET_NAME') bucketName = v.trim().replace(/^"|"$/g, '');
+        if (!refreshToken && k.trim() === 'REFRESH_TOKEN') refreshToken = v.trim().replace(/^"|"$/g, '');
+      }
+    }
   }
 
-  console.log(`Downloading ${CLIENT_SECRET_FILE} from bucket ${BUCKET_NAME}...`);
-  const [content] = await storage
-    .bucket(BUCKET_NAME)
-    .file(CLIENT_SECRET_FILE)
-    .download();
+  let credentials = null;
 
-  const keys = JSON.parse(content.toString());
-  const credentials = keys.installed || keys.web || keys;
+  // 2. Try local client_secret.json
+  if (fs.existsSync(CLIENT_SECRET_FILE)) {
+    try {
+      const keys = JSON.parse(fs.readFileSync(CLIENT_SECRET_FILE, 'utf8'));
+      credentials = keys.installed || keys.web || keys;
+    } catch (e) {}
+  }
+
+  // 3. Try GCS bucket if not found locally
+  if (!credentials) {
+    if (!bucketName) {
+      try {
+        const [buckets] = await storage.getBuckets();
+        const match = buckets.find(b => b.name.includes('dv360') || b.name.includes('dgpulse'));
+        if (match) bucketName = match.name;
+      } catch (e) {}
+    }
+
+    if (bucketName) {
+      console.log(`Downloading ${CLIENT_SECRET_FILE} from bucket ${bucketName}...`);
+      const [content] = await storage
+        .bucket(bucketName)
+        .file(CLIENT_SECRET_FILE)
+        .download();
+
+      const keys = JSON.parse(content.toString());
+      credentials = keys.installed || keys.web || keys;
+    }
+  }
+
+  if (!credentials) {
+    throw new Error(`Missing ${CLIENT_SECRET_FILE} locally or in GCS bucket.`);
+  }
+
+  if (!refreshToken) {
+    throw new Error('Missing REFRESH_TOKEN environment variable.');
+  }
 
   dv360Client = new DV360Client(
     credentials,
     null,
-    REFRESH_TOKEN
+    refreshToken
   );
 
   return dv360Client;
