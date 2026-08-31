@@ -9,8 +9,18 @@ WITH deduped_dbm AS (
   )
   WHERE row_num = 1
 ),
+io_flight_totals AS (
+  SELECT 
+    CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
+    SUM(Revenue) AS cumulative_spend,
+    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS cumulative_spend_usd,
+    SUM(Impressions) AS cumulative_impressions
+  FROM deduped_dbm
+  GROUP BY 1
+),
 io_stats AS (
   SELECT 
+    COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
     MAX(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
     MAX(CAST(Partner_Id AS STRING)) AS partner_id,
@@ -37,7 +47,7 @@ io_stats AS (
     AVG(TrueView_Lost_IS_Budget) AS lost_is_budget,
     AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
   FROM deduped_dbm
-  GROUP BY 1
+  GROUP BY 1, 2
 ),
 latest_campaigns AS (
   SELECT 
@@ -90,7 +100,7 @@ advertiser_currencies AS (
   GROUP BY 1
 )
 SELECT 
-  CURRENT_DATE() AS date,
+  COALESCE(s.date, CURRENT_DATE()) AS date,
   io.insertion_order_id,
   io.insertion_order_name,
   io.entity_status,
@@ -119,8 +129,8 @@ SELECT
   io.budget_amount,
   io.start_date,
   io.end_date,
-  COALESCE(s.cost, 0) AS cumulative_spend,
-  COALESCE(s.cost_usd, 0) AS cumulative_spend_usd,
+  COALESCE(ft.cumulative_spend, 0) AS cumulative_spend,
+  COALESCE(ft.cumulative_spend_usd, 0) AS cumulative_spend_usd,
   
   -- Flight Calculations
   DATE_DIFF(io.end_date, io.start_date, DAY) AS total_flight_days,
@@ -135,14 +145,14 @@ SELECT
     WHEN CURRENT_DATE() > io.end_date THEN 100.0
     ELSE SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) * 100
   END AS flight_elapsed_pct,
-  SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)) * 100 AS budget_spent_pct,
+  SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)) * 100 AS budget_spent_pct,
   
   -- Pacing Index % = (Budget Spent % / Flight Elapsed %)
   CASE 
     WHEN CURRENT_DATE() < io.start_date THEN 0.0
-    WHEN CURRENT_DATE() > io.end_date THEN SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)) * 100
+    WHEN CURRENT_DATE() > io.end_date THEN SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)) * 100
     ELSE SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
     ) * 100
   END AS pacing_index_pct,
@@ -151,7 +161,7 @@ SELECT
   SAFE_DIVIDE(io.budget_amount, NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) AS target_daily_budget,
   CASE 
     WHEN CURRENT_DATE() < io.start_date THEN 0.0
-    ELSE SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, CASE 
+    ELSE SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, CASE 
       WHEN CURRENT_DATE() > io.end_date THEN DATE_DIFF(io.end_date, io.start_date, DAY)
       ELSE DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)
     END), 0))
@@ -160,12 +170,12 @@ SELECT
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0.0
     WHEN CURRENT_DATE() > io.end_date THEN 0.0
     WHEN CURRENT_DATE() < io.start_date THEN SAFE_DIVIDE(io.budget_amount, NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0))
-    ELSE SAFE_DIVIDE(GREATEST(0, io.budget_amount - COALESCE(s.cost, 0)), NULLIF(GREATEST(1, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)), 0))
+    ELSE SAFE_DIVIDE(GREATEST(0, io.budget_amount - COALESCE(ft.cumulative_spend, 0)), NULLIF(GREATEST(1, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)), 0))
   END AS required_daily_burn_rate,
   
   -- Projected Spend & Budget at Risk (Strictly for LIVE Active Flights currently underpacing)
-  COALESCE(s.cost, 0) + (
-    SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
+  COALESCE(ft.cumulative_spend, 0) + (
+    SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
     GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
   ) AS projected_flight_spend,
   
@@ -175,11 +185,11 @@ SELECT
     WHEN CURRENT_DATE() < io.start_date THEN 0
     WHEN CURRENT_DATE() > io.end_date THEN 0  -- Past completed flights are closed, not at risk
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
     ) < 0.85 THEN GREATEST(0, io.budget_amount - (
-      COALESCE(s.cost, 0) + (
-        SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
+      COALESCE(ft.cumulative_spend, 0) + (
+        SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
         GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
       )
     ))
@@ -192,14 +202,14 @@ SELECT
     WHEN CURRENT_DATE() < io.start_date THEN 0
     WHEN CURRENT_DATE() > io.end_date THEN 0
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
     ) < 0.85 THEN GREATEST(0, io.budget_amount - (
-      COALESCE(s.cost, 0) + (
-        SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
+      COALESCE(ft.cumulative_spend, 0) + (
+        SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
         GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
       )
-    )) * COALESCE(NULLIF(SAFE_DIVIDE(NULLIF(s.cost_usd, 0), NULLIF(s.cost, 0)), 0), NULLIF(ac.fx_rate_to_usd, 0), IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
+    )) * COALESCE(NULLIF(SAFE_DIVIDE(NULLIF(ft.cumulative_spend_usd, 0), NULLIF(ft.cumulative_spend, 0)), 0), NULLIF(ac.fx_rate_to_usd, 0), IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
     ELSE 0
   END AS budget_at_risk_usd,
 
@@ -208,15 +218,15 @@ SELECT
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN '⚪ PAUSED'
     WHEN io.budget_amount IS NULL OR io.budget_amount = 0 THEN '⚪ NO_BUDGET_SET'
     WHEN CURRENT_DATE() < io.start_date THEN '⚪ UPCOMING'
-    WHEN CURRENT_DATE() > io.end_date AND COALESCE(s.cost, 0) < io.budget_amount THEN '🟡 UNDERSPENT_FINISHED'
+    WHEN CURRENT_DATE() > io.end_date AND COALESCE(ft.cumulative_spend, 0) < io.budget_amount THEN '🟡 UNDERSPENT_FINISHED'
     WHEN CURRENT_DATE() > io.end_date THEN '⚪ COMPLETED'
-    WHEN COALESCE(s.cost, 0) >= io.budget_amount THEN '🔴 BUDGET_EXHAUSTED'
+    WHEN COALESCE(ft.cumulative_spend, 0) >= io.budget_amount THEN '🔴 BUDGET_EXHAUSTED'
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
     ) < 0.85 THEN '🟡 UNDERPACING'
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(io.budget_amount, 0)),
+      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
     ) > 1.15 THEN '🔴 OVERPACING'
     ELSE '🟢 ON_TRACK'
@@ -263,10 +273,12 @@ SELECT
   s.lost_is_budget,
   s.lost_is_rank
 FROM latest_ios io
-LEFT JOIN latest_campaigns c
-  ON io.campaign_id = c.campaignId
+LEFT JOIN io_flight_totals ft
+  ON io.insertion_order_id = ft.insertion_order_id
 LEFT JOIN io_stats s
   ON io.insertion_order_id = s.insertion_order_id
+LEFT JOIN latest_campaigns c
+  ON io.campaign_id = c.campaignId
 LEFT JOIN latest_advertisers adv
   ON io.advertiser_id = adv.advertiserId
 LEFT JOIN latest_settings sett
