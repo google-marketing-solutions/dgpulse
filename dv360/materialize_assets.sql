@@ -1,17 +1,27 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_assets_performance` AS
-WITH creative_stats AS (
+WITH deduped_dbm AS (
+  SELECT * EXCEPT(row_num) FROM (
+    SELECT *, ROW_NUMBER() OVER(
+      PARTITION BY Report_Day, Insertion_Order_Id, Creative_Id, Device_Type, Inventory_Source
+    ) AS row_num
+    FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+    WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
+  )
+  WHERE row_num = 1
+),
+creative_stats AS (
   SELECT 
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Creative_Id AS STRING) AS creative_id,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     CAST(Partner_Id AS STRING) AS partner_id,
-    ANY_VALUE(Device_Type) AS device_type,
-    ANY_VALUE(Inventory_Source) AS inventory_source,
-    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    MAX(NULLIF(Device_Type, '')) AS device_type,
+    MAX(NULLIF(Inventory_Source, '')) AS inventory_source,
+    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SUM(Impressions) AS impressions,
     SUM(Clicks) AS clicks,
     SUM(Revenue) AS cost,
-    SUM(COALESCE(Revenue_USD, Revenue)) AS cost_usd,
+    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS cost_usd,
     SUM(Total_Conversions) AS conversions,
     SUM(COALESCE(Active_View_Viewable_Impressions, 0)) AS active_view_viewable_impressions,
     SUM(COALESCE(Active_View_Measurable_Impressions, 0)) AS active_view_measurable_impressions,
@@ -26,7 +36,7 @@ WITH creative_stats AS (
     SUM(COALESCE(Post_View_Conversions, 0)) AS post_view_conversions,
     SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
     SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
-  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  FROM deduped_dbm
   WHERE Creative_Id IS NOT NULL AND Creative_Id > 0
   GROUP BY 1, 2, 3, 4
 ),
@@ -55,8 +65,8 @@ advertiser_currencies AS (
   SELECT 
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
-    SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
-  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+    SAFE_DIVIDE(SUM(NULLIF(Revenue_USD, 0)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
+  FROM deduped_dbm
   WHERE Advertiser_Currency IS NOT NULL
   GROUP BY 1
 )

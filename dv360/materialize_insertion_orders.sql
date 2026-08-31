@@ -1,5 +1,15 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_performance` AS
-WITH io_stats AS (
+WITH deduped_dbm AS (
+  SELECT * EXCEPT(row_num) FROM (
+    SELECT *, ROW_NUMBER() OVER(
+      PARTITION BY Report_Day, Insertion_Order_Id, Creative_Id, Device_Type, Inventory_Source
+    ) AS row_num
+    FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+    WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
+  )
+  WHERE row_num = 1
+),
+io_stats AS (
   SELECT 
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
     MAX(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
@@ -26,8 +36,7 @@ WITH io_stats AS (
     AVG(Percentage_From_Current_IO_Goal) AS io_goal_pacing_pct,
     AVG(TrueView_Lost_IS_Budget) AS lost_is_budget,
     AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
-  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
-  WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
+  FROM deduped_dbm
   GROUP BY 1
 ),
 latest_campaigns AS (
@@ -76,7 +85,7 @@ advertiser_currencies AS (
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SAFE_DIVIDE(SUM(NULLIF(Revenue_USD, 0)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
-  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  FROM deduped_dbm
   WHERE Advertiser_Currency IS NOT NULL
   GROUP BY 1
 )

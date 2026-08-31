@@ -275,11 +275,15 @@ async function syncDbmPerformanceReport(partnerIdOverride) {
   console.log(`Mapped ${bqRows.length} valid performance rows for BigQuery.`);
 
   if (bqRows.length > 0) {
-    const projectId = bigquery.projectId || process.env.PROJECT_ID;
     try {
-      await bigquery.query({
-        query: `DELETE FROM \`${projectId}.${DATASET_ID}.dbm_performance\` WHERE true;`
-      });
+      const dataset = bigquery.dataset(DATASET_ID);
+      const [table] = await dataset.table('dbm_performance').get();
+      const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
+      if (pId) {
+        await bigquery.query({
+          query: `TRUNCATE TABLE \`${pId}.${DATASET_ID}.dbm_performance\`;`
+        });
+      }
     } catch (delErr) {
       console.warn('Warning clearing dbm_performance table:', delErr.message);
     }
