@@ -8,7 +8,7 @@ WITH io_stats AS (
     SUM(Impressions) AS impressions,
     SUM(Clicks) AS clicks,
     SUM(Revenue) AS cost,
-    SUM(COALESCE(Revenue_USD, Revenue)) AS cost_usd,
+    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS cost_usd,
     SUM(Total_Conversions) AS conversions,
     SUM(COALESCE(Active_View_Viewable_Impressions, 0)) AS active_view_viewable_impressions,
     SUM(COALESCE(Active_View_Measurable_Impressions, 0)) AS active_view_measurable_impressions,
@@ -75,7 +75,7 @@ advertiser_currencies AS (
   SELECT 
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
-    SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
+    SAFE_DIVIDE(SUM(NULLIF(Revenue_USD, 0)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   WHERE Advertiser_Currency IS NOT NULL
   GROUP BY 1
@@ -190,7 +190,7 @@ SELECT
         SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
         GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
       )
-    )) * COALESCE(SAFE_DIVIDE(s.cost_usd, NULLIF(s.cost, 0)), ac.fx_rate_to_usd, IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
+    )) * COALESCE(NULLIF(SAFE_DIVIDE(NULLIF(s.cost_usd, 0), NULLIF(s.cost, 0)), 0), NULLIF(ac.fx_rate_to_usd, 0), IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
     ELSE 0
   END AS budget_at_risk_usd,
 
