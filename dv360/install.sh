@@ -215,23 +215,28 @@ for sql_file in materialize_campaigns.sql materialize_line_items.sql materialize
   view_name=$(basename "$sql_file" .sql)
   display_name="Materialize DV360 ${view_name} Daily"
   
-  if ! bq ls --transfer_config --transfer_location=${REGION} --project_id=${PROJECT_ID} 2>/dev/null | grep -q "${display_name}"; then
+    CONFIG_NAME=$(bq ls --transfer_config --transfer_location=${REGION} --project_id=${PROJECT_ID} --format=prettyjson 2>/dev/null | grep -B 2 "${display_name}" | grep '"name"' | head -1 | awk -F'"' '{print $4}')
     QUERY=$(cat "$sql_file" | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")
     JSON_QUERY=$(echo "${QUERY}" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
     PARAMS=$(printf '{"query":"%s"}' "${JSON_QUERY}")
     
-    bq mk --transfer_config \
-      --project_id="${PROJECT_ID}" \
-      --data_source=scheduled_query \
-      --target_dataset="${DATASET_ID}" \
-      --display_name="${display_name}" \
-      --params="${PARAMS}" \
-      --service_account_name="${SERVICE_ACCOUNT}" \
-      --schedule="every day 08:00" || echo "Warning: Failed to create transfer config for ${display_name}"
-  else
-    echo "Scheduled query for ${display_name} already exists."
-  fi
-done
+    if [ -z "${CONFIG_NAME}" ]; then
+      echo "Creating transfer config for ${display_name}..."
+      bq mk --transfer_config \
+        --project_id="${PROJECT_ID}" \
+        --data_source=scheduled_query \
+        --target_dataset="${DATASET_ID}" \
+        --display_name="${display_name}" \
+        --params="${PARAMS}" \
+        --service_account_name="${SERVICE_ACCOUNT}" \
+        --schedule="every day 08:00" || echo "Warning: Failed to create transfer config for ${display_name}"
+    else
+      echo "Updating existing transfer config for ${display_name}..."
+      bq update --transfer_config \
+        --params="${PARAMS}" \
+        "${CONFIG_NAME}" || echo "Warning: Failed to update transfer config for ${display_name}"
+    fi
+  done
 
 LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=5e126b6a-33fc-4d0a-80cb-7ce6bc990001\
 &ds.campaign_performance.connector=bigQuery&ds.campaign_performance.projectId=${PROJECT_ID}&ds.campaign_performance.datasetId=${DATASET_ID}&ds.campaign_performance.type=TABLE&ds.campaign_performance.tableId=final_campaign_performance&ds.campaign_performance.refreshFields=false\
