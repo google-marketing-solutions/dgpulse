@@ -68,6 +68,15 @@ latest_settings AS (
     ANY_VALUE(web_tag_type) AS web_tag_type
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
+),
+advertiser_currencies AS (
+  SELECT 
+    CAST(Advertiser_Id AS STRING) AS advertiser_id,
+    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
+  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  WHERE Advertiser_Currency IS NOT NULL
+  GROUP BY 1
 )
 SELECT 
   CURRENT_DATE() AS date,
@@ -86,7 +95,7 @@ SELECT
   END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
-  COALESCE(s.currency_code, 'USD') AS currency_code,
+  COALESCE(s.currency_code, ac.currency_code, 'USD') AS currency_code,
   io.pacing_type,
   io.pacing_period,
   io.daily_max_amount,
@@ -174,7 +183,7 @@ SELECT
         SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
         GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
       )
-    )) * COALESCE(SAFE_DIVIDE(s.cost_usd, NULLIF(s.cost, 0)), 1.0)
+    )) * COALESCE(SAFE_DIVIDE(s.cost_usd, NULLIF(s.cost, 0)), ac.fx_rate_to_usd, 1.0)
     ELSE 0
   END AS budget_at_risk_usd,
 
@@ -245,4 +254,6 @@ LEFT JOIN io_stats s
 LEFT JOIN latest_advertisers adv
   ON io.advertiser_id = adv.advertiserId
 LEFT JOIN latest_settings sett
-  ON io.advertiser_id = sett.advertiserId;
+  ON io.advertiser_id = sett.advertiserId
+LEFT JOIN advertiser_currencies ac
+  ON io.advertiser_id = ac.advertiser_id;

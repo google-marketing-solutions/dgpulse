@@ -54,6 +54,15 @@ latest_advertisers AS (
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
+advertiser_currencies AS (
+  SELECT 
+    CAST(Advertiser_Id AS STRING) AS advertiser_id,
+    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
+  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  WHERE Advertiser_Currency IS NOT NULL
+  GROUP BY 1
+),
 latest_ios AS (
   SELECT 
     insertionOrderId AS insertion_order_id,
@@ -125,7 +134,7 @@ SELECT
   li.advertiserId AS advertiser_id,
   li.advertiserId AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, li.advertiserId) AS account_name,
-  COALESCE(s.currency_code, 'USD') AS currency_code,
+  COALESCE(s.currency_code, ac.currency_code, 'USD') AS currency_code,
   COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
 
   -- Delivery & Cost
@@ -178,4 +187,6 @@ LEFT JOIN latest_settings sett
 LEFT JOIN latest_advertisers adv
   ON li.advertiserId = adv.advertiserId
 LEFT JOIN latest_ios io
-  ON s.insertion_order_id = io.insertion_order_id;
+  ON s.insertion_order_id = io.insertion_order_id
+LEFT JOIN advertiser_currencies ac
+  ON li.advertiserId = ac.advertiser_id;

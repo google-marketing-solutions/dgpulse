@@ -67,6 +67,15 @@ latest_advertisers AS (
     ANY_VALUE(displayName) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
+),
+advertiser_currencies AS (
+  SELECT 
+    CAST(Advertiser_Id AS STRING) AS advertiser_id,
+    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
+  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  WHERE Advertiser_Currency IS NOT NULL
+  GROUP BY 1
 )
 SELECT 
   COALESCE(stats.date, CURRENT_DATE()) AS date,
@@ -76,7 +85,7 @@ SELECT
   meta.advertiserId AS advertiser_id,
   meta.advertiserId AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, meta.advertiserId) AS account_name,
-  COALESCE(stats.currency_code, 'USD') AS currency_code,
+  COALESCE(stats.currency_code, ac.currency_code, 'USD') AS currency_code,
   COALESCE(lic.is_limited_by_budget, 'NO') AS is_limited_by_budget,
   COALESCE(lic.line_item_count, 0) AS line_item_count,
   COALESCE(lic.has_demand_gen_line_item, 'NO') AS has_demand_gen_line_item,
@@ -143,4 +152,6 @@ LEFT JOIN line_item_counts lic
 LEFT JOIN latest_settings sett
   ON meta.advertiserId = sett.advertiserId
 LEFT JOIN latest_advertisers adv
-  ON meta.advertiserId = adv.advertiserId;
+  ON meta.advertiserId = adv.advertiserId
+LEFT JOIN advertiser_currencies ac
+  ON meta.advertiserId = ac.advertiser_id;

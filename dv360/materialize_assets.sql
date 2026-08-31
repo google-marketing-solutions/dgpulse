@@ -49,6 +49,15 @@ latest_advertisers AS (
     ANY_VALUE(displayName) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
+),
+advertiser_currencies AS (
+  SELECT 
+    CAST(Advertiser_Id AS STRING) AS advertiser_id,
+    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
+  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  WHERE Advertiser_Currency IS NOT NULL
+  GROUP BY 1
 )
 SELECT 
   COALESCE(cs.date, CURRENT_DATE()) AS date,
@@ -70,7 +79,7 @@ SELECT
   c.advertiserId AS advertiser_id,
   c.advertiserId AS account_id,
   COALESCE(adv.displayName, c.advertiserId) AS account_name,
-  COALESCE(cs.currency_code, 'USD') AS currency_code,
+  COALESCE(cs.currency_code, ac.currency_code, 'USD') AS currency_code,
   COALESCE(cs.partner_id, '__PARTNER_ID__') AS partner_id,
 
   -- Delivery & Cost
@@ -112,4 +121,6 @@ FROM latest_creatives c
 LEFT JOIN creative_stats cs
   ON c.creativeId = cs.creative_id
 LEFT JOIN latest_advertisers adv
-  ON c.advertiserId = adv.advertiserId;
+  ON c.advertiserId = adv.advertiserId
+LEFT JOIN advertiser_currencies ac
+  ON c.advertiserId = ac.advertiser_id;
