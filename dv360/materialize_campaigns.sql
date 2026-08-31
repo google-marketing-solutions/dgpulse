@@ -41,38 +41,39 @@ line_item_counts AS (
 latest_settings AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS advertiser_name,
-    ANY_VALUE(has_crm_audience) AS has_crm_audience,
-    ANY_VALUE(has_ga_audience) AS has_ga_audience,
-    ANY_VALUE(floodlight_optimization_enabled) AS floodlight_optimization_enabled,
-    ANY_VALUE(auto_tagging_enabled) AS auto_tagging_enabled,
-    ANY_VALUE(ec_enabled) AS ec_enabled,
-    ANY_VALUE(gtg_status) AS gtg_status,
-    ANY_VALUE(web_tag_type) AS web_tag_type
+    MAX(NULLIF(displayName, '')) AS advertiser_name,
+    MAX(NULLIF(has_crm_audience, '')) AS has_crm_audience,
+    MAX(NULLIF(has_ga_audience, '')) AS has_ga_audience,
+    MAX(NULLIF(floodlight_optimization_enabled, '')) AS floodlight_optimization_enabled,
+    MAX(NULLIF(auto_tagging_enabled, '')) AS auto_tagging_enabled,
+    MAX(NULLIF(ec_enabled, '')) AS ec_enabled,
+    MAX(NULLIF(gtg_status, '')) AS gtg_status,
+    MAX(NULLIF(web_tag_type, '')) AS web_tag_type,
+    MAX(NULLIF(currency_code, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 ),
 latest_campaigns AS (
   SELECT 
     campaignId,
-    ANY_VALUE(displayName) AS displayName,
-    ANY_VALUE(entityStatus) AS entityStatus,
-    ANY_VALUE(advertiserId) AS advertiserId
+    MAX(NULLIF(displayName, '')) AS displayName,
+    MAX(NULLIF(entityStatus, '')) AS entityStatus,
+    MAX(NULLIF(advertiserId, '')) AS advertiserId
   FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
   GROUP BY campaignId
 ),
 latest_advertisers AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS displayName,
-    ANY_VALUE(currencyCode) AS currency_code
+    MAX(NULLIF(displayName, '')) AS displayName,
+    MAX(NULLIF(currencyCode, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
 advertiser_currencies AS (
   SELECT 
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   WHERE Advertiser_Currency IS NOT NULL

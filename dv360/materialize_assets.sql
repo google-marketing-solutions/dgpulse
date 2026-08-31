@@ -33,28 +33,28 @@ WITH creative_stats AS (
 latest_creatives AS (
   SELECT 
     creativeId,
-    ANY_VALUE(advertiserId) AS advertiserId,
-    ANY_VALUE(displayName) AS displayName,
-    ANY_VALUE(creativeType) AS creativeType,
-    ANY_VALUE(dimensions) AS dimensions,
-    ANY_VALUE(imageUrl) AS imageUrl,
-    ANY_VALUE(hostingSource) AS hostingSource,
-    ANY_VALUE(entityStatus) AS entityStatus
+    MAX(NULLIF(advertiserId, '')) AS advertiserId,
+    MAX(NULLIF(displayName, '')) AS displayName,
+    MAX(NULLIF(creativeType, '')) AS creativeType,
+    MAX(NULLIF(dimensions, '')) AS dimensions,
+    MAX(NULLIF(imageUrl, '')) AS imageUrl,
+    MAX(NULLIF(hostingSource, '')) AS hostingSource,
+    MAX(NULLIF(entityStatus, '')) AS entityStatus
   FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
   GROUP BY creativeId
 ),
 latest_advertisers AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS displayName,
-    ANY_VALUE(currencyCode) AS currency_code
+    MAX(NULLIF(displayName, '')) AS displayName,
+    MAX(NULLIF(currencyCode, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
 advertiser_currencies AS (
   SELECT 
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   WHERE Advertiser_Currency IS NOT NULL

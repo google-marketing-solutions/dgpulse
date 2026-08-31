@@ -2,9 +2,9 @@ CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_pe
 WITH io_stats AS (
   SELECT 
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
-    ANY_VALUE(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
-    ANY_VALUE(CAST(Partner_Id AS STRING)) AS partner_id,
-    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    MAX(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
+    MAX(CAST(Partner_Id AS STRING)) AS partner_id,
+    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SUM(Impressions) AS impressions,
     SUM(Clicks) AS clicks,
     SUM(Revenue) AS cost,
@@ -33,48 +33,48 @@ WITH io_stats AS (
 latest_campaigns AS (
   SELECT 
     campaignId,
-    ANY_VALUE(displayName) AS displayName
+    MAX(NULLIF(displayName, '')) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
   GROUP BY campaignId
 ),
 latest_ios AS (
   SELECT 
     insertionOrderId AS insertion_order_id,
-    ANY_VALUE(displayName) AS insertion_order_name,
-    ANY_VALUE(advertiserId) AS advertiser_id,
-    ANY_VALUE(campaignId) AS campaign_id,
-    ANY_VALUE(entityStatus) AS entity_status,
-    ANY_VALUE(pacingType) AS pacing_type,
-    ANY_VALUE(pacingPeriod) AS pacing_period,
-    ANY_VALUE(dailyMaxAmount) AS daily_max_amount,
-    ANY_VALUE(budgetUnit) AS budget_unit,
-    ANY_VALUE(budgetAmount) AS budget_amount,
-    ANY_VALUE(startDate) AS start_date,
-    ANY_VALUE(endDate) AS end_date
+    MAX(NULLIF(displayName, '')) AS insertion_order_name,
+    MAX(NULLIF(advertiserId, '')) AS advertiser_id,
+    MAX(NULLIF(campaignId, '')) AS campaign_id,
+    MAX(NULLIF(entityStatus, '')) AS entity_status,
+    MAX(NULLIF(pacingType, '')) AS pacing_type,
+    MAX(NULLIF(pacingPeriod, '')) AS pacing_period,
+    MAX(dailyMaxAmount) AS daily_max_amount,
+    MAX(NULLIF(budgetUnit, '')) AS budget_unit,
+    MAX(budgetAmount) AS budget_amount,
+    MAX(startDate) AS start_date,
+    MAX(endDate) AS end_date
   FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
   GROUP BY 1
 ),
 latest_advertisers AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS displayName,
-    ANY_VALUE(currencyCode) AS currency_code
+    MAX(NULLIF(displayName, '')) AS displayName,
+    MAX(NULLIF(currencyCode, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
 latest_settings AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(gtg_status) AS gtg_status,
-    ANY_VALUE(web_tag_type) AS web_tag_type,
-    ANY_VALUE(currency_code) AS currency_code
+    MAX(NULLIF(gtg_status, '')) AS gtg_status,
+    MAX(NULLIF(web_tag_type, '')) AS web_tag_type,
+    MAX(NULLIF(currency_code, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 ),
 advertiser_currencies AS (
   SELECT 
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    ANY_VALUE(Advertiser_Currency) AS currency_code,
+    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SAFE_DIVIDE(SUM(COALESCE(Revenue_USD, Revenue)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
   FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
   WHERE Advertiser_Currency IS NOT NULL
