@@ -1,11 +1,21 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_performance` AS
-WITH deduped_dbm AS (
+WITH demand_gen_line_items AS (
+  SELECT DISTINCT campaignId, insertionOrderId, lineItemId
+  FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  WHERE lineItemType LIKE '%DEMAND_GEN%'
+),
+deduped_dbm AS (
   SELECT * EXCEPT(row_num) FROM (
     SELECT *, ROW_NUMBER() OVER(
-      PARTITION BY Report_Day, Insertion_Order_Id, Creative_Id, Device_Type, Inventory_Source
+      PARTITION BY Report_Day, Insertion_Order_Id, COALESCE(Line_Item_Id, 0), Creative_Id, Device_Type, Inventory_Source
     ) AS row_num
     FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
     WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
+      AND (
+        Insertion_Order_Id IN (SELECT DISTINCT CAST(insertionOrderId AS INT64) FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)
+        OR (Line_Item_Id IS NOT NULL AND Line_Item_Id IN (SELECT DISTINCT CAST(lineItemId AS INT64) FROM demand_gen_line_items))
+        OR (Insertion_Order LIKE '%DEMANDGEN%' OR Insertion_Order LIKE '%DGEN%')
+      )
   )
   WHERE row_num = 1
 ),
@@ -71,6 +81,8 @@ latest_ios AS (
     MAX(startDate) AS start_date,
     MAX(endDate) AS end_date
   FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
+  WHERE insertionOrderId IN (SELECT DISTINCT insertionOrderId FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)
+     OR displayName LIKE '%DEMANDGEN%' OR displayName LIKE '%DGEN%'
   GROUP BY 1
 ),
 latest_advertisers AS (

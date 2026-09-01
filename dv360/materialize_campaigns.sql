@@ -1,19 +1,30 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_campaign_performance` AS
-WITH deduped_dbm AS (
+WITH demand_gen_line_items AS (
+  SELECT DISTINCT campaignId, insertionOrderId, lineItemId
+  FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  WHERE lineItemType LIKE '%DEMAND_GEN%'
+),
+deduped_dbm AS (
   SELECT * EXCEPT(row_num) FROM (
     SELECT *, ROW_NUMBER() OVER(
-      PARTITION BY Report_Day, Insertion_Order_Id, Creative_Id, Device_Type, Inventory_Source
+      PARTITION BY Report_Day, Insertion_Order_Id, COALESCE(Line_Item_Id, 0), Creative_Id, Device_Type, Inventory_Source
     ) AS row_num
     FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
     WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
+      AND (
+        Insertion_Order_Id IN (SELECT DISTINCT CAST(insertionOrderId AS INT64) FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)
+        OR (Line_Item_Id IS NOT NULL AND Line_Item_Id IN (SELECT DISTINCT CAST(lineItemId AS INT64) FROM demand_gen_line_items))
+        OR (Insertion_Order LIKE '%DEMANDGEN%' OR Insertion_Order LIKE '%DGEN%')
+      )
   )
   WHERE row_num = 1
 ),
 aggregated_stats AS (
   SELECT 
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
-    CAST(Partner_Id AS STRING) AS partner_id,
-    CAST(Advertiser_Id AS STRING) AS advertiser_id,
+    CAST(Media_Plan_Id AS STRING) AS campaign_id,
+    MAX(CAST(Partner_Id AS STRING)) AS partner_id,
+    MAX(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SUM(Impressions) AS impressions,
     SUM(Clicks) AS clicks,
@@ -37,15 +48,15 @@ aggregated_stats AS (
     AVG(TrueView_Lost_IS_Budget) AS lost_is_budget,
     AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
   FROM deduped_dbm
-  GROUP BY 1, 2, 3
+  GROUP BY 1, 2
 ),
 line_item_counts AS (
   SELECT 
     campaignId,
     COUNT(lineItemId) AS line_item_count,
-    IF(LOGICAL_OR(entityStatus = 'ENTITY_STATUS_PAUSED'), 'YES', 'NO') AS is_limited_by_budget,
-    IF(LOGICAL_OR(lineItemType LIKE '%DEMAND_GEN%'), 'YES', 'NO') AS has_demand_gen_line_item
+    IF(LOGICAL_OR(entityStatus = 'ENTITY_STATUS_PAUSED'), 'YES', 'NO') AS is_limited_by_budget
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  WHERE lineItemType LIKE '%DEMAND_GEN%'
   GROUP BY campaignId
 ),
 latest_settings AS (
@@ -70,6 +81,7 @@ latest_campaigns AS (
     MAX(NULLIF(entityStatus, '')) AS entityStatus,
     MAX(NULLIF(advertiserId, '')) AS advertiserId
   FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
+  WHERE campaignId IN (SELECT DISTINCT campaignId FROM demand_gen_line_items WHERE campaignId IS NOT NULL)
   GROUP BY campaignId
 ),
 latest_advertisers AS (
@@ -104,7 +116,6 @@ SELECT
   ) AS currency_code,
   COALESCE(lic.is_limited_by_budget, 'NO') AS is_limited_by_budget,
   COALESCE(lic.line_item_count, 0) AS line_item_count,
-  COALESCE(lic.has_demand_gen_line_item, 'NO') AS has_demand_gen_line_item,
   COALESCE(sett.has_crm_audience, 'NO') AS data_manager_crm_connected,
   COALESCE(sett.has_ga_audience, 'NO') AS data_manager_ga_connected,
   CASE 
@@ -114,7 +125,6 @@ SELECT
   END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   CASE 
-    WHEN COALESCE(lic.has_demand_gen_line_item, 'NO') = 'NO' THEN 'N/A'
     WHEN COALESCE(sett.has_crm_audience, 'NO') = 'YES' OR COALESCE(sett.has_ga_audience, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS data_strength_status,
@@ -162,7 +172,7 @@ SELECT
   stats.lost_is_rank
 FROM latest_campaigns meta
 LEFT JOIN aggregated_stats stats
-  ON meta.advertiserId = stats.advertiser_id
+  ON meta.campaignId = stats.campaign_id
 LEFT JOIN line_item_counts lic
   ON meta.campaignId = lic.campaignId
 LEFT JOIN latest_settings sett

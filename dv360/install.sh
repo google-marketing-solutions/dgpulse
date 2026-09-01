@@ -139,7 +139,8 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.insertion_orders \
 
 echo "Creating BigQuery table: ${DATASET_ID}.line_items..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.line_items \
-  lineItemId:STRING,campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,lineItemType:STRING || echo "Table line_items already exists."
+  lineItemId:STRING,insertionOrderId:STRING,campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,lineItemType:STRING || echo "Table line_items already exists."
+bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.line_items\` ADD COLUMN IF NOT EXISTS insertionOrderId STRING;" 2>/dev/null || true
 
 echo "Creating BigQuery table: ${DATASET_ID}.creatives..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \

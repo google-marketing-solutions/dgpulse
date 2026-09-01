@@ -79,12 +79,13 @@ exports.processAdvertiser = async (event, context) => {
         console.log(`Fetching line items for advertiser ${advertiserId}...`);
         const lineItems = await client.listAllLineItems(advertiserId);
         const lineItemRows = lineItems.map(li => ({
-            lineItemId: li.lineItemId,
-            campaignId: li.campaignId,
-            advertiserId: li.advertiserId,
-            entityStatus: li.entityStatus,
-            displayName: li.displayName,
-            lineItemType: li.lineItemType
+            lineItemId: String(li.lineItemId),
+            insertionOrderId: String(li.insertionOrderId || ''),
+            campaignId: String(li.campaignId || ''),
+            advertiserId: String(li.advertiserId || ''),
+            entityStatus: li.entityStatus || '',
+            displayName: li.displayName || '',
+            lineItemType: li.lineItemType || ''
         }));
         if (lineItemRows.length > 0) {
             await bigquery.dataset(DATASET_ID).table('line_items').insert(lineItemRows);

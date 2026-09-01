@@ -351,8 +351,16 @@ class DV360Client {
           q => q.metadata && q.metadata.title === reportTitle
         );
         if (found) {
-          console.log(`Found existing DBM query ID: ${found.queryId}`);
-          return { queryId: found.queryId, isNew: false };
+          if (found.metadata && found.metadata.dataRange && found.metadata.dataRange.range === 'LAST_90_DAYS') {
+            console.log(`Found existing DBM 90-day query ID: ${found.queryId}`);
+            return { queryId: found.queryId, isNew: false };
+          }
+          console.log(`Existing query ${found.queryId} has range ${found.metadata && found.metadata.dataRange && found.metadata.dataRange.range}, recreating for LAST_90_DAYS...`);
+          try {
+            await this.dbm.queries.delete({ queryId: found.queryId });
+          } catch (delErr) {
+            console.warn('Could not delete old query, will create a new one:', delErr.message);
+          }
         }
       }
     } catch (e) {
@@ -377,7 +385,7 @@ class DV360Client {
     const queryObj = {
       metadata: {
         title: reportTitle,
-        dataRange: { range: 'LAST_30_DAYS' },
+        dataRange: { range: 'LAST_90_DAYS' },
         format: 'CSV'
       },
       params: {
