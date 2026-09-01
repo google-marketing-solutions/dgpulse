@@ -215,7 +215,7 @@ echo "Syncing DBM Reports into BigQuery..."
 node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."
 
 echo "Running initial materialization queries..."
-for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_floodlight_activities.sql; do
+for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql materialize_floodlight_activities.sql; do
   echo "Materializing: $sql"
   bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")" || echo "Warning: $sql initial materialization skipped (will run once API/DBM data is populated)."
 done
@@ -233,6 +233,7 @@ LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=5e126b6
 &ds.line_items_performance.connector=bigQuery&ds.line_items_performance.projectId=${PROJECT_ID}&ds.line_items_performance.datasetId=${DATASET_ID}&ds.line_items_performance.type=TABLE&ds.line_items_performance.tableId=final_line_items_performance&ds.line_items_performance.refreshFields=false\
 &ds.insertion_orders_performance.connector=bigQuery&ds.insertion_orders_performance.projectId=${PROJECT_ID}&ds.insertion_orders_performance.datasetId=${DATASET_ID}&ds.insertion_orders_performance.type=TABLE&ds.insertion_orders_performance.tableId=final_insertion_orders_performance&ds.insertion_orders_performance.refreshFields=false\
 &ds.assets_performance.connector=bigQuery&ds.assets_performance.projectId=${PROJECT_ID}&ds.assets_performance.datasetId=${DATASET_ID}&ds.assets_performance.type=TABLE&ds.assets_performance.tableId=final_assets_performance&ds.assets_performance.refreshFields=false\
+&ds.creative_variety.connector=bigQuery&ds.creative_variety.projectId=${PROJECT_ID}&ds.creative_variety.datasetId=${DATASET_ID}&ds.creative_variety.type=TABLE&ds.creative_variety.tableId=final_creative_variety&ds.creative_variety.refreshFields=false\
 &ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${PROJECT_ID}&ds.audiences_performance.datasetId=${DATASET_ID}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false\
 &ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${PROJECT_ID}&ds.floodlight_audit.datasetId=${DATASET_ID}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false"
 

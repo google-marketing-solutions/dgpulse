@@ -72,6 +72,7 @@ async function setupScheduledQueries() {
     'materialize_insertion_orders.sql',
     'materialize_assets.sql',
     'materialize_audiences.sql',
+    'materialize_creative_variety.sql',
     'materialize_floodlight_activities.sql'
   ];
 

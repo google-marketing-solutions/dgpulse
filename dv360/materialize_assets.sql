@@ -23,6 +23,7 @@ creative_stats AS (
   SELECT 
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Creative_Id AS STRING) AS creative_id,
+    CAST(Media_Plan_Id AS STRING) AS campaign_id,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     CAST(Partner_Id AS STRING) AS partner_id,
     MAX(NULLIF(Device_Type, '')) AS device_type,
@@ -48,7 +49,7 @@ creative_stats AS (
     SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
   FROM deduped_dbm
   WHERE Creative_Id IS NOT NULL AND Creative_Id > 0
-  GROUP BY 1, 2, 3, 4
+  GROUP BY 1, 2, 3, 4, 5
 ),
 latest_creatives AS (
   SELECT 
@@ -63,12 +64,26 @@ latest_creatives AS (
   FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
   GROUP BY creativeId
 ),
+latest_campaigns AS (
+  SELECT 
+    campaignId,
+    MAX(NULLIF(displayName, '')) AS displayName
+  FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
+  GROUP BY campaignId
+),
 latest_advertisers AS (
   SELECT 
     advertiserId,
     MAX(NULLIF(displayName, '')) AS displayName,
     MAX(NULLIF(currencyCode, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
+  GROUP BY advertiserId
+),
+latest_settings AS (
+  SELECT 
+    advertiserId,
+    MAX(NULLIF(displayName, '')) AS advertiser_name
+  FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 ),
 advertiser_currencies AS (
@@ -84,7 +99,27 @@ SELECT
   COALESCE(cs.date, CURRENT_DATE()) AS date,
   c.creativeId AS asset_id,
   c.displayName AS asset_name,
-  c.creativeType AS asset_type,
+  
+  -- Formatted Asset Type matching Google Ads (SQUARE IMAGE, HORIZONTAL IMAGE, VERTICAL IMAGE, VERTICAL VIDEO, HORIZONTAL VIDEO, SQUARE VIDEO)
+  CASE 
+    WHEN UPPER(c.creativeType) LIKE '%VIDEO%' OR UPPER(c.displayName) LIKE '%VIDEO%' OR UPPER(c.dimensions) LIKE '%VIDEO%' THEN
+      CASE 
+        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) > SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) * 1.15)
+          OR c.dimensions LIKE '%1080x1920%' OR c.dimensions LIKE '%720x1280%' OR c.dimensions LIKE '%9:16%' OR UPPER(c.displayName) LIKE '%VERTICAL%' OR UPPER(c.displayName) LIKE '%SHORTS%' THEN 'VERTICAL VIDEO'
+        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) = SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) AND SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) > 0)
+          OR c.dimensions LIKE '%1080x1080%' OR c.dimensions LIKE '%1:1%' OR UPPER(c.displayName) LIKE '%SQUARE%' THEN 'SQUARE VIDEO'
+        ELSE 'HORIZONTAL VIDEO'
+      END
+    ELSE
+      CASE 
+        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) > SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) * 1.15)
+          OR c.dimensions LIKE '%1080x1920%' OR c.dimensions LIKE '%1200x1500%' OR c.dimensions LIKE '%4:5%' OR c.dimensions LIKE '%9:16%' OR c.dimensions LIKE '%300x600%' OR c.dimensions LIKE '%160x600%' THEN 'VERTICAL IMAGE'
+        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) = SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) AND SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) > 0)
+          OR c.dimensions LIKE '%1080x1080%' OR c.dimensions LIKE '%300x300%' OR c.dimensions LIKE '%1:1%' OR UPPER(c.displayName) LIKE '%SQUARE%' THEN 'SQUARE IMAGE'
+        ELSE 'HORIZONTAL IMAGE'
+      END
+  END AS asset_type,
+
   COALESCE(c.dimensions, 'RESPONSIVE/NATIVE') AS creative_dimensions,
   CASE 
     WHEN c.imageUrl IS NOT NULL AND c.imageUrl != '' THEN c.imageUrl
@@ -99,7 +134,9 @@ SELECT
   cs.inventory_source,
   c.advertiserId AS advertiser_id,
   c.advertiserId AS account_id,
-  COALESCE(adv.displayName, c.advertiserId) AS account_name,
+  COALESCE(sett.advertiser_name, adv.displayName, c.advertiserId) AS account_name,
+  COALESCE(cs.campaign_id, 'N/A') AS campaign_id,
+  COALESCE(cmp.displayName, cs.campaign_id, 'N/A') AS campaign_name,
   COALESCE(
     cs.currency_code, 
     NULLIF(adv.currency_code, ''), 
@@ -145,7 +182,11 @@ SELECT
 FROM latest_creatives c
 LEFT JOIN creative_stats cs
   ON c.creativeId = cs.creative_id
+LEFT JOIN latest_campaigns cmp
+  ON cs.campaign_id = cmp.campaignId
 LEFT JOIN latest_advertisers adv
   ON c.advertiserId = adv.advertiserId
+LEFT JOIN latest_settings sett
+  ON c.advertiserId = sett.advertiserId
 LEFT JOIN advertiser_currencies ac
   ON c.advertiserId = ac.advertiser_id;
