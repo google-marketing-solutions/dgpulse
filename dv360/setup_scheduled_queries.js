@@ -1,9 +1,7 @@
-/**
- * @fileoverview Sets up or updates BigQuery Scheduled Queries for daily materialization using googleapis bigquerydatatransfer.
- */
 const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
+const { BigQuery } = require('@google-cloud/bigquery');
 
 const PROJECT_ID = process.env.PROJECT_ID;
 const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
@@ -11,10 +9,30 @@ const PARTNER_ID = process.env.PARTNER_ID;
 const SERVICE_ACCOUNT = process.env.SERVICE_ACCOUNT;
 const LOCATION = process.env.LOCATION || process.env.REGION || 'US';
 
+async function ensureTableSchema() {
+  console.log('Ensuring all BigQuery table columns exist...');
+  const bigquery = new BigQuery({ projectId: PROJECT_ID });
+  const alterQueries = [
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.line_items\` ADD COLUMN IF NOT EXISTS insertionOrderId STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_performance\` ADD COLUMN IF NOT EXISTS Revenue_USD FLOAT64, ADD COLUMN IF NOT EXISTS Line_Item STRING, ADD COLUMN IF NOT EXISTS Line_Item_Id INT64;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertisers\` ADD COLUMN IF NOT EXISTS currencyCode STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING;`
+  ];
+  for (const q of alterQueries) {
+    try {
+      await bigquery.query({ query: q });
+    } catch (e) {
+      // Ignore if table doesn't exist yet or already altered
+    }
+  }
+}
+
 async function setupScheduledQueries() {
   if (!PROJECT_ID || !PARTNER_ID) {
     throw new Error('PROJECT_ID and PARTNER_ID are required.');
   }
+
+  await ensureTableSchema();
 
   const auth = new google.auth.GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/cloud-platform']

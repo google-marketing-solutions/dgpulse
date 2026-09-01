@@ -40,6 +40,23 @@ async function initializeClient() {
     }
   }
 
+  // 1b. Auto-discover from deployed Cloud Function environment variables if still missing
+  if (!bucketName || !refreshToken) {
+    try {
+      const { execSync } = require('child_process');
+      const envJson = execSync(
+        'gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null',
+        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
+      );
+      if (envJson) {
+        const parsed = JSON.parse(envJson);
+        const envVars = (parsed.serviceConfig && parsed.serviceConfig.environmentVariables) || parsed.environmentVariables || parsed;
+        if (!bucketName && envVars.BUCKET_NAME) bucketName = envVars.BUCKET_NAME;
+        if (!refreshToken && envVars.REFRESH_TOKEN) refreshToken = envVars.REFRESH_TOKEN;
+      }
+    } catch (e) {}
+  }
+
   let credentials = null;
 
   // 2. Try local client_secret.json
