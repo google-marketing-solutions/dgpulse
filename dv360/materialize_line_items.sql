@@ -2,7 +2,7 @@ CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_line_items_performa
 WITH deduped_dbm AS (
   SELECT * EXCEPT(row_num) FROM (
     SELECT *, ROW_NUMBER() OVER(
-      PARTITION BY Report_Day, Insertion_Order_Id, Creative_Id, Device_Type, Inventory_Source
+      PARTITION BY Report_Day, Insertion_Order_Id, COALESCE(Line_Item_Id, 0), Creative_Id, Device_Type, Inventory_Source
     ) AS row_num
     FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
     WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
@@ -12,8 +12,9 @@ WITH deduped_dbm AS (
 li_stats AS (
   SELECT 
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
-    CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    CAST(Partner_Id AS STRING) AS partner_id,
+    CAST(Line_Item_Id AS STRING) AS line_item_id,
+    MAX(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
+    MAX(CAST(Partner_Id AS STRING)) AS partner_id,
     MAX(NULLIF(Insertion_Order, '')) AS insertion_order_name,
     MAX(CAST(Insertion_Order_Id AS STRING)) AS insertion_order_id,
     MAX(NULLIF(Device_Type, '')) AS device_type,
@@ -41,7 +42,8 @@ li_stats AS (
     AVG(TrueView_Lost_IS_Budget) AS lost_is_budget,
     AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
   FROM deduped_dbm
-  GROUP BY 1, 2, 3
+  WHERE Line_Item_Id IS NOT NULL AND Line_Item_Id > 0
+  GROUP BY 1, 2
 ),
 latest_settings AS (
   SELECT 
@@ -197,7 +199,7 @@ FROM latest_line_items li
 LEFT JOIN latest_campaigns c
   ON li.campaignId = c.campaignId
 LEFT JOIN li_stats s
-  ON li.advertiserId = s.advertiser_id
+  ON li.lineItemId = s.line_item_id
 LEFT JOIN latest_settings sett
   ON li.advertiserId = sett.advertiserId
 LEFT JOIN latest_advertisers adv

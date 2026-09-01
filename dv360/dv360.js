@@ -389,6 +389,7 @@ class DV360Client {
           'FILTER_ADVERTISER_CURRENCY',
           'FILTER_MEDIA_PLAN',
           'FILTER_INSERTION_ORDER',
+          'FILTER_LINE_ITEM',
           'FILTER_CREATIVE_ID',
           'FILTER_DEVICE_TYPE',
           'FILTER_INVENTORY_SOURCE_NAME'

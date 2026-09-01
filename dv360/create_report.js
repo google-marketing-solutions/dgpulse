@@ -183,6 +183,8 @@ function mapCsvRowToBq(r) {
     Media_Plan_Id: intNum(getCol(['Campaign ID', 'Media Plan ID'])),
     Insertion_Order: getCol(['Insertion Order Name', 'Insertion Order']) || '',
     Insertion_Order_Id: intNum(getCol(['Insertion Order ID', 'Insertion_Order_Id'])),
+    Line_Item: getCol(['Line Item Name', 'Line Item']) || '',
+    Line_Item_Id: intNum(getCol(['Line Item ID', 'Line_Item_Id', 'Line Item Id'])),
     Creative_Id: intNum(getCol(['Creative ID', 'Creative_Id'])),
     Device_Type: getCol(['Device Type', 'Device']) || '',
     Inventory_Source: getCol(['Inventory Source Name', 'Inventory Source']) || '',
