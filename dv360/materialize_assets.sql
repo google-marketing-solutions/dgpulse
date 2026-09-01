@@ -122,11 +122,9 @@ SELECT
 
   COALESCE(c.dimensions, 'RESPONSIVE/NATIVE') AS creative_dimensions,
   CASE 
-    WHEN c.imageUrl IS NOT NULL AND c.imageUrl != '' THEN c.imageUrl
-    WHEN c.creativeType LIKE '%VIDEO%' THEN 'https://www.gstatic.com/images/branding/product/1x/youtube_64dp.png'
-    WHEN c.creativeType LIKE '%AUDIO%' THEN 'https://www.gstatic.com/images/branding/product/1x/google_podcasts_64dp.png'
-    WHEN c.creativeType = 'CREATIVE_TYPE_STANDARD' THEN 'https://www.gstatic.com/images/branding/product/1x/google_display_network_64dp.png'
-    ELSE 'https://www.gstatic.com/images/branding/product/1x/generic_ad_64dp.png'
+    WHEN c.imageUrl IS NOT NULL AND c.imageUrl != '' AND c.imageUrl NOT LIKE '%google_display_network%' THEN c.imageUrl
+    WHEN UPPER(c.creativeType) LIKE '%VIDEO%' OR UPPER(c.displayName) LIKE '%VIDEO%' THEN 'https://www.gstatic.com/images/branding/product/2x/youtube_64dp.png'
+    ELSE 'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png'
   END AS image_url,
   c.hostingSource AS hosting_source,
   c.entityStatus AS entity_status,
