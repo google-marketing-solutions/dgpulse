@@ -318,32 +318,155 @@ async function syncDbmPerformanceReport(partnerIdOverride) {
   return { success: true, count: bqRows.length };
 }
 
+function mapAudienceCsvRowToBq(r) {
+  const getCol = (patterns) => {
+    for (const key of Object.keys(r)) {
+      for (const pat of patterns) {
+        if (key.toLowerCase().includes(pat.toLowerCase())) {
+          return r[key];
+        }
+      }
+    }
+    return null;
+  };
+
+  const num = (v) => {
+    if (v === null || v === undefined || v === '') return 0;
+    const cleaned = String(v).replace(/[^\d.-]/g, '');
+    const n = Number(cleaned);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const intNum = (v) => {
+    if (v === null || v === undefined || v === '') return 0;
+    const cleaned = String(v).replace(/[^\d-]/g, '');
+    const n = parseInt(cleaned, 10);
+    return isNaN(n) ? 0 : n;
+  };
+
+  return {
+    Report_Day: parseDate(getCol(['Report_Day', 'Date', 'Day'])),
+    Partner: getCol(['Partner Name', 'Partner']) || '',
+    Partner_Id: intNum(getCol(['Partner ID', 'Partner_Id'])),
+    Advertiser: getCol(['Advertiser Name', 'Advertiser']) || '',
+    Advertiser_Id: intNum(getCol(['Advertiser ID', 'Advertiser_Id'])),
+    Advertiser_Currency: getCol(['Advertiser Currency', 'Currency']) || '',
+    Media_Plan: getCol(['Campaign', 'Media Plan']) || '',
+    Media_Plan_Id: intNum(getCol(['Campaign ID', 'Media Plan ID'])),
+    Insertion_Order: getCol(['Insertion Order Name', 'Insertion Order']) || '',
+    Insertion_Order_Id: intNum(getCol(['Insertion Order ID', 'Insertion_Order_Id'])),
+    Line_Item: getCol(['Line Item Name', 'Line Item']) || '',
+    Line_Item_Id: intNum(getCol(['Line Item ID', 'Line_Item_Id', 'Line Item Id'])),
+    Audience_List: getCol(['Audience List Name', 'Audience List', 'Audience Segment', 'Audience Name', 'User List Name']) || '',
+    Audience_List_Id: intNum(getCol(['Audience List ID', 'Audience_List_Id', 'Audience ID', 'User List ID'])),
+    Audience_List_Type: getCol(['Audience List Type', 'Audience Type', 'List Type', 'Type']) || '',
+    Revenue: num(getCol(['Media Cost (Advertiser Currency)', 'Revenue (Adv Currency)', 'Revenue', 'Media Cost (Adv Currency)'])),
+    Revenue_USD: num(getCol(['Media Cost (USD)', 'Revenue (USD)', 'Cost (USD)', 'Revenue_USD'])),
+    Impressions: intNum(getCol(['Impressions'])),
+    Clicks: intNum(getCol(['Clicks'])),
+    Total_Conversions: num(getCol(['Total Conversions', 'Conversions'])),
+    Post_View_Conversions: num(getCol(['Post-View Conversions', 'Post View Conversions', 'VTC'])),
+    Post_Click_Conversions: num(getCol(['Post-Click Conversions', 'Post Click Conversions'])),
+    CM_Post_Click_Revenue: num(getCol(['CM Post-Click Revenue', 'Post-Click Revenue', 'Click Revenue'])),
+    CM_Post_View_Revenue: num(getCol(['CM Post-View Revenue', 'Post-View Revenue', 'View Revenue']))
+  };
+}
+
+/**
+ * Downloads the latest DBM Audience report and ingests rows into BigQuery dbm_audiences_performance table.
+ */
+async function syncDbmAudienceReport(partnerIdOverride) {
+  const partnerId = partnerIdOverride || PARTNER_ID;
+  if (!partnerId) throw new Error('PARTNER_ID is required.');
+
+  const client = await initializeClient();
+  const { queryId } = await client.createOrGetAudienceReportQuery(partnerId);
+
+  const downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+  if (!downloadUrl) {
+    console.log(`No completed audience report found yet for query ${queryId}. Triggering execution...`);
+    try {
+      await client.runQuery(queryId);
+    } catch (e) {
+      console.warn('Warning triggering DBM audience query:', e.message);
+    }
+    return { success: false, message: 'Audience report execution triggered. Data will be available on next sync.' };
+  }
+
+  console.log(`Downloading latest DBM Audience report from ${downloadUrl}...`);
+  const response = await fetch(downloadUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download audience report: ${response.statusText}`);
+  }
+
+  const csvText = await response.text();
+  const parsedRows = parseCsv(csvText);
+  console.log(`Parsed ${parsedRows.length} rows from DBM Audience CSV.`);
+
+  if (parsedRows.length === 0) {
+    return { success: true, count: 0, message: 'DBM Audience CSV contained no data rows.' };
+  }
+
+  const bqRows = parsedRows.map(mapAudienceCsvRowToBq).filter(r => r.Insertion_Order_Id > 0 || r.Impressions > 0 || r.Revenue > 0 || r.Revenue_USD > 0);
+  console.log(`Mapped ${bqRows.length} valid audience performance rows for BigQuery.`);
+
+  if (bqRows.length > 0) {
+    try {
+      const dataset = bigquery.dataset(DATASET_ID);
+      const [table] = await dataset.table('dbm_audiences_performance').get();
+      const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
+      if (pId) {
+        await bigquery.query({
+          query: `TRUNCATE TABLE \`${pId}.${DATASET_ID}.dbm_audiences_performance\`;`
+        });
+      }
+    } catch (delErr) {
+      console.warn('Warning clearing dbm_audiences_performance table:', delErr.message);
+    }
+
+    const batchSize = 500;
+    for (let i = 0; i < bqRows.length; i += batchSize) {
+      const batch = bqRows.slice(i, i + batchSize);
+      await bigquery.dataset(DATASET_ID).table('dbm_audiences_performance').insert(batch);
+    }
+    console.log(`Successfully inserted ${bqRows.length} rows into ${DATASET_ID}.dbm_audiences_performance.`);
+  }
+
+  return { success: true, count: bqRows.length };
+}
+
 // CLI / Execution helper
 if (require.main === module) {
   const partnerIdArg = process.argv[2] || process.env.PARTNER_ID;
   const action = process.argv[3] || 'sync';
 
   if (action === 'setup') {
-    setupDbmReport(partnerIdArg)
-      .then(result => {
-        console.log('DBM Report setup complete:', JSON.stringify(result));
+    Promise.all([
+      setupDbmReport(partnerIdArg),
+      initializeClient().then(c => c.createOrGetAudienceReportQuery(partnerIdArg))
+    ])
+      .then(results => {
+        console.log('DBM Reports setup complete:', JSON.stringify(results));
         process.exit(0);
       })
       .catch(err => {
-        console.error('Error setting up DBM report:', err);
+        console.error('Error setting up DBM reports:', err);
         process.exit(1);
       });
   } else {
-    syncDbmPerformanceReport(partnerIdArg)
-      .then(result => {
-        console.log('DBM Report sync complete:', JSON.stringify(result));
+    Promise.allSettled([
+      syncDbmPerformanceReport(partnerIdArg),
+      syncDbmAudienceReport(partnerIdArg)
+    ])
+      .then(results => {
+        console.log('DBM Reports sync complete:', JSON.stringify(results));
         process.exit(0);
       })
       .catch(err => {
-        console.error('Error syncing DBM report:', err);
+        console.error('Error syncing DBM reports:', err);
         process.exit(1);
       });
   }
 }
 
-module.exports = { setupDbmReport, syncDbmPerformanceReport };
+module.exports = { setupDbmReport, syncDbmPerformanceReport, syncDbmAudienceReport };

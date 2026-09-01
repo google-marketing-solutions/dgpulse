@@ -439,6 +439,101 @@ class DV360Client {
   }
 
   /**
+   * Creates or retrieves an existing daily DBM audience performance query for a partner.
+   * @param {string} partnerId
+   * @returns {Promise<{queryId: string, isNew: boolean}>}
+   */
+  async createOrGetAudienceReportQuery(partnerId) {
+    const reportTitle = `DV360 DGPulse Audience Report - Partner ${partnerId}`;
+
+    try {
+      const existingQueries = await this.executeWithBackoff(() =>
+        this.dbm.queries.list({ pageSize: 100 })
+      );
+      if (existingQueries.data.queries) {
+        const found = existingQueries.data.queries.find(
+          q => q.metadata && q.metadata.title === reportTitle
+        );
+        if (found) {
+          if (found.metadata && found.metadata.dataRange && found.metadata.dataRange.range === 'LAST_90_DAYS') {
+            console.log(`Found existing DBM Audience query ID: ${found.queryId}`);
+            return { queryId: found.queryId, isNew: false };
+          }
+          console.log(`Existing audience query ${found.queryId} has range ${found.metadata && found.metadata.dataRange && found.metadata.dataRange.range}, recreating for LAST_90_DAYS...`);
+          try {
+            await this.dbm.queries.delete({ queryId: found.queryId });
+          } catch (delErr) {
+            console.warn('Could not delete old audience query, will create a new one:', delErr.message);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Unable to list existing DBM queries, proceeding to create new query:', e.message);
+    }
+
+    const now = new Date();
+    const startDate = {
+      year: now.getUTCFullYear(),
+      month: now.getUTCMonth() + 1,
+      day: now.getUTCDate()
+    };
+    const endDate = {
+      year: now.getUTCFullYear() + 5,
+      month: 12,
+      day: 31
+    };
+
+    const queryObj = {
+      metadata: {
+        title: reportTitle,
+        dataRange: { range: 'LAST_90_DAYS' },
+        format: 'CSV'
+      },
+      params: {
+        type: 'STANDARD',
+        groupBys: [
+          'FILTER_DATE',
+          'FILTER_PARTNER',
+          'FILTER_ADVERTISER',
+          'FILTER_ADVERTISER_CURRENCY',
+          'FILTER_MEDIA_PLAN',
+          'FILTER_INSERTION_ORDER',
+          'FILTER_LINE_ITEM',
+          'FILTER_AUDIENCE_LIST',
+          'FILTER_AUDIENCE_LIST_NAME',
+          'FILTER_AUDIENCE_LIST_TYPE'
+        ],
+        metrics: [
+          'METRIC_IMPRESSIONS',
+          'METRIC_CLICKS',
+          'METRIC_MEDIA_COST_ADVERTISER',
+          'METRIC_MEDIA_COST_USD',
+          'METRIC_TOTAL_CONVERSIONS',
+          'METRIC_POST_VIEW_CONVERSIONS',
+          'METRIC_POST_CLICK_CONVERSIONS',
+          'METRIC_CM_POST_CLICK_REVENUE',
+          'METRIC_CM_POST_VIEW_REVENUE'
+        ],
+        filters: [
+          { type: 'FILTER_PARTNER', value: String(partnerId) }
+        ]
+      },
+      schedule: {
+        frequency: 'DAILY',
+        startDate: startDate,
+        endDate: endDate
+      }
+    };
+
+    console.log(`Creating new DBM Audience query for partner ${partnerId}...`);
+    const res = await this.executeWithBackoff(() =>
+      this.dbm.queries.create({ requestBody: queryObj })
+    );
+    console.log(`Successfully created DBM Audience query ID: ${res.data.queryId}`);
+    return { queryId: res.data.queryId, isNew: true };
+  }
+
+  /**
    * Triggers execution of a DBM query.
    * @param {string} queryId
    * @returns {Promise<Object>} Report object
@@ -452,20 +547,27 @@ class DV360Client {
   }
 
   /**
-   * Retrieves reports for a query and returns the latest report's download URL.
+   * Retrieves reports for a query and returns the latest completed report's download URL.
    * @param {string} queryId
    * @returns {Promise<string|null>} Download URL for latest CSV
    */
   async getLatestReportDownloadUrl(queryId) {
     const reportsRes = await this.executeWithBackoff(() =>
-      this.dbm.queries.reports.list({ queryId: queryId, pageSize: 10 })
+      this.dbm.queries.reports.list({ queryId: queryId, pageSize: 20 })
     );
     if (!reportsRes.data.reports || reportsRes.data.reports.length === 0) {
       return null;
     }
-    const latestReport = reportsRes.data.reports[0];
-    if (latestReport.metadata && latestReport.metadata.googleCloudStoragePath) {
-      return latestReport.metadata.googleCloudStoragePath;
+    const completedReports = (reportsRes.data.reports || [])
+      .filter(r => r.metadata && r.metadata.status && r.metadata.status.state === 'DONE' && r.metadata.googleCloudStoragePath)
+      .sort((a, b) => {
+        const timeA = Number((a.metadata && a.metadata.reportDataEndTimeMs) || (a.key && a.key.reportId) || 0);
+        const timeB = Number((b.metadata && b.metadata.reportDataEndTimeMs) || (b.key && b.key.reportId) || 0);
+        return timeB - timeA;
+      });
+
+    if (completedReports.length > 0) {
+      return completedReports[0].metadata.googleCloudStoragePath;
     }
     return null;
   }

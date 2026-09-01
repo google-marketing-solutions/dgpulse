@@ -133,6 +133,10 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.dbm_performance \
   Report_Day:DATE,Partner:STRING,Partner_Id:INTEGER,Advertiser:STRING,Advertiser_Id:INTEGER,Advertiser_Currency:STRING,Media_Plan:STRING,Media_Plan_Id:INTEGER,Insertion_Order:STRING,Insertion_Order_Id:INTEGER,Line_Item:STRING,Line_Item_Id:INTEGER,Creative_Id:INTEGER,Device_Type:STRING,Inventory_Source:STRING,Revenue:FLOAT,Revenue_USD:FLOAT,Impressions:INTEGER,Clicks:INTEGER,Total_Conversions:FLOAT,Active_View_Viewable_Impressions:INTEGER,Active_View_Measurable_Impressions:INTEGER,Active_View_Eligible_Impressions:INTEGER,TrueView_Views:INTEGER,Video_Plays:INTEGER,Video_First_Quartile_Completes:INTEGER,Video_Midpoints:INTEGER,Video_Third_Quartile_Completes:INTEGER,Video_Completions:INTEGER,Video_Completion_Rate:FLOAT,Post_Click_Conversions:FLOAT,Post_View_Conversions:FLOAT,CM_Post_Click_Revenue:FLOAT,CM_Post_View_Revenue:FLOAT,Percentage_From_Current_IO_Goal:FLOAT,TrueView_Lost_IS_Budget:FLOAT,TrueView_Lost_IS_Rank:FLOAT || echo "Table dbm_performance already exists."
 bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_performance\` ADD COLUMN IF NOT EXISTS Revenue_USD FLOAT64, ADD COLUMN IF NOT EXISTS Line_Item STRING, ADD COLUMN IF NOT EXISTS Line_Item_Id INT64;" 2>/dev/null || true
 
+echo "Creating BigQuery table: ${DATASET_ID}.dbm_audiences_performance..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.dbm_audiences_performance \
+  Report_Day:DATE,Partner:STRING,Partner_Id:INTEGER,Advertiser:STRING,Advertiser_Id:INTEGER,Advertiser_Currency:STRING,Media_Plan:STRING,Media_Plan_Id:INTEGER,Insertion_Order:STRING,Insertion_Order_Id:INTEGER,Line_Item:STRING,Line_Item_Id:INTEGER,Audience_List:STRING,Audience_List_Id:INTEGER,Audience_List_Type:STRING,Revenue:FLOAT,Revenue_USD:FLOAT,Impressions:INTEGER,Clicks:INTEGER,Total_Conversions:FLOAT,Post_View_Conversions:FLOAT,Post_Click_Conversions:FLOAT,CM_Post_Click_Revenue:FLOAT,CM_Post_View_Revenue:FLOAT || echo "Table dbm_audiences_performance already exists."
+
 echo "Creating BigQuery table: ${DATASET_ID}.insertion_orders..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.insertion_orders \
   insertionOrderId:STRING,advertiserId:STRING,campaignId:STRING,displayName:STRING,entityStatus:STRING,pacingType:STRING,pacingPeriod:STRING,dailyMaxAmount:FLOAT,budgetUnit:STRING,automationType:STRING,budgetAmount:FLOAT,startDate:DATE,endDate:DATE || echo "Table insertion_orders already exists."
@@ -207,11 +211,11 @@ else
     --uri="${SERVICE_URL}"
 fi
 
-echo "Syncing DBM Performance Report into BigQuery..."
+echo "Syncing DBM Reports into BigQuery..."
 node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."
 
 echo "Running initial materialization queries..."
-for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_floodlight_activities.sql; do
+for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_floodlight_activities.sql; do
   echo "Materializing: $sql"
   bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")" || echo "Warning: $sql initial materialization skipped (will run once API/DBM data is populated)."
 done
@@ -229,6 +233,7 @@ LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=5e126b6
 &ds.line_items_performance.connector=bigQuery&ds.line_items_performance.projectId=${PROJECT_ID}&ds.line_items_performance.datasetId=${DATASET_ID}&ds.line_items_performance.type=TABLE&ds.line_items_performance.tableId=final_line_items_performance&ds.line_items_performance.refreshFields=false\
 &ds.insertion_orders_performance.connector=bigQuery&ds.insertion_orders_performance.projectId=${PROJECT_ID}&ds.insertion_orders_performance.datasetId=${DATASET_ID}&ds.insertion_orders_performance.type=TABLE&ds.insertion_orders_performance.tableId=final_insertion_orders_performance&ds.insertion_orders_performance.refreshFields=false\
 &ds.assets_performance.connector=bigQuery&ds.assets_performance.projectId=${PROJECT_ID}&ds.assets_performance.datasetId=${DATASET_ID}&ds.assets_performance.type=TABLE&ds.assets_performance.tableId=final_assets_performance&ds.assets_performance.refreshFields=false\
+&ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${PROJECT_ID}&ds.audiences_performance.datasetId=${DATASET_ID}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false\
 &ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${PROJECT_ID}&ds.floodlight_audit.datasetId=${DATASET_ID}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false"
 
 echo "------------------------------------------------"

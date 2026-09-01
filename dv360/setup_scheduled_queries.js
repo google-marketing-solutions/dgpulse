@@ -16,7 +16,33 @@ async function ensureTableSchema() {
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.line_items\` ADD COLUMN IF NOT EXISTS insertionOrderId STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_performance\` ADD COLUMN IF NOT EXISTS Revenue_USD FLOAT64, ADD COLUMN IF NOT EXISTS Line_Item STRING, ADD COLUMN IF NOT EXISTS Line_Item_Id INT64;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertisers\` ADD COLUMN IF NOT EXISTS currencyCode STRING;`,
-    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING;`
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING;`,
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.dbm_audiences_performance\` (
+      Report_Day DATE,
+      Partner STRING,
+      Partner_Id INT64,
+      Advertiser STRING,
+      Advertiser_Id INT64,
+      Advertiser_Currency STRING,
+      Media_Plan STRING,
+      Media_Plan_Id INT64,
+      Insertion_Order STRING,
+      Insertion_Order_Id INT64,
+      Line_Item STRING,
+      Line_Item_Id INT64,
+      Audience_List STRING,
+      Audience_List_Id INT64,
+      Audience_List_Type STRING,
+      Revenue FLOAT64,
+      Revenue_USD FLOAT64,
+      Impressions INT64,
+      Clicks INT64,
+      Total_Conversions FLOAT64,
+      Post_View_Conversions FLOAT64,
+      Post_Click_Conversions FLOAT64,
+      CM_Post_Click_Revenue FLOAT64,
+      CM_Post_View_Revenue FLOAT64
+    );`
   ];
   for (const q of alterQueries) {
     try {
@@ -45,6 +71,7 @@ async function setupScheduledQueries() {
     'materialize_line_items.sql',
     'materialize_insertion_orders.sql',
     'materialize_assets.sql',
+    'materialize_audiences.sql',
     'materialize_floodlight_activities.sql'
   ];
 
