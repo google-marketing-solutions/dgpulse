@@ -177,9 +177,9 @@ SELECT
   COALESCE(cs.post_click_revenue, 0) AS post_click_revenue,
   COALESCE(cs.post_view_revenue, 0) AS post_view_revenue,
   SAFE_DIVIDE(COALESCE(cs.post_click_conversions, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS post_click_conv_rate
-FROM latest_creatives c
-LEFT JOIN creative_stats cs
-  ON c.creativeId = cs.creative_id
+FROM creative_stats cs
+JOIN latest_creatives c
+  ON cs.creative_id = c.creativeId
 LEFT JOIN latest_campaigns cmp
   ON cs.campaign_id = cmp.campaignId
 LEFT JOIN latest_advertisers adv
