@@ -1,6 +1,5 @@
 /**
- * Diagnostic script to inspect Demand Gen line items, ad groups, and ad group ads
- * directly from DV360 API v4 for partner / advertiser.
+ * Concise summary script to inspect Demand Gen assets in DV360 API v4.
  */
 const fs = require('fs');
 const { Storage } = require('@google-cloud/storage');
@@ -14,7 +13,6 @@ const BUCKET_NAME = process.env.BUCKET_NAME;
 const CLIENT_SECRET_FILE = process.env.CLIENT_SECRET_FILE || 'client_secret.json';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
 const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
-const PARTNER_ID = process.env.PARTNER_ID || '796100066';
 
 async function initializeClient() {
   let bucketName = BUCKET_NAME;
@@ -60,50 +58,66 @@ async function initializeClient() {
 }
 
 async function run() {
-  console.log('--- Inspecting Demand Gen Entities in DV360 ---');
   const client = await initializeClient();
 
-  // 1. Find Demand Gen line items in BigQuery
   const [rows] = await bigquery.query({
-    query: `SELECT DISTINCT advertiserId, lineItemId, insertionOrderId, displayName, lineItemType 
+    query: `SELECT DISTINCT advertiserId, lineItemId, insertionOrderId, displayName 
             FROM \`${DATASET_ID}.line_items\` 
             WHERE lineItemType LIKE '%DEMAND_GEN%' OR displayName LIKE '%DEMANDGEN%' OR displayName LIKE '%DGEN%'`
   });
 
-  console.log(`Found ${rows.length} Demand Gen Line Items in BigQuery:`);
-  console.log(JSON.stringify(rows, null, 2));
+  const summary = [];
 
   for (const row of rows) {
-    const advId = row.advertiserId;
-    const liId = row.lineItemId;
-    console.log(`\n=== Checking Advertiser ${advId} (Line Item: ${liId} - ${row.displayName}) ===`);
-
-    // Check Ad Groups
     try {
-      const res = await client.dv360.advertisers.adGroups.list({
-        advertiserId: advId,
-        filter: `lineItemId="${liId}"`
+      const agRes = await client.dv360.advertisers.adGroups.list({
+        advertiserId: row.advertiserId,
+        filter: `lineItemId="${row.lineItemId}"`
       });
-      const ags = res.data.adGroups || [];
-      console.log(`Found ${ags.length} Ad Groups under Line Item ${liId}:`);
-      console.log(JSON.stringify(ags, null, 2));
+      const ags = agRes.data.adGroups || [];
 
       for (const ag of ags) {
-        try {
-          const adsRes = await client.dv360.advertisers.adGroupAds.list({
-            advertiserId: advId,
-            filter: `adGroupId="${ag.adGroupId}"`
+        const adRes = await client.dv360.advertisers.adGroupAds.list({
+          advertiserId: row.advertiserId,
+          filter: `adGroupId="${ag.adGroupId}"`
+        });
+        const ads = adRes.data.adGroupAds || [];
+
+        for (const ad of ads) {
+          const vAd = ad.demandGenVideoAd;
+          const iAd = ad.demandGenImageAd;
+
+          const headlines = (vAd && vAd.headlines ? vAd.headlines.length : 0) + (iAd && iAd.headlines ? iAd.headlines.length : 0);
+          const descriptions = (vAd && vAd.descriptions ? vAd.descriptions.length : 0) + (iAd && iAd.descriptions ? iAd.descriptions.length : 0);
+          const horizImgs = iAd && iAd.marketingImages ? iAd.marketingImages.length : 0;
+          const squareImgs = iAd && iAd.squareMarketingImages ? iAd.squareMarketingImages.length : 0;
+          const vertImgs = iAd && iAd.portraitMarketingImages ? iAd.portraitMarketingImages.length : 0;
+          const videos = vAd && vAd.videos ? vAd.videos.length : 0;
+
+          summary.push({
+            'IO ID': row.insertionOrderId,
+            'Line Item': row.displayName.substring(0, 30) + '...',
+            'Ad Name': ad.displayName.substring(0, 25),
+            'Type': vAd ? 'Video' : (iAd ? 'Image' : 'Other'),
+            'Videos': videos,
+            'Horiz Img': horizImgs,
+            'Square Img': squareImgs,
+            'Vert Img': vertImgs,
+            'Headlines': headlines,
+            'Desc': descriptions
           });
-          const ads = adsRes.data.adGroupAds || [];
-          console.log(`  Found ${ads.length} Ad Group Ads under Ad Group ${ag.adGroupId}:`);
-          console.log(JSON.stringify(ads, null, 2));
-        } catch (adErr) {
-          console.warn(`  Could not fetch adGroupAds for adGroup ${ag.adGroupId}:`, adErr.message);
         }
       }
-    } catch (agErr) {
-      console.warn(`Could not fetch adGroups for line item ${liId}:`, agErr.message);
+    } catch (e) {
+      console.warn(`Error on LI ${row.lineItemId}:`, e.message);
     }
+  }
+
+  console.log('\n--- DEMAND GEN ASSET COUNTS SUMMARY ---');
+  if (summary.length > 0) {
+    console.table(summary);
+  } else {
+    console.log('No Demand Gen ad group ads found.');
   }
 }
 
