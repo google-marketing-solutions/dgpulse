@@ -28,8 +28,6 @@ latest_creatives AS (
     MAX(NULLIF(dimensions, '')) AS dimensions,
     MAX(NULLIF(imageUrl, '')) AS imageUrl
   FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
-  WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
-    AND advertiserId IN (SELECT DISTINCT advertiserId FROM demand_gen_line_items WHERE advertiserId IS NOT NULL)
   GROUP BY creativeId
 ),
 creative_aspect_types AS (

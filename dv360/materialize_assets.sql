@@ -1,6 +1,6 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_assets_performance` AS
 WITH demand_gen_line_items AS (
-  SELECT DISTINCT campaignId, insertionOrderId, lineItemId, advertiserId
+  SELECT DISTINCT campaignId, insertionOrderId, lineItemId
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   WHERE lineItemType LIKE '%DEMAND_GEN%'
 ),
@@ -62,8 +62,6 @@ latest_creatives AS (
     MAX(NULLIF(hostingSource, '')) AS hostingSource,
     MAX(NULLIF(entityStatus, '')) AS entityStatus
   FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
-  WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
-    AND advertiserId IN (SELECT DISTINCT advertiserId FROM demand_gen_line_items WHERE advertiserId IS NOT NULL)
   GROUP BY creativeId
 ),
 latest_campaigns AS (
@@ -135,8 +133,8 @@ SELECT
   c.advertiserId AS advertiser_id,
   c.advertiserId AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, c.advertiserId) AS account_name,
-  COALESCE(cs.campaign_id, (SELECT MIN(campaignId) FROM demand_gen_line_items WHERE advertiserId = c.advertiserId), 'N/A') AS campaign_id,
-  COALESCE(cmp.displayName, (SELECT MIN(displayName) FROM latest_campaigns WHERE campaignId IN (SELECT campaignId FROM demand_gen_line_items WHERE advertiserId = c.advertiserId)), 'Demand Gen Campaign') AS campaign_name,
+  COALESCE(cs.campaign_id, 'N/A') AS campaign_id,
+  COALESCE(cmp.displayName, cs.campaign_id, 'N/A') AS campaign_name,
   COALESCE(
     cs.currency_code, 
     NULLIF(adv.currency_code, ''), 
@@ -183,7 +181,7 @@ FROM latest_creatives c
 LEFT JOIN creative_stats cs
   ON c.creativeId = cs.creative_id
 LEFT JOIN latest_campaigns cmp
-  ON COALESCE(cs.campaign_id, (SELECT MIN(campaignId) FROM demand_gen_line_items WHERE advertiserId = c.advertiserId)) = cmp.campaignId
+  ON cs.campaign_id = cmp.campaignId
 LEFT JOIN latest_advertisers adv
   ON c.advertiserId = adv.advertiserId
 LEFT JOIN latest_settings sett
