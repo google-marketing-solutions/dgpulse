@@ -125,49 +125,54 @@ async function setupScheduledQueries() {
     }
 
     if (matchingConfig) {
-      console.log(`Updating existing Scheduled Query: ${displayName} (${matchingConfig.name})...`);
+      console.log(`Refreshing existing Scheduled Query: ${displayName} (${matchingConfig.name})...`);
       try {
-        await datatransfer.projects.locations.transferConfigs.patch({
-          name: matchingConfig.name,
-          updateMask: 'params,schedule,destinationDatasetId',
-          requestBody: transferConfigBody
-        });
-        console.log(`Successfully updated Scheduled Query: ${displayName}`);
-      } catch (patchErr) {
-        console.warn(`Patch failed for ${matchingConfig.name}, recreating:`, patchErr.message);
-        try {
-          await datatransfer.projects.locations.transferConfigs.delete({ name: matchingConfig.name });
-          const parent = `projects/${PROJECT_ID}/locations/${matchingConfig.datasetRegion || LOCATION || 'US'}`;
-          await datatransfer.projects.locations.transferConfigs.create({
-            parent: parent,
-            requestBody: transferConfigBody
-          });
-          console.log(`Successfully recreated Scheduled Query: ${displayName}`);
-        } catch (recreateErr) {
-          console.error(`Error recreating ${displayName}:`, recreateErr.message);
-        }
+        await datatransfer.projects.locations.transferConfigs.delete({ name: matchingConfig.name });
+      } catch (delErr) {
+        console.warn(`Warning removing old config ${matchingConfig.name}:`, delErr.message);
       }
-    } else {
-      console.log(`Creating new Scheduled Query: ${displayName}...`);
-      try {
-        const parent = `projects/${PROJECT_ID}/locations/${LOCATION || 'US'}`;
-        await datatransfer.projects.locations.transferConfigs.create({
-          parent: parent,
-          requestBody: transferConfigBody
-        });
-        console.log(`Successfully created Scheduled Query: ${displayName}`);
-      } catch (createErr) {
-        console.error(`Error creating Scheduled Query ${displayName}:`, createErr.message);
-      }
+    }
+
+    console.log(`Creating fresh Scheduled Query: ${displayName}...`);
+    try {
+      const parent = `projects/${PROJECT_ID}/locations/${(matchingConfig && matchingConfig.datasetRegion) || LOCATION || 'US'}`;
+      await datatransfer.projects.locations.transferConfigs.create({
+        parent: parent,
+        requestBody: transferConfigBody
+      });
+      console.log(`Successfully created Scheduled Query: ${displayName}`);
+    } catch (createErr) {
+      console.error(`Error creating Scheduled Query ${displayName}:`, createErr.message);
     }
   }
 
-  console.log('All Scheduled Queries setup/update complete.');
+  console.log('All Scheduled Queries refreshed in BigQuery Data Transfer Service.');
+
+  // Run immediate materialization queries to update BigQuery tables right now
+  console.log('Running immediate materialization queries across all tables...');
+  const bigquery = new BigQuery({ projectId: PROJECT_ID });
+  for (const sqlFile of sqlFiles) {
+    console.log(`Materializing ${sqlFile}...`);
+    const rawSql = fs.readFileSync(sqlFile, 'utf8');
+    const processedSql = rawSql
+      .replace(/__PROJECT_ID__/g, PROJECT_ID)
+      .replace(/__DATASET_ID__/g, DATASET_ID)
+      .replace(/__PARTNER_ID__/g, PARTNER_ID);
+    try {
+      await bigquery.query({ query: processedSql });
+      console.log(`✓ Successfully materialized ${sqlFile}`);
+    } catch (queryErr) {
+      console.error(`✗ Error materializing ${sqlFile}:`, queryErr.message);
+    }
+  }
 }
 
 if (require.main === module) {
   setupScheduledQueries()
-    .then(() => process.exit(0))
+    .then(() => {
+      console.log('All Scheduled Queries setup and materialization completed successfully.');
+      process.exit(0);
+    })
     .catch(err => {
       console.error('Failed to setup scheduled queries:', err);
       process.exit(1);
