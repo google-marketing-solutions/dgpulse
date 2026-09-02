@@ -135,7 +135,13 @@ async function setupScheduledQueries() {
 
     console.log(`Creating fresh Scheduled Query: ${displayName}...`);
     try {
-      const parent = `projects/${PROJECT_ID}/locations/${(matchingConfig && matchingConfig.datasetRegion) || LOCATION || 'US'}`;
+      let targetRegion = 'us-central1';
+      try {
+        const [meta] = await bigquery.dataset(DATASET_ID).getMetadata();
+        if (meta && meta.location) targetRegion = meta.location.toLowerCase();
+      } catch (e) {}
+
+      const parent = `projects/${PROJECT_ID}/locations/${targetRegion}`;
       await datatransfer.projects.locations.transferConfigs.create({
         parent: parent,
         requestBody: transferConfigBody

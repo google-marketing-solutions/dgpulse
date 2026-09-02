@@ -13,6 +13,23 @@ WITH dg_ads AS (
   ) li ON ad.lineItemId = li.lineItemId
   WHERE ad.entityStatus = 'ENTITY_STATUS_ACTIVE'
 ),
+-- Deduplicate identical ad creatives reused across multiple targeting ad groups under the same IO
+unique_ads_per_io AS (
+  SELECT 
+    resolved_io_id,
+    advertiserId,
+    displayName,
+    ANY_VALUE(campaignId) AS campaignId,
+    MAX(videos_count) AS videos_count,
+    MAX(horizontal_images_count) AS horizontal_images_count,
+    MAX(portrait_images_count) AS portrait_images_count,
+    MAX(square_images_count) AS square_images_count,
+    MAX(headlines_count) AS headlines_count,
+    MAX(descriptions_count) AS descriptions_count
+  FROM dg_ads
+  WHERE resolved_io_id IS NOT NULL AND resolved_io_id != ''
+  GROUP BY resolved_io_id, advertiserId, displayName
+),
 io_asset_counts AS (
   SELECT 
     resolved_io_id AS insertion_order_id,
@@ -26,8 +43,7 @@ io_asset_counts AS (
     SUM(square_images_count) AS square_images,
     SUM(headlines_count) AS headlines,
     SUM(descriptions_count) AS descriptions
-  FROM dg_ads
-  WHERE resolved_io_id IS NOT NULL AND resolved_io_id != ''
+  FROM unique_ads_per_io
   GROUP BY 1, 2
 ),
 latest_ios AS (
