@@ -1,6 +1,6 @@
 /**
- * @fileoverview Fetches Demand Gen Ad Groups and Ad Group Ads from DV360 API v4
- * and stores them in BigQuery table `ad_group_ads` for 1:1 parity with Google Ads DGPulse.
+ * @fileoverview Fetches Demand Gen Ad Groups, Ad Group Ads, and latest Insertion Orders
+ * from DV360 API v4 and stores them in BigQuery for 1:1 parity with Google Ads DGPulse.
  */
 const fs = require('fs');
 const { Storage } = require('@google-cloud/storage');
@@ -94,7 +94,7 @@ async function ensureTable() {
 }
 
 async function sync() {
-  console.log('--- Starting Demand Gen Ad Group Ads Sync ---');
+  console.log('--- Starting Demand Gen Ad Group Ads & Insertion Orders Sync ---');
   await ensureTable();
   const client = await initializeClient();
 
@@ -115,6 +115,61 @@ async function sync() {
 
   console.log(`Found ${rows.length} Demand Gen line item configurations.`);
 
+  // 1. Refresh insertion_orders from live API to ensure current display names
+  const advertisersToSync = [...new Set(rows.map(r => r.advertiserId).filter(Boolean))];
+  for (const advId of advertisersToSync) {
+    try {
+      console.log(`Refreshing live insertion orders for advertiser ${advId}...`);
+      const ios = await client.listAllInsertionOrders(advId);
+      if (ios && ios.length > 0) {
+        const ioRows = ios.map(io => {
+          let budgetAmount = null;
+          let startDate = null;
+          let endDate = null;
+          if (io.budget && io.budget.budgetSegments && io.budget.budgetSegments[0]) {
+            const seg = io.budget.budgetSegments[0];
+            budgetAmount = seg.budgetAmountMicros ? seg.budgetAmountMicros / 1000000 : null;
+            if (seg.dateRange) {
+              if (seg.dateRange.startDate) {
+                startDate = `${seg.dateRange.startDate.year}-${String(seg.dateRange.startDate.month).padStart(2, '0')}-${String(seg.dateRange.startDate.day).padStart(2, '0')}`;
+              }
+              if (seg.dateRange.endDate) {
+                endDate = `${seg.dateRange.endDate.year}-${String(seg.dateRange.endDate.month).padStart(2, '0')}-${String(seg.dateRange.endDate.day).padStart(2, '0')}`;
+              }
+            }
+          }
+
+          return {
+            insertionOrderId: String(io.insertionOrderId),
+            campaignId: String(io.campaignId || ''),
+            advertiserId: String(advId),
+            entityStatus: io.entityStatus || '',
+            displayName: io.displayName || '',
+            pacingType: io.pacing ? io.pacing.pacingType : '',
+            pacingPeriod: io.pacing ? io.pacing.pacingPeriod : '',
+            dailyMaxAmount: io.pacing ? io.pacing.dailyMaxMicros / 1000000 : null,
+            budgetUnit: io.budget ? io.budget.budgetUnit : '',
+            budgetAmount: budgetAmount,
+            startDate: startDate,
+            endDate: endDate
+          };
+        });
+
+        try {
+          await bigquery.query({
+            query: `DELETE FROM \`${DATASET_ID}.insertion_orders\` WHERE advertiserId = '${advId}'`
+          });
+        } catch (delErr) {}
+
+        await bigquery.dataset(DATASET_ID).table('insertion_orders').insert(ioRows);
+        console.log(`✓ Updated ${ioRows.length} insertion orders in BigQuery with latest live names.`);
+      }
+    } catch (ioErr) {
+      console.warn(`Warning refreshing insertion orders for advertiser ${advId}:`, ioErr.message);
+    }
+  }
+
+  // 2. Fetch Ad Group Ads
   const adRows = [];
   const now = new Date().toISOString();
 
@@ -124,7 +179,7 @@ async function sync() {
     let ioId = row.insertionOrderId || '';
     let campId = row.campaignId || '';
 
-    // If ioId or campId is still missing, fetch Line Item directly via API
+    // If ioId or campId is missing, fetch Line Item directly via API
     if (!ioId || !campId) {
       try {
         const liObj = await client.dv360.advertisers.lineItems.get({
@@ -200,16 +255,12 @@ async function sync() {
   console.log(`Processed ${adRows.length} Ad Group Ads.`);
 
   if (adRows.length > 0) {
-    // Delete existing rows and insert fresh batch
     try {
       await bigquery.query({
         query: `DELETE FROM \`${DATASET_ID}.${TABLE_ID}\` WHERE true`
       });
-    } catch (delErr) {
-      // Table might be newly created or empty
-    }
+    } catch (delErr) {}
 
-    // Insert in batches of 500
     for (let i = 0; i < adRows.length; i += 500) {
       const batch = adRows.slice(i, i + 500);
       await bigquery.dataset(DATASET_ID).table(TABLE_ID).insert(batch);
