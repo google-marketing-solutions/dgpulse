@@ -1,6 +1,6 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_assets_performance` AS
 WITH demand_gen_line_items AS (
-  SELECT DISTINCT campaignId, insertionOrderId, lineItemId
+  SELECT DISTINCT campaignId, insertionOrderId, lineItemId, advertiserId
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   WHERE lineItemType LIKE '%DEMAND_GEN%'
 ),
@@ -62,6 +62,8 @@ latest_creatives AS (
     MAX(NULLIF(hostingSource, '')) AS hostingSource,
     MAX(NULLIF(entityStatus, '')) AS entityStatus
   FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
+  WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
+    AND advertiserId IN (SELECT DISTINCT advertiserId FROM demand_gen_line_items WHERE advertiserId IS NOT NULL)
   GROUP BY creativeId
 ),
 latest_campaigns AS (
@@ -100,7 +102,7 @@ SELECT
   c.creativeId AS asset_id,
   c.displayName AS asset_name,
   
-  -- Formatted Asset Type matching Google Ads (SQUARE IMAGE, HORIZONTAL IMAGE, VERTICAL IMAGE, VERTICAL VIDEO, HORIZONTAL VIDEO, SQUARE VIDEO)
+  -- Formatted Asset Type
   CASE 
     WHEN UPPER(c.creativeType) LIKE '%VIDEO%' OR UPPER(c.displayName) LIKE '%VIDEO%' OR UPPER(c.dimensions) LIKE '%VIDEO%' THEN
       CASE 
@@ -133,8 +135,8 @@ SELECT
   c.advertiserId AS advertiser_id,
   c.advertiserId AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, c.advertiserId) AS account_name,
-  COALESCE(cs.campaign_id, 'N/A') AS campaign_id,
-  COALESCE(cmp.displayName, cs.campaign_id, 'N/A') AS campaign_name,
+  COALESCE(cs.campaign_id, (SELECT MIN(campaignId) FROM demand_gen_line_items WHERE advertiserId = c.advertiserId), 'N/A') AS campaign_id,
+  COALESCE(cmp.displayName, (SELECT MIN(displayName) FROM latest_campaigns WHERE campaignId IN (SELECT campaignId FROM demand_gen_line_items WHERE advertiserId = c.advertiserId)), 'Demand Gen Campaign') AS campaign_name,
   COALESCE(
     cs.currency_code, 
     NULLIF(adv.currency_code, ''), 
@@ -177,11 +179,11 @@ SELECT
   COALESCE(cs.post_click_revenue, 0) AS post_click_revenue,
   COALESCE(cs.post_view_revenue, 0) AS post_view_revenue,
   SAFE_DIVIDE(COALESCE(cs.post_click_conversions, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS post_click_conv_rate
-FROM creative_stats cs
-JOIN latest_creatives c
-  ON cs.creative_id = c.creativeId
+FROM latest_creatives c
+LEFT JOIN creative_stats cs
+  ON c.creativeId = cs.creative_id
 LEFT JOIN latest_campaigns cmp
-  ON cs.campaign_id = cmp.campaignId
+  ON COALESCE(cs.campaign_id, (SELECT MIN(campaignId) FROM demand_gen_line_items WHERE advertiserId = c.advertiserId)) = cmp.campaignId
 LEFT JOIN latest_advertisers adv
   ON c.advertiserId = adv.advertiserId
 LEFT JOIN latest_settings sett
