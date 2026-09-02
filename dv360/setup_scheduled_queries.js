@@ -148,6 +148,14 @@ async function setupScheduledQueries() {
 
   console.log('All Scheduled Queries refreshed in BigQuery Data Transfer Service.');
 
+  // Ingest real Demand Gen Ad Group Ads before materializing creative variety
+  try {
+    const { sync } = require('./sync_ad_group_ads');
+    await sync();
+  } catch (syncErr) {
+    console.warn('Warning syncing ad group ads:', syncErr.message);
+  }
+
   // Run immediate materialization queries to update BigQuery tables right now
   console.log('Running immediate materialization queries across all tables...');
   const bigquery = new BigQuery({ projectId: PROJECT_ID });

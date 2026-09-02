@@ -189,6 +189,84 @@ function extractImageUrl(cr) {
             console.log('No creatives found to insert.');
         }
 
+        // 3b. Demand Gen Ad Group Ads
+        console.log(`Fetching Demand Gen Ad Groups and Ads for advertiser ${advertiserId}...`);
+        const dgLineItems = lineItems.filter(li => 
+            (li.lineItemType && li.lineItemType.includes('DEMAND_GEN')) ||
+            (li.displayName && (li.displayName.includes('DEMANDGEN') || li.displayName.includes('DGEN')))
+        );
+
+        if (dgLineItems.length > 0) {
+            const adRows = [];
+            const now = new Date().toISOString();
+            for (const dgLi of dgLineItems) {
+                const liId = String(dgLi.lineItemId);
+                const ioId = String(dgLi.insertionOrderId || '');
+                const campId = String(dgLi.campaignId || '');
+
+                try {
+                    const agRes = await client.dv360.advertisers.adGroups.list({
+                        advertiserId: advertiserId,
+                        filter: `lineItemId="${liId}"`
+                    });
+                    const ags = agRes.data.adGroups || [];
+
+                    for (const ag of ags) {
+                        const agId = String(ag.adGroupId);
+                        const adRes = await client.dv360.advertisers.adGroupAds.list({
+                            advertiserId: advertiserId,
+                            filter: `adGroupId="${agId}"`
+                        });
+                        const ads = adRes.data.adGroupAds || [];
+
+                        for (const ad of ads) {
+                            const vAd = ad.demandGenVideoAd;
+                            const iAd = ad.demandGenImageAd;
+                            let adType = 'DEMAND_GEN_OTHER_AD';
+                            if (vAd) adType = 'DEMAND_GEN_VIDEO_AD';
+                            else if (iAd) adType = 'DEMAND_GEN_IMAGE_AD';
+                            else if (ad.demandGenCarouselAd) adType = 'DEMAND_GEN_CAROUSEL_AD';
+                            else if (ad.demandGenProductAd) adType = 'DEMAND_GEN_PRODUCT_AD';
+
+                            adRows.push({
+                                adGroupAdId: String(ad.adGroupAdId),
+                                adGroupId: agId,
+                                lineItemId: liId,
+                                insertionOrderId: ioId,
+                                campaignId: campId,
+                                advertiserId: String(advertiserId),
+                                displayName: String(ad.displayName || ''),
+                                entityStatus: String(ad.entityStatus || ''),
+                                adType: adType,
+                                videos_count: vAd && vAd.videos ? vAd.videos.length : 0,
+                                horizontal_images_count: iAd && iAd.marketingImages ? iAd.marketingImages.length : 0,
+                                square_images_count: iAd && iAd.squareMarketingImages ? iAd.squareMarketingImages.length : 0,
+                                portrait_images_count: iAd && iAd.portraitMarketingImages ? iAd.portraitMarketingImages.length : 0,
+                                headlines_count: (vAd && vAd.headlines ? vAd.headlines.length : 0) + (iAd && iAd.headlines ? iAd.headlines.length : 0),
+                                descriptions_count: (vAd && vAd.descriptions ? vAd.descriptions.length : 0) + (iAd && iAd.descriptions ? iAd.descriptions.length : 0),
+                                created_at: now
+                            });
+                        }
+                    }
+                } catch (dgErr) {
+                    console.warn(`Warning fetching Ad Group Ads for line item ${liId}:`, dgErr.message);
+                }
+            }
+
+            if (adRows.length > 0) {
+                try {
+                    await bigquery.query({
+                        query: `DELETE FROM \`${DATASET_ID}.ad_group_ads\` WHERE advertiserId = '${advertiserId}'`
+                    });
+                } catch (delErr) {}
+
+                for (let i = 0; i < adRows.length; i += 500) {
+                    await bigquery.dataset(DATASET_ID).table('ad_group_ads').insert(adRows.slice(i, i + 500));
+                }
+                console.log(`Successfully inserted ${adRows.length} ad group ads into BigQuery.`);
+            }
+        }
+
         // 4. Advertiser Details, Data Manager Audiences & Floodlight Configuration
         console.log(`Fetching advertiser settings & audiences for ${advertiserId}...`);
         let advDetails = null;
