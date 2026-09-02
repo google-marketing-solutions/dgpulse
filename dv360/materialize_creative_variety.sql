@@ -1,29 +1,23 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_creative_variety` AS
-WITH dg_ads_with_io AS (
+WITH dg_ads AS (
   SELECT 
     ad.*,
     COALESCE(
       NULLIF(ad.insertionOrderId, ''),
-      NULLIF(li.insertionOrderId, ''),
-      CAST(dbm.Insertion_Order_Id AS STRING)
-    ) AS resolved_io_id,
-    COALESCE(
-      NULLIF(ad.campaignId, ''),
-      NULLIF(li.campaignId, ''),
-      CAST(dbm.Media_Plan_Id AS STRING)
-    ) AS resolved_campaign_id
+      NULLIF(li.insertionOrderId, '')
+    ) AS resolved_io_id
   FROM `__PROJECT_ID__.__DATASET_ID__.ad_group_ads` ad
-  LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.line_items` li
-    ON ad.lineItemId = li.lineItemId
-  LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.dbm_performance` dbm
-    ON CAST(ad.lineItemId AS INT64) = dbm.Line_Item_Id
-  WHERE ad.entityStatus NOT IN ('ENTITY_STATUS_ARCHIVED', 'ENTITY_STATUS_SCHEDULED_FOR_DELETION')
+  LEFT JOIN (
+    SELECT DISTINCT lineItemId, insertionOrderId 
+    FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  ) li ON ad.lineItemId = li.lineItemId
+  WHERE ad.entityStatus = 'ENTITY_STATUS_ACTIVE'
 ),
 io_asset_counts AS (
   SELECT 
     resolved_io_id AS insertion_order_id,
     advertiserId AS advertiser_id,
-    MAX(resolved_campaign_id) AS campaign_id,
+    MAX(campaignId) AS campaign_id,
     SUM(videos_count) AS horizontal_videos,
     0 AS vertical_videos,
     0 AS square_videos,
@@ -32,7 +26,7 @@ io_asset_counts AS (
     SUM(square_images_count) AS square_images,
     SUM(headlines_count) AS headlines,
     SUM(descriptions_count) AS descriptions
-  FROM dg_ads_with_io
+  FROM dg_ads
   WHERE resolved_io_id IS NOT NULL AND resolved_io_id != ''
   GROUP BY 1, 2
 ),
