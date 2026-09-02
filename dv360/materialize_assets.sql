@@ -60,7 +60,8 @@ latest_creatives AS (
     MAX(NULLIF(dimensions, '')) AS dimensions,
     MAX(NULLIF(imageUrl, '')) AS imageUrl,
     MAX(NULLIF(hostingSource, '')) AS hostingSource,
-    MAX(NULLIF(entityStatus, '')) AS entityStatus
+    MAX(NULLIF(entityStatus, '')) AS entityStatus,
+    MAX(NULLIF(approvalStatus, '')) AS approvalStatus
   FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
   GROUP BY creativeId
 ),
@@ -187,4 +188,6 @@ LEFT JOIN latest_advertisers adv
 LEFT JOIN latest_settings sett
   ON c.advertiserId = sett.advertiserId
 LEFT JOIN advertiser_currencies ac
-  ON c.advertiserId = ac.advertiser_id;
+  ON c.advertiserId = ac.advertiser_id
+WHERE c.entityStatus != 'ENTITY_STATUS_ARCHIVED'
+  AND (c.approvalStatus IS NULL OR c.approvalStatus != 'APPROVAL_STATUS_REJECTED_NOT_SERVABLE');

@@ -12,6 +12,7 @@ WITH dg_ads AS (
     FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   ) li ON ad.lineItemId = li.lineItemId
   WHERE ad.entityStatus = 'ENTITY_STATUS_ACTIVE'
+    AND (ad.approvalStatus IS NULL OR ad.approvalStatus != 'DISAPPROVED')
 ),
 -- Deduplicate identical ad creatives reused across multiple targeting ad groups under the same IO
 unique_ads_per_io AS (

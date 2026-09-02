@@ -1,6 +1,6 @@
 /**
- * @fileoverview Fetches Demand Gen Ad Groups, Ad Group Ads, and latest Insertion Orders
- * from DV360 API v4 and stores them in BigQuery for 1:1 parity with Google Ads DGPulse.
+ * @fileoverview Fetches Demand Gen Ad Groups, Ad Group Ads, latest Insertion Orders,
+ * and Creatives from DV360 API v4 and stores them in BigQuery for 1:1 parity with Google Ads DGPulse.
  */
 const fs = require('fs');
 const { Storage } = require('@google-cloud/storage');
@@ -79,6 +79,7 @@ async function ensureTable() {
     { name: 'portrait_images_count', type: 'INT64', mode: 'NULLABLE' },
     { name: 'headlines_count', type: 'INT64', mode: 'NULLABLE' },
     { name: 'descriptions_count', type: 'INT64', mode: 'NULLABLE' },
+    { name: 'approvalStatus', type: 'STRING', mode: 'NULLABLE' },
     { name: 'created_at', type: 'TIMESTAMP', mode: 'NULLABLE' }
   ];
 
@@ -94,7 +95,7 @@ async function ensureTable() {
 }
 
 async function sync() {
-  console.log('--- Starting Demand Gen Ad Group Ads & Insertion Orders Sync ---');
+  console.log('--- Starting Demand Gen Ad Group Ads, Creatives & Insertion Orders Sync ---');
   await ensureTable();
   const client = await initializeClient();
 
@@ -169,7 +170,71 @@ async function sync() {
     }
   }
 
-  // 2. Fetch Ad Group Ads
+  // 2. Refresh creatives from live API with approvalStatus
+  for (const advId of advertisersToSync) {
+    try {
+      console.log(`Refreshing live creatives with approvalStatus for advertiser ${advId}...`);
+      const creatives = await client.listAllCreatives(advId);
+      if (creatives && creatives.length > 0) {
+        const creativeRows = creatives.map(cr => {
+          let dims = 'RESPONSIVE/NATIVE';
+          if (cr.dimensions && cr.dimensions.widthPixels > 0 && cr.dimensions.heightPixels > 0) {
+            dims = `${cr.dimensions.widthPixels}x${cr.dimensions.heightPixels}`;
+          } else if (cr.creativeType && cr.creativeType.includes('VIDEO')) {
+            dims = 'VIDEO (RESPONSIVE)';
+          } else if (cr.creativeType && cr.creativeType.includes('AUDIO')) {
+            dims = 'AUDIO (N/A)';
+          }
+          let imgUrl = '';
+          if (cr.assets && Array.isArray(cr.assets)) {
+            for (const a of cr.assets) {
+              const content = a.asset && a.asset.content;
+              if (content) {
+                const ytMatch = content.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+                if (ytMatch && ytMatch[1]) {
+                  imgUrl = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+                  break;
+                }
+                if ((content.startsWith('http://') || content.startsWith('https://')) && content.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) {
+                  imgUrl = content;
+                  break;
+                }
+              }
+            }
+          }
+
+          const approvalStatus = (cr.reviewStatus && cr.reviewStatus.approvalStatus) || '';
+
+          return {
+            creativeId: String(cr.creativeId),
+            advertiserId: String(advId),
+            entityStatus: cr.entityStatus || '',
+            displayName: cr.displayName || '',
+            creativeType: cr.creativeType || '',
+            hostingSource: cr.hostingSource || '',
+            dimensions: dims,
+            imageUrl: imgUrl,
+            approvalStatus: approvalStatus
+          };
+        });
+
+        try {
+          await bigquery.query({
+            query: `DELETE FROM \`${DATASET_ID}.creatives\` WHERE advertiserId = '${advId}'`
+          });
+        } catch (delErr) {}
+
+        for (let i = 0; i < creativeRows.length; i += 500) {
+          await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows.slice(i, i + 500));
+        }
+        console.log(`✓ Updated ${creativeRows.length} creatives in BigQuery with latest approval status.`);
+      }
+    } catch (crErr) {
+      console.warn(`Warning refreshing creatives for advertiser ${advId}:`, crErr.message);
+    }
+  }
+
+  // 3. Fetch Ad Group Ads
   const adRows = [];
   const now = new Date().toISOString();
 
@@ -226,6 +291,7 @@ async function sync() {
           const squareImgsCount = iAd && iAd.squareMarketingImages ? iAd.squareMarketingImages.length : 0;
           const vertImgsCount = iAd && iAd.portraitMarketingImages ? iAd.portraitMarketingImages.length : 0;
           const videosCount = vAd && vAd.videos ? vAd.videos.length : 0;
+          const approvalStatus = (ad.adPolicy && ad.adPolicy.adPolicyApprovalStatus) || '';
 
           adRows.push({
             adGroupAdId: String(ad.adGroupAdId),
@@ -243,6 +309,7 @@ async function sync() {
             portrait_images_count: vertImgsCount,
             headlines_count: headlinesCount,
             descriptions_count: descriptionsCount,
+            approvalStatus: approvalStatus,
             created_at: now
           });
         }
@@ -262,8 +329,7 @@ async function sync() {
     } catch (delErr) {}
 
     for (let i = 0; i < adRows.length; i += 500) {
-      const batch = adRows.slice(i, i + 500);
-      await bigquery.dataset(DATASET_ID).table(TABLE_ID).insert(batch);
+      await bigquery.dataset(DATASET_ID).table(TABLE_ID).insert(adRows.slice(i, i + 500));
     }
     console.log(`✓ Successfully ingested ${adRows.length} Ad Group Ads into BigQuery ${DATASET_ID}.${TABLE_ID}.`);
   }
