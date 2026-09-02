@@ -60,20 +60,21 @@ creative_aspect_types AS (
     END AS asset_type
   FROM latest_creatives
 ),
-campaign_creatives AS (
+io_creatives AS (
   SELECT 
+    CAST(dbm.Insertion_Order_Id AS STRING) AS insertion_order_id,
     CAST(dbm.Media_Plan_Id AS STRING) AS campaign_id,
     CAST(dbm.Advertiser_Id AS STRING) AS advertiser_id,
     c.creativeId,
     c.asset_type
   FROM deduped_dbm dbm
   JOIN creative_aspect_types c ON CAST(dbm.Creative_Id AS STRING) = c.creativeId
-  WHERE dbm.Media_Plan_Id IS NOT NULL AND dbm.Creative_Id IS NOT NULL
-  GROUP BY 1, 2, 3, 4
+  WHERE dbm.Insertion_Order_Id IS NOT NULL AND dbm.Creative_Id IS NOT NULL
+  GROUP BY 1, 2, 3, 4, 5
 ),
-campaign_asset_counts AS (
+io_asset_counts AS (
   SELECT 
-    campaign_id,
+    insertion_order_id,
     advertiser_id,
     COUNTIF(asset_type = 'VERTICAL VIDEO') AS vertical_videos,
     COUNTIF(asset_type = 'HORIZONTAL VIDEO') AS horizontal_videos,
@@ -81,19 +82,41 @@ campaign_asset_counts AS (
     COUNTIF(asset_type = 'HORIZONTAL IMAGE') AS horizontal_images,
     COUNTIF(asset_type = 'VERTICAL IMAGE') AS vertical_images,
     COUNTIF(asset_type = 'SQUARE IMAGE') AS square_images,
-    -- Headlines and descriptions count (estimated from active text components/creatives)
     GREATEST(COUNTIF(asset_type LIKE '%IMAGE%'), 1) * 2 AS headlines,
     GREATEST(COUNTIF(asset_type LIKE '%IMAGE%'), 1) * 2 AS descriptions
-  FROM campaign_creatives
+  FROM io_creatives
   GROUP BY 1, 2
+),
+adv_asset_counts AS (
+  SELECT 
+    advertiserId,
+    COUNTIF(asset_type = 'VERTICAL VIDEO') AS vertical_videos,
+    COUNTIF(asset_type = 'HORIZONTAL VIDEO') AS horizontal_videos,
+    COUNTIF(asset_type = 'SQUARE VIDEO') AS square_videos,
+    COUNTIF(asset_type = 'HORIZONTAL IMAGE') AS horizontal_images,
+    COUNTIF(asset_type = 'VERTICAL IMAGE') AS vertical_images,
+    COUNTIF(asset_type = 'SQUARE IMAGE') AS square_images,
+    GREATEST(COUNTIF(asset_type LIKE '%IMAGE%'), 1) * 2 AS headlines,
+    GREATEST(COUNTIF(asset_type LIKE '%IMAGE%'), 1) * 2 AS descriptions
+  FROM creative_aspect_types
+  GROUP BY 1
+),
+latest_ios AS (
+  SELECT 
+    insertionOrderId AS insertion_order_id,
+    MAX(NULLIF(displayName, '')) AS insertion_order_name,
+    MAX(NULLIF(advertiserId, '')) AS advertiser_id,
+    MAX(NULLIF(campaignId, '')) AS campaign_id
+  FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
+  WHERE insertionOrderId IN (SELECT DISTINCT insertionOrderId FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)
+     OR displayName LIKE '%DEMANDGEN%' OR displayName LIKE '%DGEN%'
+  GROUP BY 1
 ),
 latest_campaigns AS (
   SELECT 
     campaignId,
-    MAX(NULLIF(displayName, '')) AS displayName,
-    MAX(NULLIF(advertiserId, '')) AS advertiserId
+    MAX(NULLIF(displayName, '')) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
-  WHERE campaignId IN (SELECT DISTINCT campaignId FROM demand_gen_line_items WHERE campaignId IS NOT NULL)
   GROUP BY campaignId
 ),
 latest_advertisers AS (
@@ -111,43 +134,47 @@ latest_settings AS (
   GROUP BY advertiserId
 )
 SELECT 
-  c.campaignId AS campaign_id,
-  COALESCE(c.displayName, c.campaignId) AS campaign_name,
-  c.advertiserId AS advertiser_id,
-  c.advertiserId AS account_id,
-  COALESCE(sett.advertiser_name, adv.displayName, c.advertiserId) AS account_name,
+  io.insertion_order_id,
+  COALESCE(io.insertion_order_name, io.insertion_order_id) AS insertion_order_name,
+  COALESCE(io.campaign_id, 'N/A') AS campaign_id,
+  COALESCE(c.displayName, io.campaign_id, 'N/A') AS campaign_name,
+  io.advertiser_id,
+  io.advertiser_id AS account_id,
+  COALESCE(sett.advertiser_name, adv.displayName, io.advertiser_id) AS account_name,
   '__PARTNER_ID__' AS partner_id,
 
-  -- Image + Video Flag (YES if campaign has both image and video assets)
+  -- Image + Video Flag (YES if IO has both image and video assets)
   CASE 
-    WHEN (COALESCE(ac.vertical_videos, 0) + COALESCE(ac.horizontal_videos, 0) + COALESCE(ac.square_videos, 0) > 0)
-     AND (COALESCE(ac.horizontal_images, 0) + COALESCE(ac.vertical_images, 0) + COALESCE(ac.square_images, 0) > 0) THEN 'YES'
+    WHEN (COALESCE(ac.vertical_videos, adv_ac.vertical_videos, 0) + COALESCE(ac.horizontal_videos, adv_ac.horizontal_videos, 0) + COALESCE(ac.square_videos, adv_ac.square_videos, 0) > 0)
+     AND (COALESCE(ac.horizontal_images, adv_ac.horizontal_images, 0) + COALESCE(ac.vertical_images, adv_ac.vertical_images, 0) + COALESCE(ac.square_images, adv_ac.square_images, 0) > 0) THEN 'YES'
     ELSE 'NO'
   END AS image_and_video,
 
   -- Aspect Ratio Video Counts
-  COALESCE(ac.vertical_videos, 0) AS vertical_videos,
-  COALESCE(ac.horizontal_videos, 0) AS horizontal_videos,
-  COALESCE(ac.square_videos, 0) AS square_videos,
+  COALESCE(ac.vertical_videos, adv_ac.vertical_videos, 0) AS vertical_videos,
+  COALESCE(ac.horizontal_videos, adv_ac.horizontal_videos, 0) AS horizontal_videos,
+  COALESCE(ac.square_videos, adv_ac.square_videos, 0) AS square_videos,
 
   -- Aspect Ratio Image Counts
-  COALESCE(ac.horizontal_images, 0) AS horizontal_images,
-  COALESCE(ac.vertical_images, 0) AS vertical_images,
-  COALESCE(ac.square_images, 0) AS square_images,
+  COALESCE(ac.horizontal_images, adv_ac.horizontal_images, 0) AS horizontal_images,
+  COALESCE(ac.vertical_images, adv_ac.vertical_images, 0) AS vertical_images,
+  COALESCE(ac.square_images, adv_ac.square_images, 0) AS square_images,
 
   -- Text Assets & Feeds
-  COALESCE(ac.headlines, 0) AS headlines,
-  COALESCE(ac.descriptions, 0) AS descriptions,
+  COALESCE(ac.headlines, adv_ac.headlines, 0) AS headlines,
+  COALESCE(ac.descriptions, adv_ac.descriptions, 0) AS descriptions,
   'NO' AS product_feed,
 
   -- Best Practice Rule: 3 vertical, 3 square, 3 horizontal images OR 1 vertical, 1 square, 1 horizontal video OR 1 vertical video (Shorts)
   CASE 
-    WHEN (COALESCE(ac.vertical_images, 0) >= 3 AND COALESCE(ac.square_images, 0) >= 3 AND COALESCE(ac.horizontal_images, 0) >= 3)
-      OR (COALESCE(ac.vertical_videos, 0) >= 1 AND COALESCE(ac.square_videos, 0) >= 1 AND COALESCE(ac.horizontal_videos, 0) >= 1)
-      OR (COALESCE(ac.vertical_videos, 0) >= 1) THEN 'PASSED'
+    WHEN (COALESCE(ac.vertical_images, adv_ac.vertical_images, 0) >= 3 AND COALESCE(ac.square_images, adv_ac.square_images, 0) >= 3 AND COALESCE(ac.horizontal_images, adv_ac.horizontal_images, 0) >= 3)
+      OR (COALESCE(ac.vertical_videos, adv_ac.vertical_videos, 0) >= 1 AND COALESCE(ac.square_videos, adv_ac.square_videos, 0) >= 1 AND COALESCE(ac.horizontal_videos, adv_ac.horizontal_videos, 0) >= 1)
+      OR (COALESCE(ac.vertical_videos, adv_ac.vertical_videos, 0) >= 1) THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS asset_coverage_status
-FROM latest_campaigns c
-LEFT JOIN campaign_asset_counts ac ON c.campaignId = ac.campaign_id
-LEFT JOIN latest_advertisers adv ON c.advertiserId = adv.advertiserId
-LEFT JOIN latest_settings sett ON c.advertiserId = sett.advertiserId;
+FROM latest_ios io
+LEFT JOIN latest_campaigns c ON io.campaign_id = c.campaignId
+LEFT JOIN io_asset_counts ac ON io.insertion_order_id = ac.insertion_order_id
+LEFT JOIN adv_asset_counts adv_ac ON io.advertiser_id = adv_ac.advertiserId
+LEFT JOIN latest_advertisers adv ON io.advertiser_id = adv.advertiserId
+LEFT JOIN latest_settings sett ON io.advertiser_id = sett.advertiserId;
