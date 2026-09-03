@@ -170,6 +170,38 @@ async function sync() {
     }
   }
 
+  // 1b. Refresh line_items from live API to ensure clean, deduplicated rows
+  for (const advId of advertisersToSync) {
+    try {
+      console.log(`Refreshing live line items for advertiser ${advId}...`);
+      const lineItems = await client.listAllLineItems(advId);
+      if (lineItems && lineItems.length > 0) {
+        const lineItemRows = lineItems.map(li => ({
+          lineItemId: String(li.lineItemId),
+          insertionOrderId: String(li.insertionOrderId || ''),
+          campaignId: String(li.campaignId || ''),
+          advertiserId: String(advId),
+          entityStatus: li.entityStatus || '',
+          displayName: li.displayName || '',
+          lineItemType: li.lineItemType || ''
+        }));
+
+        try {
+          await bigquery.query({
+            query: `DELETE FROM \`${DATASET_ID}.line_items\` WHERE advertiserId = '${advId}'`
+          });
+        } catch (delErr) {}
+
+        for (let i = 0; i < lineItemRows.length; i += 500) {
+          await bigquery.dataset(DATASET_ID).table('line_items').insert(lineItemRows.slice(i, i + 500));
+        }
+        console.log(`✓ Updated ${lineItemRows.length} line items in BigQuery.`);
+      }
+    } catch (liErr) {
+      console.warn(`Warning refreshing line items for advertiser ${advId}:`, liErr.message);
+    }
+  }
+
   // 2. Refresh creatives from live API with approvalStatus
   for (const advId of advertisersToSync) {
     try {

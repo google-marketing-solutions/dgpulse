@@ -53,7 +53,7 @@ aggregated_stats AS (
 line_item_counts AS (
   SELECT 
     campaignId,
-    COUNT(lineItemId) AS line_item_count,
+    COUNT(DISTINCT lineItemId) AS line_item_count,
     IF(LOGICAL_OR(entityStatus = 'ENTITY_STATUS_PAUSED'), 'YES', 'NO') AS is_limited_by_budget
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   WHERE lineItemType LIKE '%DEMAND_GEN%'
