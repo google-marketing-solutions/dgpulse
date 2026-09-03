@@ -192,6 +192,16 @@ LEFT JOIN advertiser_currencies ac
 WHERE c.entityStatus = 'ENTITY_STATUS_ACTIVE'
   AND (
     cs.creative_id IS NOT NULL 
-    OR c.displayName IN (SELECT DISTINCT displayName FROM `__PROJECT_ID__.__DATASET_ID__.ad_group_ads`)
+    OR c.displayName IN (
+      SELECT DISTINCT displayName 
+      FROM `__PROJECT_ID__.__DATASET_ID__.ad_group_ads`
+      WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
+        AND (approvalStatus IS NULL OR approvalStatus != 'DISAPPROVED')
+    )
   )
-  AND (c.approvalStatus IS NULL OR (c.approvalStatus != 'APPROVAL_STATUS_REJECTED_NOT_SERVABLE' AND c.approvalStatus != 'APPROVAL_STATUS_PENDING_NOT_SERVABLE'));
+  AND (
+    c.approvalStatus LIKE '%APPROVED%' 
+    OR c.approvalStatus LIKE '%SERVABLE%'
+  )
+  AND c.approvalStatus NOT LIKE '%REJECTED%'
+  AND c.approvalStatus NOT LIKE '%NOT_SERVABLE%';

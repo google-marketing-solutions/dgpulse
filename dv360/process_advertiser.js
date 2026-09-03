@@ -13,7 +13,7 @@ const bigquery = new BigQuery();
 const BUCKET_NAME = process.env.BUCKET_NAME;
 const CLIENT_SECRET_FILE = process.env.CLIENT_SECRET_FILE || 'client_secret.json';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
-const DATASET_ID = process.env.DATASET_ID || 'dv360_pulse';
+const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
 const TABLE_ID = process.env.TABLE_ID || 'campaigns';
 
 let dv360Client = null;
@@ -53,6 +53,25 @@ async function initializeClient() {
     );
 
     return dv360Client;
+}
+
+function extractImageUrl(cr) {
+    if (!cr) return null;
+    if (cr.assets && Array.isArray(cr.assets)) {
+        for (const a of cr.assets) {
+            const content = a.asset && a.asset.content;
+            if (content) {
+                const ytMatch = content.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+                if (ytMatch && ytMatch[1]) {
+                    return `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+                }
+                if ((content.startsWith('http://') || content.startsWith('https://')) && content.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) {
+                    return content;
+                }
+            }
+        }
+    }
+    return null;
 }
 
 exports.processAdvertiser = async (event, context) => {
@@ -155,25 +174,6 @@ exports.processAdvertiser = async (event, context) => {
             console.log('No insertion orders found to insert.');
         }
 
-function extractImageUrl(cr) {
-    if (!cr) return null;
-    if (cr.assets && Array.isArray(cr.assets)) {
-        for (const a of cr.assets) {
-            const content = a.asset && a.asset.content;
-            if (content) {
-                const ytMatch = content.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
-                if (ytMatch && ytMatch[1]) {
-                    return `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
-                }
-                if ((content.startsWith('http://') || content.startsWith('https://')) && content.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) {
-                    return content;
-                }
-            }
-        }
-    }
-    return null;
-}
-
         // 3. Creatives
         console.log(`Fetching creatives for advertiser ${advertiserId}...`);
         const creatives = await client.listAllCreatives(advertiserId);
@@ -187,12 +187,12 @@ function extractImageUrl(cr) {
                 dims = 'AUDIO (N/A)';
             }
             return {
-                creativeId: cr.creativeId,
-                advertiserId: cr.advertiserId,
-                entityStatus: cr.entityStatus,
-                displayName: cr.displayName,
-                creativeType: cr.creativeType,
-                hostingSource: cr.hostingSource,
+                creativeId: String(cr.creativeId),
+                advertiserId: String(cr.advertiserId),
+                entityStatus: cr.entityStatus || '',
+                displayName: cr.displayName || '',
+                creativeType: cr.creativeType || '',
+                hostingSource: cr.hostingSource || '',
                 dimensions: dims,
                 imageUrl: extractImageUrl(cr) || '',
                 approvalStatus: (cr.reviewStatus && cr.reviewStatus.approvalStatus) || ''
