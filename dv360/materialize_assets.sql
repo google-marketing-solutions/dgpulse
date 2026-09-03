@@ -189,5 +189,5 @@ LEFT JOIN latest_settings sett
   ON c.advertiserId = sett.advertiserId
 LEFT JOIN advertiser_currencies ac
   ON c.advertiserId = ac.advertiser_id
-WHERE c.entityStatus != 'ENTITY_STATUS_ARCHIVED'
-  AND (c.approvalStatus IS NULL OR c.approvalStatus != 'APPROVAL_STATUS_REJECTED_NOT_SERVABLE');
+WHERE c.entityStatus = 'ENTITY_STATUS_ACTIVE'
+  AND (c.approvalStatus IS NULL OR (c.approvalStatus != 'APPROVAL_STATUS_REJECTED_NOT_SERVABLE' AND c.approvalStatus != 'APPROVAL_STATUS_PENDING_NOT_SERVABLE'));

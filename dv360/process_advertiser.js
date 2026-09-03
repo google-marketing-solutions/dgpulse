@@ -69,6 +69,7 @@ exports.processAdvertiser = async (event, context) => {
             displayName: campaign.displayName
         }));
         if (campaignRows.length > 0) {
+            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.campaigns\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
             await bigquery.dataset(DATASET_ID).table('campaigns').insert(campaignRows);
             console.log(`Successfully inserted ${campaignRows.length} campaigns into BigQuery.`);
         } else {
@@ -88,6 +89,7 @@ exports.processAdvertiser = async (event, context) => {
             lineItemType: li.lineItemType || ''
         }));
         if (lineItemRows.length > 0) {
+            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.line_items\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
             await bigquery.dataset(DATASET_ID).table('line_items').insert(lineItemRows);
             console.log(`Successfully inserted ${lineItemRows.length} line items into BigQuery.`);
         } else {
@@ -134,6 +136,7 @@ exports.processAdvertiser = async (event, context) => {
         });
 
         if (ioRows.length > 0) {
+            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.insertion_orders\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
             await bigquery.dataset(DATASET_ID).table('insertion_orders').insert(ioRows);
             console.log(`Successfully inserted ${ioRows.length} insertion orders into BigQuery.`);
         } else {
@@ -179,11 +182,15 @@ function extractImageUrl(cr) {
                 creativeType: cr.creativeType,
                 hostingSource: cr.hostingSource,
                 dimensions: dims,
-                imageUrl: extractImageUrl(cr) || ''
+                imageUrl: extractImageUrl(cr) || '',
+                approvalStatus: (cr.reviewStatus && cr.reviewStatus.approvalStatus) || ''
             };
         });
         if (creativeRows.length > 0) {
-            await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows);
+            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.creatives\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            for (let i = 0; i < creativeRows.length; i += 500) {
+                await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows.slice(i, i + 500));
+            }
             console.log(`Successfully inserted ${creativeRows.length} creatives into BigQuery.`);
         } else {
             console.log('No creatives found to insert.');
@@ -228,6 +235,8 @@ function extractImageUrl(cr) {
                             else if (ad.demandGenCarouselAd) adType = 'DEMAND_GEN_CAROUSEL_AD';
                             else if (ad.demandGenProductAd) adType = 'DEMAND_GEN_PRODUCT_AD';
 
+                            const approvalStatus = (ad.adPolicy && ad.adPolicy.adPolicyApprovalStatus) || '';
+
                             adRows.push({
                                 adGroupAdId: String(ad.adGroupAdId),
                                 adGroupId: agId,
@@ -244,6 +253,7 @@ function extractImageUrl(cr) {
                                 portrait_images_count: iAd && iAd.portraitMarketingImages ? iAd.portraitMarketingImages.length : 0,
                                 headlines_count: (vAd && vAd.headlines ? vAd.headlines.length : 0) + (iAd && iAd.headlines ? iAd.headlines.length : 0),
                                 descriptions_count: (vAd && vAd.descriptions ? vAd.descriptions.length : 0) + (iAd && iAd.descriptions ? iAd.descriptions.length : 0),
+                                approvalStatus: approvalStatus,
                                 created_at: now
                             });
                         }
