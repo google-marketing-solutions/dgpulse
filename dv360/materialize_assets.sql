@@ -190,4 +190,8 @@ LEFT JOIN latest_settings sett
 LEFT JOIN advertiser_currencies ac
   ON c.advertiserId = ac.advertiser_id
 WHERE c.entityStatus = 'ENTITY_STATUS_ACTIVE'
+  AND (
+    cs.creative_id IS NOT NULL 
+    OR c.displayName IN (SELECT DISTINCT displayName FROM `__PROJECT_ID__.__DATASET_ID__.ad_group_ads`)
+  )
   AND (c.approvalStatus IS NULL OR (c.approvalStatus != 'APPROVAL_STATUS_REJECTED_NOT_SERVABLE' AND c.approvalStatus != 'APPROVAL_STATUS_PENDING_NOT_SERVABLE'));

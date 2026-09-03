@@ -21,13 +21,25 @@ let dv360Client = null;
 async function initializeClient() {
     if (dv360Client) return dv360Client;
 
-    if (!BUCKET_NAME || !REFRESH_TOKEN) {
-        throw new Error('Missing BUCKET_NAME or REFRESH_TOKEN environment variables.');
+    let targetBucket = BUCKET_NAME;
+    let valid = false;
+    if (targetBucket) {
+        try {
+            const [exists] = await storage.bucket(targetBucket).exists();
+            if (exists) valid = true;
+        } catch (e) {}
+    }
+    if (!valid) {
+        try {
+            const [buckets] = await storage.getBuckets();
+            const match = buckets.find(b => b.name.includes('dv360') || b.name.includes('dgpulse'));
+            if (match) targetBucket = match.name;
+        } catch (e) {}
     }
 
-    console.log(`Downloading ${CLIENT_SECRET_FILE} from bucket ${BUCKET_NAME}...`);
+    console.log(`Downloading ${CLIENT_SECRET_FILE} from bucket ${targetBucket}...`);
     const [content] = await storage
-        .bucket(BUCKET_NAME)
+        .bucket(targetBucket)
         .file(CLIENT_SECRET_FILE)
         .download();
 

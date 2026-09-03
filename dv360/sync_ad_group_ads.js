@@ -29,13 +29,22 @@ async function initializeClient() {
   }
 
   if (!credentials) {
-    if (!bucketName) {
-      const [buckets] = await storage.getBuckets();
-      const match = buckets.find(b => b.name.includes('dv360') || b.name.includes('dgpulse'));
-      if (match) bucketName = match.name;
-    }
+    let validBucket = null;
     if (bucketName) {
-      const [content] = await storage.bucket(bucketName).file(CLIENT_SECRET_FILE).download();
+      try {
+        const [exists] = await storage.bucket(bucketName).exists();
+        if (exists) validBucket = bucketName;
+      } catch (e) {}
+    }
+    if (!validBucket) {
+      try {
+        const [buckets] = await storage.getBuckets();
+        const match = buckets.find(b => b.name.includes('dv360') || b.name.includes('dgpulse'));
+        if (match) validBucket = match.name;
+      } catch (e) {}
+    }
+    if (validBucket) {
+      const [content] = await storage.bucket(validBucket).file(CLIENT_SECRET_FILE).download();
       const keys = JSON.parse(content.toString());
       credentials = keys.installed || keys.web || keys;
     }
