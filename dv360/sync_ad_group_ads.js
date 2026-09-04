@@ -342,60 +342,7 @@ async function sync() {
     console.log(`✓ Successfully ingested ${adRows.length} Ad Group Ads into BigQuery ${DATASET_ID}.${TABLE_ID}.`);
   }
 
-  // 4. Targeted check: Fetch live approvalStatus for Demand Gen creatives matching ad names
-  console.log('--- Verifying Demand Gen creative approval statuses ---');
-  try {
-    const [matchingCreatives] = await bigquery.query({
-      query: `SELECT DISTINCT creativeId, advertiserId 
-              FROM \`${DATASET_ID}.creatives\`
-              WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
-                AND displayName IN (
-                  SELECT DISTINCT displayName FROM \`${DATASET_ID}.${TABLE_ID}\`
-                )`
-    });
-
-    console.log(`Found ${matchingCreatives.length} Demand Gen creative candidates to inspect.`);
-
-    if (matchingCreatives.length > 0) {
-      const batchSize = 10;
-      let updatedCount = 0;
-      for (let i = 0; i < matchingCreatives.length; i += batchSize) {
-        const batch = matchingCreatives.slice(i, i + batchSize);
-        const results = await Promise.all(batch.map(async (c) => {
-          try {
-            const res = await client.dv360.advertisers.creatives.get({
-              advertiserId: c.advertiserId,
-              creativeId: c.creativeId
-            });
-            const cr = res.data;
-            return {
-              creativeId: c.creativeId,
-              advertiserId: c.advertiserId,
-              approvalStatus: (cr.reviewStatus && cr.reviewStatus.approvalStatus) || '',
-              entityStatus: cr.entityStatus || ''
-            };
-          } catch (e) {
-            return null;
-          }
-        }));
-
-        for (const r of results.filter(Boolean)) {
-          if (r.approvalStatus) {
-            await bigquery.query({
-              query: `UPDATE \`${DATASET_ID}.creatives\`
-                      SET approvalStatus = '${r.approvalStatus}',
-                          entityStatus = '${r.entityStatus}'
-                      WHERE creativeId = '${r.creativeId}' AND advertiserId = '${r.advertiserId}'`
-            });
-            updatedCount++;
-          }
-        }
-      }
-      console.log(`✓ Updated live approvalStatus for ${updatedCount} Demand Gen creatives in BigQuery.`);
-    }
-  } catch (crErr) {
-    console.warn('Warning updating creative approval statuses:', crErr.message);
-  }
+  console.log('✓ Ad group ads and YouTube aspect ratio sync complete.');
 }
 
 if (require.main === module) {

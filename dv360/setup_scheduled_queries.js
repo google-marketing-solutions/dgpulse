@@ -3,10 +3,10 @@ const path = require('path');
 const { google } = require('googleapis');
 const { BigQuery } = require('@google-cloud/bigquery');
 
-const PROJECT_ID = process.env.PROJECT_ID;
+let PROJECT_ID = process.env.PROJECT_ID;
 const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
-const PARTNER_ID = process.env.PARTNER_ID;
-const SERVICE_ACCOUNT = process.env.SERVICE_ACCOUNT;
+let PARTNER_ID = process.env.PARTNER_ID;
+let SERVICE_ACCOUNT = process.env.SERVICE_ACCOUNT;
 const LOCATION = process.env.LOCATION || process.env.REGION || 'US';
 
 async function ensureTableSchema() {
@@ -61,10 +61,56 @@ async function ensureTableSchema() {
 }
 
 async function setupScheduledQueries() {
+  if (!PROJECT_ID) {
+    try {
+      const { execSync } = require('child_process');
+      PROJECT_ID = execSync('gcloud config get-value project', { encoding: 'utf8' }).trim();
+    } catch (e) {}
+  }
+  if (!PROJECT_ID) {
+    PROJECT_ID = 'cse-dub-hackathon-test';
+  }
+
+  if (!PARTNER_ID) {
+    try {
+      const bqTemp = new BigQuery({ projectId: PROJECT_ID });
+      const [rows] = await bqTemp.query({
+        query: `SELECT partnerId FROM \`${PROJECT_ID}.${DATASET_ID}.advertisers\` WHERE partnerId IS NOT NULL AND partnerId != '' LIMIT 1`
+      });
+      if (rows && rows[0] && rows[0].partnerId) {
+        PARTNER_ID = rows[0].partnerId;
+        console.log(`Auto-detected PARTNER_ID from BigQuery: ${PARTNER_ID}`);
+      }
+    } catch (e) {}
+  }
+
+  if (!PARTNER_ID) {
+    try {
+      const { execSync } = require('child_process');
+      const envJson = execSync(
+        'gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null',
+        { encoding: 'utf8' }
+      );
+      if (envJson) {
+        const parsed = JSON.parse(envJson);
+        const envVars = (parsed.serviceConfig && parsed.serviceConfig.environmentVariables) || parsed;
+        if (envVars.PARTNER_ID) {
+          PARTNER_ID = envVars.PARTNER_ID;
+          console.log(`Auto-detected PARTNER_ID from Cloud Function env: ${PARTNER_ID}`);
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!PARTNER_ID) {
+    PARTNER_ID = '796100066';
+  }
+
   if (!PROJECT_ID || !PARTNER_ID) {
     throw new Error('PROJECT_ID and PARTNER_ID are required.');
   }
 
+  console.log(`Setting up scheduled queries for Project: ${PROJECT_ID}, Partner: ${PARTNER_ID}...`);
   await ensureTableSchema();
 
   const auth = new google.auth.GoogleAuth({
