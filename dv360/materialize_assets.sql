@@ -1,28 +1,127 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_assets_performance` AS
 WITH demand_gen_line_items AS (
-  SELECT DISTINCT campaignId, insertionOrderId, lineItemId
+  SELECT DISTINCT 
+    lineItemId, 
+    insertionOrderId, 
+    campaignId, 
+    advertiserId,
+    displayName AS line_item_name
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
-  WHERE lineItemType LIKE '%DEMAND_GEN%'
+  WHERE lineItemType = 'LINE_ITEM_TYPE_DEMAND_GEN'
+     OR lineItemType LIKE '%DEMAND_GEN%'
 ),
-deduped_dbm AS (
-  SELECT * EXCEPT(row_num) FROM (
-    SELECT *, ROW_NUMBER() OVER(
-      PARTITION BY Report_Day, Insertion_Order_Id, COALESCE(Line_Item_Id, 0), Creative_Id, Device_Type, Inventory_Source
-    ) AS row_num
-    FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
-    WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
-      AND (
-        Insertion_Order_Id IN (SELECT DISTINCT CAST(insertionOrderId AS INT64) FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)
-        OR (Line_Item_Id IS NOT NULL AND Line_Item_Id IN (SELECT DISTINCT CAST(lineItemId AS INT64) FROM demand_gen_line_items))
-        OR (Insertion_Order LIKE '%DEMANDGEN%' OR Insertion_Order LIKE '%DGEN%')
-      )
-  )
-  WHERE row_num = 1
+dg_approved_ads AS (
+  SELECT 
+    ad.*,
+    COALESCE(NULLIF(ad.insertionOrderId, ''), NULLIF(li.insertionOrderId, '')) AS resolved_io_id,
+    COALESCE(NULLIF(ad.campaignId, ''), NULLIF(li.campaignId, '')) AS resolved_campaign_id,
+    li.line_item_name
+  FROM `__PROJECT_ID__.__DATASET_ID__.ad_group_ads` ad
+  JOIN demand_gen_line_items li 
+    ON ad.lineItemId = li.lineItemId
+  WHERE ad.entityStatus = 'ENTITY_STATUS_ACTIVE'
+    AND ad.approvalStatus IN ('APPROVED', 'APPROVED_LIMITED')
 ),
-creative_stats AS (
+unpacked_assets AS (
+  -- 1. Video Assets (from Demand Gen Video Ads)
+  SELECT 
+    ad.adGroupAdId AS asset_id,
+    ad.displayName AS asset_name,
+    ad.adGroupAdId,
+    ad.lineItemId,
+    ad.resolved_io_id AS insertion_order_id,
+    ad.resolved_campaign_id AS campaign_id,
+    ad.advertiserId AS advertiser_id,
+    CASE 
+      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio < 1.0 THEN 'VERTICAL VIDEO'
+      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio = 1.0 THEN 'SQUARE VIDEO'
+      ELSE 'HORIZONTAL VIDEO'
+    END AS asset_type,
+    CASE 
+      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio < 1.0 THEN '9:16'
+      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio = 1.0 THEN '1:1'
+      ELSE '16:9'
+    END AS creative_dimensions,
+    CASE 
+      WHEN ad.video_id IS NOT NULL AND ad.video_id != '' 
+        THEN CONCAT('https://i.ytimg.com/vi/', ad.video_id, '/hqdefault.jpg')
+      ELSE 'https://www.gstatic.com/images/branding/product/2x/youtube_64dp.png'
+    END AS image_url,
+    'YOUTUBE' AS hosting_source,
+    ad.entityStatus AS entity_status,
+    ad.approvalStatus AS approval_status
+  FROM dg_approved_ads ad
+  WHERE ad.adType = 'DEMAND_GEN_VIDEO_AD'
+
+  UNION ALL
+
+  -- 2. Horizontal Marketing Images (from Demand Gen Image Ads)
+  SELECT 
+    CONCAT(ad.adGroupAdId, '_horiz') AS asset_id,
+    CONCAT(ad.displayName, ' [Horizontal Image]') AS asset_name,
+    ad.adGroupAdId,
+    ad.lineItemId,
+    ad.resolved_io_id AS insertion_order_id,
+    ad.resolved_campaign_id AS campaign_id,
+    ad.advertiserId AS advertiser_id,
+    'HORIZONTAL IMAGE' AS asset_type,
+    '1200x628' AS creative_dimensions,
+    'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png' AS image_url,
+    'HOSTING_SOURCE_INTERNAL' AS hosting_source,
+    ad.entityStatus AS entity_status,
+    ad.approvalStatus AS approval_status
+  FROM dg_approved_ads ad
+  WHERE ad.adType = 'DEMAND_GEN_IMAGE_AD' AND COALESCE(ad.horizontal_images_count, 0) > 0
+
+  UNION ALL
+
+  -- 3. Square Marketing Images (from Demand Gen Image Ads)
+  SELECT 
+    CONCAT(ad.adGroupAdId, '_square') AS asset_id,
+    CONCAT(ad.displayName, ' [Square Image]') AS asset_name,
+    ad.adGroupAdId,
+    ad.lineItemId,
+    ad.resolved_io_id AS insertion_order_id,
+    ad.resolved_campaign_id AS campaign_id,
+    ad.advertiserId AS advertiser_id,
+    'SQUARE IMAGE' AS asset_type,
+    '1200x1200' AS creative_dimensions,
+    'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png' AS image_url,
+    'HOSTING_SOURCE_INTERNAL' AS hosting_source,
+    ad.entityStatus AS entity_status,
+    ad.approvalStatus AS approval_status
+  FROM dg_approved_ads ad
+  WHERE ad.adType = 'DEMAND_GEN_IMAGE_AD' AND COALESCE(ad.square_images_count, 0) > 0
+
+  UNION ALL
+
+  -- 4. Vertical / Portrait Marketing Images (from Demand Gen Image Ads)
+  SELECT 
+    CONCAT(ad.adGroupAdId, '_vert') AS asset_id,
+    CONCAT(ad.displayName, ' [Vertical Image]') AS asset_name,
+    ad.adGroupAdId,
+    ad.lineItemId,
+    ad.resolved_io_id AS insertion_order_id,
+    ad.resolved_campaign_id AS campaign_id,
+    ad.advertiserId AS advertiser_id,
+    'VERTICAL IMAGE' AS asset_type,
+    '960x1200' AS creative_dimensions,
+    'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png' AS image_url,
+    'HOSTING_SOURCE_INTERNAL' AS hosting_source,
+    ad.entityStatus AS entity_status,
+    ad.approvalStatus AS approval_status
+  FROM dg_approved_ads ad
+  WHERE ad.adType = 'DEMAND_GEN_IMAGE_AD' AND COALESCE(ad.portrait_images_count, 0) > 0
+),
+line_item_asset_weights AS (
+  SELECT lineItemId, COUNT(*) AS asset_count
+  FROM unpacked_assets
+  GROUP BY lineItemId
+),
+line_item_stats AS (
   SELECT 
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
-    CAST(Creative_Id AS STRING) AS creative_id,
+    CAST(Line_Item_Id AS STRING) AS line_item_id,
     CAST(Media_Plan_Id AS STRING) AS campaign_id,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     CAST(Partner_Id AS STRING) AS partner_id,
@@ -47,47 +146,10 @@ creative_stats AS (
     SUM(COALESCE(Post_View_Conversions, 0)) AS post_view_conversions,
     SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
     SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
-  FROM deduped_dbm
-  WHERE Creative_Id IS NOT NULL AND Creative_Id > 0
+  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  WHERE Line_Item_Id IS NOT NULL 
+    AND Line_Item_Id IN (SELECT DISTINCT CAST(lineItemId AS INT64) FROM demand_gen_line_items)
   GROUP BY 1, 2, 3, 4, 5
-),
-latest_creatives AS (
-  SELECT * EXCEPT(rn) FROM (
-    SELECT 
-      c.creativeId,
-      c.advertiserId,
-      c.displayName,
-      c.creativeType,
-      c.dimensions,
-      c.imageUrl,
-      c.hostingSource,
-      c.entityStatus,
-      c.approvalStatus,
-      ROW_NUMBER() OVER(
-        PARTITION BY c.displayName, COALESCE(c.dimensions, 'RESPONSIVE/NATIVE'), c.advertiserId
-        ORDER BY 
-          -- 1. Strictly prioritize approved and servable creatives
-          CASE 
-            WHEN c.approvalStatus LIKE '%APPROVED%' OR c.approvalStatus LIKE '%SERVABLE%' THEN 1
-            WHEN c.approvalStatus IS NULL OR c.approvalStatus = '' THEN 2
-            ELSE 3
-          END ASC,
-          -- 2. Within same tier, pick the newest revision (highest numeric creativeId)
-          SAFE_CAST(c.creativeId AS INT64) DESC
-      ) AS rn
-    FROM `__PROJECT_ID__.__DATASET_ID__.creatives` c
-    WHERE c.entityStatus = 'ENTITY_STATUS_ACTIVE'
-      AND (
-        c.approvalStatus IS NULL 
-        OR c.approvalStatus = '' 
-        OR (
-          c.approvalStatus NOT LIKE '%REJECTED%' 
-          AND c.approvalStatus NOT LIKE '%NOT_SERVABLE%'
-          AND c.approvalStatus NOT LIKE '%DISAPPROVED%'
-        )
-      )
-  )
-  WHERE rn = 1
 ),
 latest_campaigns AS (
   SELECT 
@@ -100,7 +162,8 @@ latest_advertisers AS (
   SELECT 
     advertiserId,
     MAX(NULLIF(displayName, '')) AS displayName,
-    MAX(NULLIF(currencyCode, '')) AS currency_code
+    MAX(NULLIF(currencyCode, '')) AS currency_code,
+    MAX(NULLIF(partnerId, '')) AS partnerId
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
@@ -110,116 +173,69 @@ latest_settings AS (
     MAX(NULLIF(displayName, '')) AS advertiser_name
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
-),
-advertiser_currencies AS (
-  SELECT 
-    CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
-    SAFE_DIVIDE(SUM(NULLIF(Revenue_USD, 0)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
-  FROM deduped_dbm
-  WHERE Advertiser_Currency IS NOT NULL
-  GROUP BY 1
 )
 SELECT 
-  COALESCE(cs.date, CURRENT_DATE()) AS date,
-  c.creativeId AS asset_id,
-  c.displayName AS asset_name,
-  
-  -- Formatted Asset Type
-  CASE 
-    WHEN UPPER(c.creativeType) LIKE '%VIDEO%' OR UPPER(c.displayName) LIKE '%VIDEO%' OR UPPER(c.dimensions) LIKE '%VIDEO%' THEN
-      CASE 
-        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) > SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) * 1.15)
-          OR c.dimensions LIKE '%1080x1920%' OR c.dimensions LIKE '%720x1280%' OR c.dimensions LIKE '%9:16%' OR UPPER(c.displayName) LIKE '%VERTICAL%' OR UPPER(c.displayName) LIKE '%SHORTS%' THEN 'VERTICAL VIDEO'
-        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) = SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) AND SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) > 0)
-          OR c.dimensions LIKE '%1080x1080%' OR c.dimensions LIKE '%1:1%' OR UPPER(c.displayName) LIKE '%SQUARE%' THEN 'SQUARE VIDEO'
-        ELSE 'HORIZONTAL VIDEO'
-      END
-    ELSE
-      CASE 
-        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) > SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) * 1.15)
-          OR c.dimensions LIKE '%1080x1920%' OR c.dimensions LIKE '%1200x1500%' OR c.dimensions LIKE '%4:5%' OR c.dimensions LIKE '%9:16%' OR c.dimensions LIKE '%300x600%' OR c.dimensions LIKE '%160x600%' THEN 'VERTICAL IMAGE'
-        WHEN (SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) = SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(1)] AS INT64) AND SAFE_CAST(SPLIT(c.dimensions, 'x')[SAFE_OFFSET(0)] AS INT64) > 0)
-          OR c.dimensions LIKE '%1080x1080%' OR c.dimensions LIKE '%300x300%' OR c.dimensions LIKE '%1:1%' OR UPPER(c.displayName) LIKE '%SQUARE%' THEN 'SQUARE IMAGE'
-        ELSE 'HORIZONTAL IMAGE'
-      END
-  END AS asset_type,
+  COALESCE(lis.date, CURRENT_DATE()) AS date,
+  a.asset_id,
+  a.asset_name,
+  a.asset_type,
+  a.creative_dimensions,
+  a.image_url,
+  a.hosting_source,
+  a.entity_status,
+  lis.device_type,
+  lis.inventory_source,
+  a.advertiser_id,
+  a.advertiser_id AS account_id,
+  COALESCE(sett.advertiser_name, adv.displayName, a.advertiser_id) AS account_name,
+  COALESCE(a.campaign_id, lis.campaign_id, 'N/A') AS campaign_id,
+  COALESCE(cmp.displayName, a.campaign_id, lis.campaign_id, 'N/A') AS campaign_name,
+  COALESCE(lis.currency_code, NULLIF(adv.currency_code, ''), 'USD') AS currency_code,
+  COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
 
-  COALESCE(c.dimensions, 'RESPONSIVE/NATIVE') AS creative_dimensions,
-  CASE 
-    WHEN c.imageUrl IS NOT NULL AND c.imageUrl != '' AND c.imageUrl NOT LIKE '%google_display_network%' THEN c.imageUrl
-    WHEN UPPER(c.creativeType) LIKE '%VIDEO%' OR UPPER(c.displayName) LIKE '%VIDEO%' THEN 'https://www.gstatic.com/images/branding/product/2x/youtube_64dp.png'
-    ELSE 'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png'
-  END AS image_url,
-  c.hostingSource AS hosting_source,
-  c.entityStatus AS entity_status,
-  cs.device_type,
-  cs.inventory_source,
-  c.advertiserId AS advertiser_id,
-  c.advertiserId AS account_id,
-  COALESCE(sett.advertiser_name, adv.displayName, c.advertiserId) AS account_name,
-  COALESCE(cs.campaign_id, 'N/A') AS campaign_id,
-  COALESCE(cmp.displayName, cs.campaign_id, 'N/A') AS campaign_name,
-  COALESCE(
-    cs.currency_code, 
-    NULLIF(adv.currency_code, ''), 
-    ac.currency_code
-  ) AS currency_code,
-  COALESCE(cs.partner_id, '__PARTNER_ID__') AS partner_id,
-
-  -- Delivery & Cost
-  COALESCE(cs.impressions, 0) AS impressions,
-  COALESCE(cs.clicks, 0) AS clicks,
-  COALESCE(cs.cost, 0) AS cost,
-  COALESCE(cs.cost_usd, 0) AS cost_usd,
-  SAFE_DIVIDE(COALESCE(cs.clicks, 0), NULLIF(COALESCE(cs.impressions, 0), 0)) AS ctr,
-  SAFE_DIVIDE(COALESCE(cs.cost, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS cpc,
-  SAFE_DIVIDE(COALESCE(cs.cost_usd, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS cpc_usd,
-  SAFE_DIVIDE(COALESCE(cs.cost, 0) * 1000, NULLIF(COALESCE(cs.impressions, 0), 0)) AS cpm,
-  SAFE_DIVIDE(COALESCE(cs.cost_usd, 0) * 1000, NULLIF(COALESCE(cs.impressions, 0), 0)) AS cpm_usd,
+  -- Delivery & Cost (Proportionally attributed by asset weight within line item)
+  COALESCE(SAFE_DIVIDE(lis.impressions, w.asset_count), 0) AS impressions,
+  COALESCE(SAFE_DIVIDE(lis.clicks, w.asset_count), 0) AS clicks,
+  COALESCE(SAFE_DIVIDE(lis.cost, w.asset_count), 0) AS cost,
+  COALESCE(SAFE_DIVIDE(lis.cost_usd, w.asset_count), 0) AS cost_usd,
+  SAFE_DIVIDE(lis.clicks, NULLIF(lis.impressions, 0)) AS ctr,
+  SAFE_DIVIDE(lis.cost, NULLIF(lis.clicks, 0)) AS cpc,
+  SAFE_DIVIDE(lis.cost_usd, NULLIF(lis.clicks, 0)) AS cpc_usd,
+  SAFE_DIVIDE(lis.cost * 1000, NULLIF(lis.impressions, 0)) AS cpm,
+  SAFE_DIVIDE(lis.cost_usd * 1000, NULLIF(lis.impressions, 0)) AS cpm_usd,
 
   -- Media Quality & Viewability
-  COALESCE(cs.active_view_viewable_impressions, 0) AS active_view_viewable_impressions,
-  COALESCE(cs.active_view_measurable_impressions, 0) AS active_view_measurable_impressions,
-  COALESCE(cs.active_view_eligible_impressions, 0) AS active_view_eligible_impressions,
-  SAFE_DIVIDE(COALESCE(cs.active_view_viewable_impressions, 0), NULLIF(COALESCE(cs.active_view_measurable_impressions, 0), 0)) AS viewability_rate,
-  SAFE_DIVIDE(COALESCE(cs.active_view_measurable_impressions, 0), NULLIF(COALESCE(cs.active_view_eligible_impressions, 0), 0)) AS measurable_rate,
+  COALESCE(SAFE_DIVIDE(lis.active_view_viewable_impressions, w.asset_count), 0) AS active_view_viewable_impressions,
+  COALESCE(SAFE_DIVIDE(lis.active_view_measurable_impressions, w.asset_count), 0) AS active_view_measurable_impressions,
+  COALESCE(SAFE_DIVIDE(lis.active_view_eligible_impressions, w.asset_count), 0) AS active_view_eligible_impressions,
+  SAFE_DIVIDE(lis.active_view_viewable_impressions, NULLIF(lis.active_view_measurable_impressions, 0)) AS viewability_rate,
+  SAFE_DIVIDE(lis.active_view_measurable_impressions, NULLIF(lis.active_view_eligible_impressions, 0)) AS measurable_rate,
 
   -- Video & YouTube Delivery
-  COALESCE(cs.trueview_views, 0) AS trueview_views,
-  SAFE_DIVIDE(COALESCE(cs.trueview_views, 0), NULLIF(COALESCE(cs.impressions, 0), 0)) AS vtr,
-  COALESCE(cs.video_plays, 0) AS video_plays,
-  COALESCE(cs.video_first_quartile_completes, 0) AS video_first_quartile_completes,
-  COALESCE(cs.video_midpoints, 0) AS video_midpoints,
-  COALESCE(cs.video_third_quartile_completes, 0) AS video_third_quartile_completes,
-  COALESCE(cs.video_completions, 0) AS video_completions,
-  SAFE_DIVIDE(COALESCE(cs.video_completions, 0), NULLIF(COALESCE(cs.video_plays, 0), 0)) AS video_completion_rate,
+  COALESCE(SAFE_DIVIDE(lis.trueview_views, w.asset_count), 0) AS trueview_views,
+  SAFE_DIVIDE(lis.trueview_views, NULLIF(lis.impressions, 0)) AS vtr,
+  COALESCE(SAFE_DIVIDE(lis.video_plays, w.asset_count), 0) AS video_plays,
+  COALESCE(SAFE_DIVIDE(lis.video_first_quartile_completes, w.asset_count), 0) AS video_first_quartile_completes,
+  COALESCE(SAFE_DIVIDE(lis.video_midpoints, w.asset_count), 0) AS video_midpoints,
+  COALESCE(SAFE_DIVIDE(lis.video_third_quartile_completes, w.asset_count), 0) AS video_third_quartile_completes,
+  COALESCE(SAFE_DIVIDE(lis.video_completions, w.asset_count), 0) AS video_completions,
+  SAFE_DIVIDE(lis.video_completions, NULLIF(lis.video_plays, 0)) AS video_completion_rate,
 
   -- Attribution Breakdown
-  COALESCE(cs.conversions, 0) AS conversions,
-  COALESCE(cs.post_click_conversions, 0) AS post_click_conversions,
-  COALESCE(cs.post_view_conversions, 0) AS post_view_conversions,
-  COALESCE(cs.post_click_revenue, 0) AS post_click_revenue,
-  COALESCE(cs.post_view_revenue, 0) AS post_view_revenue,
-  SAFE_DIVIDE(COALESCE(cs.post_click_conversions, 0), NULLIF(COALESCE(cs.clicks, 0), 0)) AS post_click_conv_rate
-FROM latest_creatives c
-LEFT JOIN creative_stats cs
-  ON c.creativeId = cs.creative_id
+  COALESCE(SAFE_DIVIDE(lis.conversions, w.asset_count), 0) AS conversions,
+  COALESCE(SAFE_DIVIDE(lis.post_click_conversions, w.asset_count), 0) AS post_click_conversions,
+  COALESCE(SAFE_DIVIDE(lis.post_view_conversions, w.asset_count), 0) AS post_view_conversions,
+  COALESCE(SAFE_DIVIDE(lis.post_click_revenue, w.asset_count), 0) AS post_click_revenue,
+  COALESCE(SAFE_DIVIDE(lis.post_view_revenue, w.asset_count), 0) AS post_view_revenue,
+  SAFE_DIVIDE(lis.post_click_conversions, NULLIF(lis.clicks, 0)) AS post_click_conv_rate
+FROM unpacked_assets a
+JOIN line_item_asset_weights w 
+  ON a.lineItemId = w.lineItemId
+LEFT JOIN line_item_stats lis
+  ON a.lineItemId = lis.line_item_id
 LEFT JOIN latest_campaigns cmp
-  ON cs.campaign_id = cmp.campaignId
+  ON COALESCE(a.campaign_id, lis.campaign_id) = cmp.campaignId
 LEFT JOIN latest_advertisers adv
-  ON c.advertiserId = adv.advertiserId
+  ON a.advertiser_id = adv.advertiserId
 LEFT JOIN latest_settings sett
-  ON c.advertiserId = sett.advertiserId
-LEFT JOIN advertiser_currencies ac
-  ON c.advertiserId = ac.advertiser_id
-WHERE c.entityStatus = 'ENTITY_STATUS_ACTIVE'
-  AND (
-    cs.creative_id IS NOT NULL 
-    OR c.displayName IN (
-      SELECT DISTINCT displayName 
-      FROM `__PROJECT_ID__.__DATASET_ID__.ad_group_ads`
-      WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
-        AND (approvalStatus IS NULL OR approvalStatus != 'DISAPPROVED')
-    )
-  );
+  ON a.advertiser_id = sett.advertiserId;

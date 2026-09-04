@@ -18,7 +18,12 @@ async function ensureTableSchema() {
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertisers\` ADD COLUMN IF NOT EXISTS currencyCode STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.creatives\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
-    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64;`,
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.video_aspect_ratio\` (
+      video_id STRING,
+      aspect_ratio FLOAT64,
+      updated_at TIMESTAMP
+    );`,
     `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.dbm_audiences_performance\` (
       Report_Day DATE,
       Partner STRING,

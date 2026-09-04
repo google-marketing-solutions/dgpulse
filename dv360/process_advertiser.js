@@ -6,6 +6,7 @@
 const { Storage } = require('@google-cloud/storage');
 const { BigQuery } = require('@google-cloud/bigquery');
 const DV360Client = require('./dv360');
+const { resolveVideoAspectRatios } = require('./youtube_fetcher');
 
 const storage = new Storage();
 const bigquery = new BigQuery();
@@ -17,6 +18,47 @@ const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
 const TABLE_ID = process.env.TABLE_ID || 'campaigns';
 
 let dv360Client = null;
+let adGroupAdsTableEnsured = false;
+
+async function ensureAdGroupAdsTable(bq, datasetId) {
+    if (adGroupAdsTableEnsured) return;
+    try {
+        await bq.query({
+            query: `CREATE TABLE IF NOT EXISTS \`${datasetId}.ad_group_ads\` (
+                adGroupAdId STRING,
+                adGroupId STRING,
+                lineItemId STRING,
+                insertionOrderId STRING,
+                campaignId STRING,
+                advertiserId STRING,
+                displayName STRING,
+                entityStatus STRING,
+                adType STRING,
+                approvalStatus STRING,
+                video_id STRING,
+                aspect_ratio FLOAT64,
+                videos_count INT64,
+                horizontal_images_count INT64,
+                square_images_count INT64,
+                portrait_images_count INT64,
+                headlines_count INT64,
+                descriptions_count INT64,
+                created_at TIMESTAMP
+            );`
+        });
+        const alterQueries = [
+            `ALTER TABLE \`${datasetId}.ad_group_ads\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
+            `ALTER TABLE \`${datasetId}.ad_group_ads\` ADD COLUMN IF NOT EXISTS video_id STRING;`,
+            `ALTER TABLE \`${datasetId}.ad_group_ads\` ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64;`
+        ];
+        for (const aq of alterQueries) {
+            try { await bq.query({ query: aq }); } catch (e) {}
+        }
+        adGroupAdsTableEnsured = true;
+    } catch (e) {
+        console.warn('Warning ensuring ad_group_ads table:', e.message);
+    }
+}
 
 async function initializeClient() {
     if (dv360Client) return dv360Client;
@@ -211,8 +253,7 @@ exports.processAdvertiser = async (event, context) => {
         // 3b. Demand Gen Ad Group Ads
         console.log(`Fetching Demand Gen Ad Groups and Ads for advertiser ${advertiserId}...`);
         const dgLineItems = lineItems.filter(li => 
-            (li.lineItemType && li.lineItemType.includes('DEMAND_GEN')) ||
-            (li.displayName && (li.displayName.includes('DEMANDGEN') || li.displayName.includes('DGEN')))
+            li.lineItemType && li.lineItemType.includes('DEMAND_GEN')
         );
 
         if (dgLineItems.length > 0) {
@@ -248,6 +289,7 @@ exports.processAdvertiser = async (event, context) => {
                             else if (ad.demandGenProductAd) adType = 'DEMAND_GEN_PRODUCT_AD';
 
                             const approvalStatus = (ad.adPolicy && ad.adPolicy.adPolicyApprovalStatus) || '';
+                            const videoId = (vAd && vAd.videos && vAd.videos[0] && (vAd.videos[0].id || vAd.videos[0].videoId)) || null;
 
                             adRows.push({
                                 adGroupAdId: String(ad.adGroupAdId),
@@ -259,6 +301,8 @@ exports.processAdvertiser = async (event, context) => {
                                 displayName: String(ad.displayName || ''),
                                 entityStatus: String(ad.entityStatus || ''),
                                 adType: adType,
+                                video_id: videoId,
+                                aspect_ratio: null,
                                 videos_count: vAd && vAd.videos ? vAd.videos.length : 0,
                                 horizontal_images_count: iAd && iAd.marketingImages ? iAd.marketingImages.length : 0,
                                 square_images_count: iAd && iAd.squareMarketingImages ? iAd.squareMarketingImages.length : 0,
@@ -276,6 +320,24 @@ exports.processAdvertiser = async (event, context) => {
             }
 
             if (adRows.length > 0) {
+                // Resolve YouTube aspect ratios for all unique video IDs using YouTube Data API
+                const videoIds = adRows.map(r => r.video_id).filter(Boolean);
+                if (videoIds.length > 0) {
+                    console.log(`Resolving aspect ratios for ${videoIds.length} video ads via YouTube Data API...`);
+                    try {
+                        const ratioMap = await resolveVideoAspectRatios(videoIds, bigquery, DATASET_ID, BUCKET_NAME);
+                        for (const r of adRows) {
+                            if (r.video_id && ratioMap.has(r.video_id)) {
+                                r.aspect_ratio = ratioMap.get(r.video_id);
+                            }
+                        }
+                    } catch (ytErr) {
+                        console.warn('Warning resolving YouTube aspect ratios:', ytErr.message);
+                    }
+                }
+
+                await ensureAdGroupAdsTable(bigquery, DATASET_ID);
+
                 try {
                     await bigquery.query({
                         query: `DELETE FROM \`${DATASET_ID}.ad_group_ads\` WHERE advertiserId = '${advertiserId}'`

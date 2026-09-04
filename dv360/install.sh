@@ -63,6 +63,8 @@ gcloud services enable \
   displayvideo.googleapis.com \
   doubleclickbidmanager.googleapis.com \
   bigquerydatatransfer.googleapis.com \
+  youtube.googleapis.com \
+  apikeys.googleapis.com \
   eventarc.googleapis.com \
   eventarcpublishing.googleapis.com --project="${PROJECT_ID}"
 
@@ -98,6 +100,32 @@ fi
 
 echo "Uploading client_secret.json to GCS..."
 gsutil cp client_secret.json gs://${BUCKET_NAME}/client_secret.json
+
+# 4a. Configure YouTube Data API key for Video Aspect Ratio evaluation
+echo "Configuring YouTube Data API key..."
+if [ -z "$YOUTUBE_API_KEY" ]; then
+  if [ -f "youtube_api_key.txt" ] && [ -s "youtube_api_key.txt" ]; then
+    YOUTUBE_API_KEY=$(cat youtube_api_key.txt | tr -d '\r\n')
+  elif gsutil ls gs://${BUCKET_NAME}/youtube_api_key.txt >/dev/null 2>&1; then
+    YOUTUBE_API_KEY=$(gsutil cat gs://${BUCKET_NAME}/youtube_api_key.txt | tr -d '\r\n')
+  else
+    echo "Creating YouTube Data API key via gcloud..."
+    YOUTUBE_KEY_CREATE_LOGS=$(gcloud alpha services api-keys create \
+        --api-target=service=youtube.googleapis.com \
+        --display-name="YouTube API Key for DV360 DG Pulse" \
+        --project="${PROJECT_ID}" \
+        2>&1 || true)
+    YOUTUBE_API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+' || true)
+  fi
+fi
+
+if [ -n "$YOUTUBE_API_KEY" ]; then
+  echo "$YOUTUBE_API_KEY" > youtube_api_key.txt
+  gsutil cp youtube_api_key.txt gs://${BUCKET_NAME}/youtube_api_key.txt 2>/dev/null || true
+  echo "YouTube API key configured successfully."
+else
+  echo "Notice: YOUTUBE_API_KEY was not automatically retrieved. Video aspect ratio calculation will look for youtube_api_key.txt or BUCKET_NAME/youtube_api_key.txt."
+fi
 
 echo "Installing Node.js dependencies..."
 npm install
@@ -150,6 +178,15 @@ echo "Creating BigQuery table: ${DATASET_ID}.creatives..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \
   creativeId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,creativeType:STRING,hostingSource:STRING,dimensions:STRING,imageUrl:STRING || echo "Table creatives already exists."
 
+echo "Creating BigQuery table: ${DATASET_ID}.ad_group_ads..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.ad_group_ads \
+  adGroupAdId:STRING,adGroupId:STRING,advertiserId:STRING,displayName:STRING,entityStatus:STRING,adType:STRING,approvalStatus:STRING,video_id:STRING,aspect_ratio:FLOAT,videos_count:INTEGER,square_images_count:INTEGER,portrait_images_count:INTEGER,horizontal_images_count:INTEGER,headlines_count:INTEGER,long_headlines_count:INTEGER,descriptions_count:INTEGER,call_to_actions_count:INTEGER || echo "Table ad_group_ads already exists."
+bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64, ADD COLUMN IF NOT EXISTS approvalStatus STRING;" 2>/dev/null || true
+
+echo "Creating BigQuery table: ${DATASET_ID}.video_aspect_ratio..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.video_aspect_ratio \
+  video_id:STRING,aspect_ratio:FLOAT,updated_at:TIMESTAMP || echo "Table video_aspect_ratio already exists."
+
 echo "Creating BigQuery table: ${DATASET_ID}.floodlight_activities..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.floodlight_activities \
   floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,tagModernizationStatus:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
@@ -190,7 +227,7 @@ gcloud functions deploy dv360-dgpulse-process-advertiser \
   --source=. \
   --entry-point=processAdvertiser \
   --trigger-topic=${TOPIC_NAME} \
-  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID}
+  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID},YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
 
 # 7. Create Cloud Scheduler job
 JOB_NAME="dv360-dgpulse-daily-sync"
@@ -213,6 +250,9 @@ fi
 
 echo "Syncing DBM Reports into BigQuery..."
 node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."
+
+echo "Syncing Demand Gen ad group ads & video aspect ratios..."
+YOUTUBE_API_KEY="${YOUTUBE_API_KEY}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node sync_ad_group_ads.js || echo "Warning: Initial ad sync will complete on next scheduled run."
 
 echo "Running initial materialization queries..."
 for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql materialize_floodlight_activities.sql; do

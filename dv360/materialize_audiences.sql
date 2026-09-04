@@ -14,7 +14,6 @@ deduped_dbm AS (
       AND (
         Insertion_Order_Id IN (SELECT DISTINCT CAST(insertionOrderId AS INT64) FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)
         OR (Line_Item_Id IS NOT NULL AND Line_Item_Id IN (SELECT DISTINCT CAST(lineItemId AS INT64) FROM demand_gen_line_items))
-        OR (Insertion_Order LIKE '%DEMANDGEN%' OR Insertion_Order LIKE '%DGEN%')
       )
   )
   WHERE row_num = 1
@@ -69,7 +68,8 @@ latest_advertisers AS (
   SELECT 
     advertiserId,
     MAX(NULLIF(displayName, '')) AS displayName,
-    MAX(NULLIF(currencyCode, '')) AS currency_code
+    MAX(NULLIF(currencyCode, '')) AS currency_code,
+    MAX(NULLIF(partnerId, '')) AS partnerId
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
 ),
@@ -83,7 +83,7 @@ latest_settings AS (
 )
 SELECT 
   s.date,
-  COALESCE(s.partner_id, '__PARTNER_ID__') AS partner_id,
+  COALESCE(s.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
   s.advertiser_id,
   s.advertiser_id AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, s.advertiser_id) AS account_name,

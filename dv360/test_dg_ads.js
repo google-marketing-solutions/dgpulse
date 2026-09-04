@@ -63,7 +63,7 @@ async function run() {
   const [rows] = await bigquery.query({
     query: `SELECT DISTINCT advertiserId, lineItemId, insertionOrderId, displayName 
             FROM \`${DATASET_ID}.line_items\` 
-            WHERE lineItemType LIKE '%DEMAND_GEN%' OR displayName LIKE '%DEMANDGEN%' OR displayName LIKE '%DGEN%'`
+            WHERE lineItemType = 'LINE_ITEM_TYPE_DEMAND_GEN'`
   });
 
   const summary = [];

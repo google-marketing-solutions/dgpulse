@@ -6,6 +6,7 @@ const fs = require('fs');
 const { Storage } = require('@google-cloud/storage');
 const { BigQuery } = require('@google-cloud/bigquery');
 const DV360Client = require('./dv360');
+const { resolveVideoAspectRatios } = require('./youtube_fetcher');
 
 const storage = new Storage();
 const bigquery = new BigQuery();
@@ -82,6 +83,8 @@ async function ensureTable() {
     { name: 'displayName', type: 'STRING', mode: 'NULLABLE' },
     { name: 'entityStatus', type: 'STRING', mode: 'NULLABLE' },
     { name: 'adType', type: 'STRING', mode: 'NULLABLE' },
+    { name: 'video_id', type: 'STRING', mode: 'NULLABLE' },
+    { name: 'aspect_ratio', type: 'FLOAT64', mode: 'NULLABLE' },
     { name: 'videos_count', type: 'INT64', mode: 'NULLABLE' },
     { name: 'horizontal_images_count', type: 'INT64', mode: 'NULLABLE' },
     { name: 'square_images_count', type: 'INT64', mode: 'NULLABLE' },
@@ -100,6 +103,14 @@ async function ensureTable() {
     console.log(`Creating BigQuery table ${DATASET_ID}.${TABLE_ID}...`);
     await dataset.createTable(TABLE_ID, { schema });
     console.log(`Table ${DATASET_ID}.${TABLE_ID} created.`);
+  } else {
+    try {
+      await bigquery.query({
+        query: `ALTER TABLE \`${DATASET_ID}.${TABLE_ID}\` 
+                ADD COLUMN IF NOT EXISTS video_id STRING, 
+                ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64;`
+      });
+    } catch (e) {}
   }
 }
 
@@ -118,9 +129,8 @@ async function sync() {
             FROM \`${DATASET_ID}.line_items\` li
             LEFT JOIN \`${DATASET_ID}.dbm_performance\` dbm 
               ON CAST(li.lineItemId AS INT64) = dbm.Line_Item_Id
-            WHERE li.lineItemType LIKE '%DEMAND_GEN%' 
-               OR li.displayName LIKE '%DEMANDGEN%' 
-               OR li.displayName LIKE '%DGEN%'`
+            WHERE li.lineItemType = 'LINE_ITEM_TYPE_DEMAND_GEN' 
+               OR li.lineItemType LIKE '%DEMAND_GEN%'`
   });
 
   console.log(`Found ${rows.length} Demand Gen line item configurations.`);
@@ -270,6 +280,7 @@ async function sync() {
           const squareImgsCount = iAd && iAd.squareMarketingImages ? iAd.squareMarketingImages.length : 0;
           const vertImgsCount = iAd && iAd.portraitMarketingImages ? iAd.portraitMarketingImages.length : 0;
           const videosCount = vAd && vAd.videos ? vAd.videos.length : 0;
+          const videoId = (vAd && vAd.videos && vAd.videos[0] && (vAd.videos[0].id || vAd.videos[0].videoId)) || null;
           const approvalStatus = (ad.adPolicy && ad.adPolicy.adPolicyApprovalStatus) || '';
 
           adRows.push({
@@ -282,6 +293,8 @@ async function sync() {
             displayName: String(ad.displayName || ''),
             entityStatus: String(ad.entityStatus || ''),
             adType: adType,
+            video_id: videoId,
+            aspect_ratio: null,
             videos_count: videosCount,
             horizontal_images_count: horizImgsCount,
             square_images_count: squareImgsCount,
@@ -301,6 +314,22 @@ async function sync() {
   console.log(`Processed ${adRows.length} Ad Group Ads.`);
 
   if (adRows.length > 0) {
+    // Resolve YouTube aspect ratios for all unique video IDs using YouTube Data API
+    const videoIds = adRows.map(r => r.video_id).filter(Boolean);
+    if (videoIds.length > 0) {
+      console.log(`Resolving aspect ratios for ${videoIds.length} video ads via YouTube Data API...`);
+      try {
+        const ratioMap = await resolveVideoAspectRatios(videoIds, bigquery, DATASET_ID, BUCKET_NAME);
+        for (const r of adRows) {
+          if (r.video_id && ratioMap.has(r.video_id)) {
+            r.aspect_ratio = ratioMap.get(r.video_id);
+          }
+        }
+      } catch (ytErr) {
+        console.warn('Warning resolving YouTube aspect ratios:', ytErr.message);
+      }
+    }
+
     try {
       await bigquery.query({
         query: `DELETE FROM \`${DATASET_ID}.${TABLE_ID}\` WHERE true`
