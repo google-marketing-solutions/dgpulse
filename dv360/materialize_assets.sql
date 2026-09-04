@@ -28,7 +28,9 @@ unpacked_assets AS (
     ad.adGroupAdId AS asset_id,
     ad.displayName AS asset_name,
     ad.adGroupAdId,
+    ad.video_id,
     ad.lineItemId,
+    ad.line_item_name,
     ad.resolved_io_id AS insertion_order_id,
     ad.resolved_campaign_id AS campaign_id,
     ad.advertiserId AS advertiser_id,
@@ -37,6 +39,7 @@ unpacked_assets AS (
       WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio = 1.0 THEN 'SQUARE VIDEO'
       ELSE 'HORIZONTAL VIDEO'
     END AS asset_type,
+    'VIDEO' AS asset_variant,
     CASE 
       WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio < 1.0 THEN '9:16'
       WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio = 1.0 THEN '1:1'
@@ -57,14 +60,17 @@ unpacked_assets AS (
 
   -- 2. Horizontal Marketing Images (from Demand Gen Image Ads)
   SELECT 
-    CONCAT(ad.adGroupAdId, '_horiz') AS asset_id,
+    ad.adGroupAdId AS asset_id,
     CONCAT(ad.displayName, ' [Horizontal Image]') AS asset_name,
     ad.adGroupAdId,
+    CAST(NULL AS STRING) AS video_id,
     ad.lineItemId,
+    ad.line_item_name,
     ad.resolved_io_id AS insertion_order_id,
     ad.resolved_campaign_id AS campaign_id,
     ad.advertiserId AS advertiser_id,
     'HORIZONTAL IMAGE' AS asset_type,
+    'HORIZONTAL' AS asset_variant,
     '1200x628' AS creative_dimensions,
     'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png' AS image_url,
     'HOSTING_SOURCE_INTERNAL' AS hosting_source,
@@ -77,14 +83,17 @@ unpacked_assets AS (
 
   -- 3. Square Marketing Images (from Demand Gen Image Ads)
   SELECT 
-    CONCAT(ad.adGroupAdId, '_square') AS asset_id,
+    ad.adGroupAdId AS asset_id,
     CONCAT(ad.displayName, ' [Square Image]') AS asset_name,
     ad.adGroupAdId,
+    CAST(NULL AS STRING) AS video_id,
     ad.lineItemId,
+    ad.line_item_name,
     ad.resolved_io_id AS insertion_order_id,
     ad.resolved_campaign_id AS campaign_id,
     ad.advertiserId AS advertiser_id,
     'SQUARE IMAGE' AS asset_type,
+    'SQUARE' AS asset_variant,
     '1200x1200' AS creative_dimensions,
     'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png' AS image_url,
     'HOSTING_SOURCE_INTERNAL' AS hosting_source,
@@ -97,14 +106,17 @@ unpacked_assets AS (
 
   -- 4. Vertical / Portrait Marketing Images (from Demand Gen Image Ads)
   SELECT 
-    CONCAT(ad.adGroupAdId, '_vert') AS asset_id,
+    ad.adGroupAdId AS asset_id,
     CONCAT(ad.displayName, ' [Vertical Image]') AS asset_name,
     ad.adGroupAdId,
+    CAST(NULL AS STRING) AS video_id,
     ad.lineItemId,
+    ad.line_item_name,
     ad.resolved_io_id AS insertion_order_id,
     ad.resolved_campaign_id AS campaign_id,
     ad.advertiserId AS advertiser_id,
     'VERTICAL IMAGE' AS asset_type,
+    'VERTICAL' AS asset_variant,
     '960x1200' AS creative_dimensions,
     'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_128dp.png' AS image_url,
     'HOSTING_SOURCE_INTERNAL' AS hosting_source,
@@ -173,16 +185,30 @@ latest_settings AS (
     MAX(NULLIF(displayName, '')) AS advertiser_name
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
+),
+latest_ios AS (
+  SELECT 
+    insertionOrderId AS insertion_order_id,
+    MAX(NULLIF(displayName, '')) AS insertion_order_name
+  FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
+  GROUP BY 1
 )
 SELECT 
   COALESCE(lis.date, CURRENT_DATE()) AS date,
   a.asset_id,
+  a.adGroupAdId AS ad_group_ad_id,
+  a.video_id,
   a.asset_name,
   a.asset_type,
+  a.asset_variant,
   a.creative_dimensions,
   a.image_url,
   a.hosting_source,
   a.entity_status,
+  a.insertion_order_id,
+  COALESCE(io.insertion_order_name, a.insertion_order_id, 'N/A') AS insertion_order_name,
+  a.lineItemId AS line_item_id,
+  COALESCE(a.line_item_name, 'N/A') AS line_item_name,
   lis.device_type,
   lis.inventory_source,
   a.advertiser_id,
@@ -192,6 +218,19 @@ SELECT
   COALESCE(cmp.displayName, a.campaign_id, lis.campaign_id, 'N/A') AS campaign_name,
   COALESCE(lis.currency_code, NULLIF(adv.currency_code, ''), 'USD') AS currency_code,
   COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
+
+  -- Precomputed Deep Links
+  CASE 
+    WHEN a.video_id IS NOT NULL AND a.video_id != '' 
+      THEN CONCAT('https://www.youtube.com/watch?v=', a.video_id)
+    ELSE CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups')
+  END AS asset_link,
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups') AS dv360_url,
+  CASE 
+    WHEN a.video_id IS NOT NULL AND a.video_id != '' 
+      THEN CONCAT('https://www.youtube.com/watch?v=', a.video_id)
+    ELSE NULL 
+  END AS youtube_url,
 
   -- Delivery & Cost (Proportionally attributed by asset weight within line item)
   COALESCE(SAFE_DIVIDE(lis.impressions, w.asset_count), 0) AS impressions,
@@ -233,6 +272,8 @@ JOIN line_item_asset_weights w
   ON a.lineItemId = w.lineItemId
 LEFT JOIN line_item_stats lis
   ON a.lineItemId = lis.line_item_id
+LEFT JOIN latest_ios io
+  ON a.insertion_order_id = io.insertion_order_id
 LEFT JOIN latest_campaigns cmp
   ON COALESCE(a.campaign_id, lis.campaign_id) = cmp.campaignId
 LEFT JOIN latest_advertisers adv
