@@ -77,7 +77,7 @@ latest_ios AS (
     MAX(dailyMaxAmount) AS daily_max_amount,
     MAX(NULLIF(budgetUnit, '')) AS budget_unit,
     MAX(budgetAmount) AS budget_amount,
-    MAX(startDate) AS start_date,
+    MIN(startDate) AS start_date,
     MAX(endDate) AS end_date
   FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
   WHERE insertionOrderId IN (SELECT DISTINCT insertionOrderId FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)

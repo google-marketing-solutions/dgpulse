@@ -143,20 +143,21 @@ async function sync() {
       const ios = await client.listAllInsertionOrders(advId);
       if (ios && ios.length > 0) {
         const ioRows = ios.map(io => {
-          let budgetAmount = null;
+          let budgetAmount = 0;
           let startDate = null;
           let endDate = null;
-          if (io.budget && io.budget.budgetSegments && io.budget.budgetSegments[0]) {
-            const seg = io.budget.budgetSegments[0];
-            budgetAmount = seg.budgetAmountMicros ? seg.budgetAmountMicros / 1000000 : null;
-            if (seg.dateRange) {
-              if (seg.dateRange.startDate) {
-                startDate = `${seg.dateRange.startDate.year}-${String(seg.dateRange.startDate.month).padStart(2, '0')}-${String(seg.dateRange.startDate.day).padStart(2, '0')}`;
-              }
-              if (seg.dateRange.endDate) {
-                endDate = `${seg.dateRange.endDate.year}-${String(seg.dateRange.endDate.month).padStart(2, '0')}-${String(seg.dateRange.endDate.day).padStart(2, '0')}`;
-              }
+          if (io.budget && io.budget.budgetSegments && io.budget.budgetSegments.length > 0) {
+            let totalMicros = 0;
+            for (const seg of io.budget.budgetSegments) {
+              if (seg.budgetAmountMicros) totalMicros += Number(seg.budgetAmountMicros);
+              const s = seg.dateRange && seg.dateRange.startDate ?
+                `${seg.dateRange.startDate.year}-${String(seg.dateRange.startDate.month).padStart(2, '0')}-${String(seg.dateRange.startDate.day).padStart(2, '0')}` : null;
+              const e = seg.dateRange && seg.dateRange.endDate ?
+                `${seg.dateRange.endDate.year}-${String(seg.dateRange.endDate.month).padStart(2, '0')}-${String(seg.dateRange.endDate.day).padStart(2, '0')}` : null;
+              if (s && (!startDate || s < startDate)) startDate = s;
+              if (e && (!endDate || e > endDate)) endDate = e;
             }
+            budgetAmount = totalMicros / 1000000;
           }
 
           return {
