@@ -211,69 +211,7 @@ async function sync() {
     }
   }
 
-  // 2. Refresh creatives from live API with approvalStatus
-  for (const advId of advertisersToSync) {
-    try {
-      console.log(`Refreshing live creatives with approvalStatus for advertiser ${advId}...`);
-      const creatives = await client.listAllCreatives(advId);
-      if (creatives && creatives.length > 0) {
-        const creativeRows = creatives.map(cr => {
-          let dims = 'RESPONSIVE/NATIVE';
-          if (cr.dimensions && cr.dimensions.widthPixels > 0 && cr.dimensions.heightPixels > 0) {
-            dims = `${cr.dimensions.widthPixels}x${cr.dimensions.heightPixels}`;
-          } else if (cr.creativeType && cr.creativeType.includes('VIDEO')) {
-            dims = 'VIDEO (RESPONSIVE)';
-          } else if (cr.creativeType && cr.creativeType.includes('AUDIO')) {
-            dims = 'AUDIO (N/A)';
-          }
-          let imgUrl = '';
-          if (cr.assets && Array.isArray(cr.assets)) {
-            for (const a of cr.assets) {
-              const content = a.asset && a.asset.content;
-              if (content) {
-                const ytMatch = content.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
-                if (ytMatch && ytMatch[1]) {
-                  imgUrl = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
-                  break;
-                }
-                if ((content.startsWith('http://') || content.startsWith('https://')) && content.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)) {
-                  imgUrl = content;
-                  break;
-                }
-              }
-            }
-          }
 
-          const approvalStatus = (cr.reviewStatus && cr.reviewStatus.approvalStatus) || '';
-
-          return {
-            creativeId: String(cr.creativeId),
-            advertiserId: String(advId),
-            entityStatus: cr.entityStatus || '',
-            displayName: cr.displayName || '',
-            creativeType: cr.creativeType || '',
-            hostingSource: cr.hostingSource || '',
-            dimensions: dims,
-            imageUrl: imgUrl,
-            approvalStatus: approvalStatus
-          };
-        });
-
-        try {
-          await bigquery.query({
-            query: `DELETE FROM \`${DATASET_ID}.creatives\` WHERE advertiserId = '${advId}'`
-          });
-        } catch (delErr) {}
-
-        for (let i = 0; i < creativeRows.length; i += 500) {
-          await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows.slice(i, i + 500));
-        }
-        console.log(`✓ Updated ${creativeRows.length} creatives in BigQuery with latest approval status.`);
-      }
-    } catch (crErr) {
-      console.warn(`Warning refreshing creatives for advertiser ${advId}:`, crErr.message);
-    }
-  }
 
   // 3. Fetch Ad Group Ads
   const adRows = [];
@@ -373,6 +311,61 @@ async function sync() {
       await bigquery.dataset(DATASET_ID).table(TABLE_ID).insert(adRows.slice(i, i + 500));
     }
     console.log(`✓ Successfully ingested ${adRows.length} Ad Group Ads into BigQuery ${DATASET_ID}.${TABLE_ID}.`);
+  }
+
+  // 4. Targeted check: Fetch live approvalStatus for Demand Gen creatives matching ad names
+  console.log('--- Verifying Demand Gen creative approval statuses ---');
+  try {
+    const [matchingCreatives] = await bigquery.query({
+      query: `SELECT DISTINCT creativeId, advertiserId 
+              FROM \`${DATASET_ID}.creatives\`
+              WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
+                AND displayName IN (
+                  SELECT DISTINCT displayName FROM \`${DATASET_ID}.${TABLE_ID}\`
+                )`
+    });
+
+    console.log(`Found ${matchingCreatives.length} Demand Gen creative candidates to inspect.`);
+
+    if (matchingCreatives.length > 0) {
+      const batchSize = 10;
+      let updatedCount = 0;
+      for (let i = 0; i < matchingCreatives.length; i += batchSize) {
+        const batch = matchingCreatives.slice(i, i + batchSize);
+        const results = await Promise.all(batch.map(async (c) => {
+          try {
+            const res = await client.dv360.advertisers.creatives.get({
+              advertiserId: c.advertiserId,
+              creativeId: c.creativeId
+            });
+            const cr = res.data;
+            return {
+              creativeId: c.creativeId,
+              advertiserId: c.advertiserId,
+              approvalStatus: (cr.reviewStatus && cr.reviewStatus.approvalStatus) || '',
+              entityStatus: cr.entityStatus || ''
+            };
+          } catch (e) {
+            return null;
+          }
+        }));
+
+        for (const r of results.filter(Boolean)) {
+          if (r.approvalStatus) {
+            await bigquery.query({
+              query: `UPDATE \`${DATASET_ID}.creatives\`
+                      SET approvalStatus = '${r.approvalStatus}',
+                          entityStatus = '${r.entityStatus}'
+                      WHERE creativeId = '${r.creativeId}' AND advertiserId = '${r.advertiserId}'`
+            });
+            updatedCount++;
+          }
+        }
+      }
+      console.log(`✓ Updated live approvalStatus for ${updatedCount} Demand Gen creatives in BigQuery.`);
+    }
+  } catch (crErr) {
+    console.warn('Warning updating creative approval statuses:', crErr.message);
   }
 }
 

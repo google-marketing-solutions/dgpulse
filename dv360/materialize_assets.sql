@@ -52,18 +52,42 @@ creative_stats AS (
   GROUP BY 1, 2, 3, 4, 5
 ),
 latest_creatives AS (
-  SELECT 
-    creativeId,
-    MAX(NULLIF(advertiserId, '')) AS advertiserId,
-    MAX(NULLIF(displayName, '')) AS displayName,
-    MAX(NULLIF(creativeType, '')) AS creativeType,
-    MAX(NULLIF(dimensions, '')) AS dimensions,
-    MAX(NULLIF(imageUrl, '')) AS imageUrl,
-    MAX(NULLIF(hostingSource, '')) AS hostingSource,
-    MAX(NULLIF(entityStatus, '')) AS entityStatus,
-    MAX(NULLIF(approvalStatus, '')) AS approvalStatus
-  FROM `__PROJECT_ID__.__DATASET_ID__.creatives`
-  GROUP BY creativeId
+  SELECT * EXCEPT(rn) FROM (
+    SELECT 
+      c.creativeId,
+      c.advertiserId,
+      c.displayName,
+      c.creativeType,
+      c.dimensions,
+      c.imageUrl,
+      c.hostingSource,
+      c.entityStatus,
+      c.approvalStatus,
+      ROW_NUMBER() OVER(
+        PARTITION BY c.displayName, COALESCE(c.dimensions, 'RESPONSIVE/NATIVE'), c.advertiserId
+        ORDER BY 
+          -- 1. Strictly prioritize approved and servable creatives
+          CASE 
+            WHEN c.approvalStatus LIKE '%APPROVED%' OR c.approvalStatus LIKE '%SERVABLE%' THEN 1
+            WHEN c.approvalStatus IS NULL OR c.approvalStatus = '' THEN 2
+            ELSE 3
+          END ASC,
+          -- 2. Within same tier, pick the newest revision (highest numeric creativeId)
+          SAFE_CAST(c.creativeId AS INT64) DESC
+      ) AS rn
+    FROM `__PROJECT_ID__.__DATASET_ID__.creatives` c
+    WHERE c.entityStatus = 'ENTITY_STATUS_ACTIVE'
+      AND (
+        c.approvalStatus IS NULL 
+        OR c.approvalStatus = '' 
+        OR (
+          c.approvalStatus NOT LIKE '%REJECTED%' 
+          AND c.approvalStatus NOT LIKE '%NOT_SERVABLE%'
+          AND c.approvalStatus NOT LIKE '%DISAPPROVED%'
+        )
+      )
+  )
+  WHERE rn = 1
 ),
 latest_campaigns AS (
   SELECT 
@@ -198,10 +222,4 @@ WHERE c.entityStatus = 'ENTITY_STATUS_ACTIVE'
       WHERE entityStatus = 'ENTITY_STATUS_ACTIVE'
         AND (approvalStatus IS NULL OR approvalStatus != 'DISAPPROVED')
     )
-  )
-  AND (
-    c.approvalStatus LIKE '%APPROVED%' 
-    OR c.approvalStatus LIKE '%SERVABLE%'
-  )
-  AND c.approvalStatus NOT LIKE '%REJECTED%'
-  AND c.approvalStatus NOT LIKE '%NOT_SERVABLE%';
+  );
