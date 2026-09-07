@@ -461,10 +461,23 @@ exports.processAdvertiser = async (event, context) => {
                     (act.webActivityConfig && act.webActivityConfig.enhancedConversionsEnabled)
                 );
 
-                let tagModStatus = 'UNKNOWN';
-                if (webTagType === 'WEB_TAG_TYPE_DYNAMIC' || isGa || hasActEc) {
+                const actFormat = (
+                    (act.activityTypeConfig && act.activityTypeConfig.webActivityConfig && act.activityTypeConfig.webActivityConfig.format) ||
+                    (act.webActivityConfig && act.webActivityConfig.format) ||
+                    act.format ||
+                    ''
+                );
+
+                let tagModStatus = 'LEGACY_IMAGE_TAG';
+                if (
+                    actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_GLOBAL_SITE_TAG' ||
+                    actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_IFRAME_TAG' ||
+                    webTagType === 'WEB_TAG_TYPE_DYNAMIC' ||
+                    isGa ||
+                    hasActEc
+                ) {
                     tagModStatus = 'MODERN_GOOGLE_TAG';
-                } else if (webTagType === 'WEB_TAG_TYPE_IMAGE') {
+                } else if (actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_IMAGE_TAG' || webTagType === 'WEB_TAG_TYPE_IMAGE') {
                     tagModStatus = 'LEGACY_IMAGE_TAG';
                 }
 

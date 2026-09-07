@@ -61,7 +61,11 @@ SELECT
   COALESCE(adv.advertiser_name, fa.advertiserId) AS account_name,
   fa.servingStatus AS serving_status,
   fa.webTagType AS web_tag_type,
-  fa.tagModernizationStatus AS tag_modernization_status,
+  CASE 
+    WHEN fa.tagModernizationStatus = 'MODERN_GOOGLE_TAG' OR fa.webTagType = 'WEB_TAG_TYPE_DYNAMIC' THEN '🟢 Modern Google Tag'
+    WHEN fa.tagModernizationStatus = 'LEGACY_IMAGE_TAG' OR fa.webTagType = 'WEB_TAG_TYPE_IMAGE' THEN '🔴 Legacy Image Tag'
+    ELSE '🔴 Legacy Image Tag'
+  END AS tag_modernization_status,
   fa.clickLookbackDays AS click_lookback_days,
   fa.impressionLookbackDays AS impression_lookback_days,
   fa.attributionLookbackStatus AS attribution_lookback_status,
