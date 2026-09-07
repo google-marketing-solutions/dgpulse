@@ -75,22 +75,9 @@ SELECT
     WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
     ELSE '⚪ NOT_CONFIGURED'
   END AS gtg_status,
-  CASE 
-    WHEN fa.servingStatus = 'FLOODLIGHT_ACTIVITY_SERVING_STATUS_DISABLED' THEN 'Disabled / Inactive Activity'
-    WHEN fa.tagModernizationStatus = 'LEGACY_IMAGE_TAG' THEN '🔴 Upgrade to Modern Google Tag'
-    WHEN fa.sslComplianceStatus = 'NON_SSL_COMPLIANT_WARNING' THEN '🔴 Enable SSL Compliance'
-    WHEN fa.attributionLookbackStatus = 'ZERO_DAY_WINDOW_WARNING' THEN '🟡 Review 0-Day Lookback Window'
-    WHEN COALESCE(fa.youtube_enabled, 'NO') = 'NO' THEN '🟡 Enable for YouTube Tracking'
-    WHEN COALESCE(fa.ec_enabled, 'NO') = 'NO' THEN '🟡 Enable Enhanced Conversions'
-    ELSE '🟢 Healthy / Modern Tag'
-  END AS recommended_action,
-  CASE
-    WHEN COALESCE(fa.youtube_enabled, 'NO') = 'NO' THEN 'https://support.google.com/displayvideo/answer/12123563'
-    WHEN fa.tagModernizationStatus = 'LEGACY_IMAGE_TAG' THEN 'https://support.google.com/campaignmanager/answer/2823194'
-    WHEN COALESCE(fa.ec_enabled, 'NO') = 'NO' THEN 'https://support.google.com/campaignmanager/answer/14217426'
-    WHEN fa.attributionLookbackStatus = 'ZERO_DAY_WINDOW_WARNING' THEN 'https://support.google.com/campaignmanager/answer/2823194'
-    ELSE 'https://support.google.com/displayvideo/answer/2697097'
-  END AS steps_to_fix_url,
+  -- Precomputed DV360 Deep Links
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(NULLIF(fa.partnerId, ''), NULLIF(adv.partner_id, ''), '__PARTNER_ID__'), '/a/', fa.advertiserId, '/fl/fle/', fa.floodlightActivityId, '/details') AS dv360_activity_url,
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(NULLIF(fa.partnerId, ''), NULLIF(adv.partner_id, ''), '__PARTNER_ID__'), '/a/', fa.advertiserId, '/fl/details') AS dv360_floodlight_group_url,
   -- Executive CLS Pre-Flight Status Indicators
   CASE 
     WHEN COALESCE(fa.youtube_enabled, 'NO') = 'YES' THEN '✅ Enabled' 
