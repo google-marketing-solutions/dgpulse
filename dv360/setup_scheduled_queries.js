@@ -68,10 +68,10 @@ async function setupScheduledQueries() {
     } catch (e) {}
   }
   if (!PROJECT_ID) {
-    PROJECT_ID = 'cse-dub-hackathon-test';
+    PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
   }
 
-  if (!PARTNER_ID) {
+  if (!PARTNER_ID && PROJECT_ID) {
     try {
       const bqTemp = new BigQuery({ projectId: PROJECT_ID });
       const [rows] = await bqTemp.query({
@@ -102,12 +102,8 @@ async function setupScheduledQueries() {
     } catch (e) {}
   }
 
-  if (!PARTNER_ID) {
-    PARTNER_ID = '796100066';
-  }
-
   if (!PROJECT_ID || !PARTNER_ID) {
-    throw new Error('PROJECT_ID and PARTNER_ID are required.');
+    throw new Error('PROJECT_ID and PARTNER_ID are required. Please set them as environment variables (e.g. PROJECT_ID=my-project PARTNER_ID=12345 node setup_scheduled_queries.js).');
   }
 
   console.log(`Setting up scheduled queries for Project: ${PROJECT_ID}, Partner: ${PARTNER_ID}...`);
