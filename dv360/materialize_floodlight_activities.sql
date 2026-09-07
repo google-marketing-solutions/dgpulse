@@ -192,10 +192,6 @@ SELECT
     WHEN total_activities = 0 THEN 'No Floodlight activities configured'
     ELSE CONCAT(CAST(yt_passing_activities AS STRING), ' of ', CAST(total_activities AS STRING), ' activities enabled')
   END AS details,
-  CASE 
-    WHEN total_activities = 0 THEN 0.0
-    ELSE ROUND(IEEE_DIVIDE(yt_passing_activities, total_activities), 4)
-  END AS adoption_pct,
   'Set up conversion tracking for YouTube using YouTube-enabled Floodlight activities' AS steps_to_fix,
   'https://support.google.com/displayvideo/answer/12123563' AS steps_to_fix_url
 FROM adv_base
@@ -225,10 +221,6 @@ SELECT
     WHEN total_activities = 0 THEN 'No Floodlight activities configured'
     ELSE CONCAT(CAST(dynamic_passing_activities AS STRING), ' of ', CAST(total_activities AS STRING), ' dynamic tags')
   END AS details,
-  CASE 
-    WHEN total_activities = 0 THEN 0.0
-    ELSE ROUND(IEEE_DIVIDE(dynamic_passing_activities, total_activities), 4)
-  END AS adoption_pct,
   'Enable dynamic tagging in Floodlight group / configuration' AS steps_to_fix,
   'https://support.google.com/campaignmanager/answer/2823194' AS steps_to_fix_url
 FROM adv_base
@@ -258,10 +250,6 @@ SELECT
     WHEN total_activities = 0 THEN 'No Floodlight activities configured'
     ELSE CONCAT(CAST(ec_passing_activities AS STRING), ' of ', CAST(total_activities AS STRING), ' activities with EC')
   END AS details,
-  CASE 
-    WHEN total_activities = 0 THEN 0.0
-    ELSE ROUND(IEEE_DIVIDE(ec_passing_activities, total_activities), 4)
-  END AS adoption_pct,
   'Enable Enhanced Conversions for Floodlight at advertiser & activity levels' AS steps_to_fix,
   'https://support.google.com/campaignmanager/answer/14217426' AS steps_to_fix_url
 FROM adv_base
@@ -287,7 +275,6 @@ SELECT
     WHEN dda_status = '✅ DDA Active' THEN 'Smart Bidding / DDA applied on line items'
     ELSE 'Line items using standard / last-click attribution'
   END AS details,
-  CASE WHEN dda_status = '✅ DDA Active' THEN 1.0 ELSE 0.0 END AS adoption_pct,
   'Create DDA model in CM360 and apply to DV360 line items' AS steps_to_fix,
   'https://support.google.com/campaignmanager/answer/6361280' AS steps_to_fix_url
 FROM adv_base
@@ -313,7 +300,6 @@ SELECT
     WHEN gtg_status = '🟢 Ready' THEN 'Modern Google Tag deployed and ready for First-Party Mode'
     ELSE 'Legacy tag detected; migrate to modern Google Tag container'
   END AS details,
-  CASE WHEN gtg_status = '🟢 Ready' THEN 1.0 ELSE 0.0 END AS adoption_pct,
   'Deploy Google Tag Gateway / First-Party Mode container to protect measurement' AS steps_to_fix,
   'https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide' AS steps_to_fix_url
 FROM adv_base;
