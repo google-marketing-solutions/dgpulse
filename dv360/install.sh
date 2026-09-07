@@ -170,8 +170,8 @@ bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.adver
 
 echo "Creating BigQuery table: ${DATASET_ID}.advertiser_settings..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.advertiser_settings \
-  advertiserId:STRING,displayName:STRING,partnerId:STRING,currency_code:STRING,has_crm_audience:STRING,has_ga_audience:STRING,floodlight_optimization_enabled:STRING,auto_tagging_enabled:STRING,ec_enabled:STRING,gtg_status:STRING,web_tag_type:STRING || echo "Table advertiser_settings already exists."
-bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING;" 2>/dev/null || true
+  advertiserId:STRING,displayName:STRING,partnerId:STRING,currency_code:STRING,has_crm_audience:STRING,has_ga_audience:STRING,floodlight_optimization_enabled:STRING,auto_tagging_enabled:STRING,ec_enabled:STRING,gtg_status:STRING,web_tag_type:STRING,dda_status:STRING || echo "Table advertiser_settings already exists."
+bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING, ADD COLUMN IF NOT EXISTS dda_status STRING;" 2>/dev/null || true
 
 echo "Creating BigQuery table: ${DATASET_ID}.${TABLE_ID}..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.${TABLE_ID} campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING || echo "Table already exists."
@@ -209,7 +209,8 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.video_aspect_ratio \
 
 echo "Creating BigQuery table: ${DATASET_ID}.floodlight_activities..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.floodlight_activities \
-  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,tagModernizationStatus:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
+  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,tagModernizationStatus:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,ec_enabled:STRING,youtube_enabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
+bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS ec_enabled STRING, ADD COLUMN IF NOT EXISTS youtube_enabled STRING;" 2>/dev/null || true
 
 
 # 5. Deploy as a Cloud Run Function
@@ -295,7 +296,8 @@ LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=5e126b6
 &ds.assets_performance.connector=bigQuery&ds.assets_performance.projectId=${PROJECT_ID}&ds.assets_performance.datasetId=${DATASET_ID}&ds.assets_performance.type=TABLE&ds.assets_performance.tableId=final_assets_performance&ds.assets_performance.refreshFields=false\
 &ds.creative_variety.connector=bigQuery&ds.creative_variety.projectId=${PROJECT_ID}&ds.creative_variety.datasetId=${DATASET_ID}&ds.creative_variety.type=TABLE&ds.creative_variety.tableId=final_creative_variety&ds.creative_variety.refreshFields=false\
 &ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${PROJECT_ID}&ds.audiences_performance.datasetId=${DATASET_ID}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false\
-&ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${PROJECT_ID}&ds.floodlight_audit.datasetId=${DATASET_ID}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false"
+&ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${PROJECT_ID}&ds.floodlight_audit.datasetId=${DATASET_ID}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false\
+&ds.cls_preflight_audit.connector=bigQuery&ds.cls_preflight_audit.projectId=${PROJECT_ID}&ds.cls_preflight_audit.datasetId=${DATASET_ID}&ds.cls_preflight_audit.type=TABLE&ds.cls_preflight_audit.tableId=final_cls_preflight_audit&ds.cls_preflight_audit.refreshFields=false"
 
 echo "------------------------------------------------"
 echo "🎉 Installation & Deployment Complete!"

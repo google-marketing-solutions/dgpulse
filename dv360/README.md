@@ -125,6 +125,7 @@ Each data source has a pre-configured alias that automatically binds to your pro
 | **DV360 Insertion Orders Performance** | `insertion_orders_performance` | `final_insertion_orders_performance` |
 | **DV360 Asset Performance** | `assets_performance` | `final_assets_performance` |
 | **DV360 Floodlight Activities Audit** | `floodlight_audit` | `final_floodlight_activities_audit` |
+| **DV360 CLS Pre-Flight Audit** | `cls_preflight_audit` | `final_cls_preflight_audit` |
 
 ---
 

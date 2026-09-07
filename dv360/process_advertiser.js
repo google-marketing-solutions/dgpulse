@@ -169,6 +169,32 @@ exports.processAdvertiser = async (event, context) => {
             console.log('No line items found to insert.');
         }
 
+        const youtubeTrackedActivityIds = new Set();
+        const allTrackedActivityIds = new Set();
+        let hasDdaOrSmartBidding = false;
+
+        for (const li of lineItems) {
+            const isYtOrDg = li.lineItemType === 'LINE_ITEM_TYPE_YOUTUBE_AND_VIDEO' || 
+                             li.lineItemType === 'LINE_ITEM_TYPE_DEMAND_GEN';
+            if (li.conversionCounting && Array.isArray(li.conversionCounting.floodlightActivityConfigs)) {
+                for (const flCfg of li.conversionCounting.floodlightActivityConfigs) {
+                    if (flCfg && flCfg.floodlightActivityId) {
+                        const actIdStr = String(flCfg.floodlightActivityId);
+                        allTrackedActivityIds.add(actIdStr);
+                        if (isYtOrDg) {
+                            youtubeTrackedActivityIds.add(actIdStr);
+                        }
+                    }
+                }
+            }
+            if (li.bidStrategy) {
+                const bs = li.bidStrategy;
+                if (bs.performanceGoalBidStrategy || bs.maximizeSpendAlgorithm || bs.customBiddingAlgorithmId) {
+                    hasDdaOrSmartBidding = true;
+                }
+            }
+        }
+
         // 2b. Insertion Orders & Budget Pacing
         console.log(`Fetching insertion orders for advertiser ${advertiserId}...`);
         const insertionOrders = await client.listAllInsertionOrders(advertiserId);
@@ -405,9 +431,11 @@ exports.processAdvertiser = async (event, context) => {
             // 2. Fetch Floodlight Activities to check for Enhanced Conversions & Audit
             const activities = await client.getFloodlightActivities(cmFloodlightConfigId, partnerId);
             ecEnabled = activities.some(act => 
-                act.servingStatus === 'ENTITY_STATUS_ACTIVE' || 
-                act.servingStatus === 'ENABLED' ||
-                (act.floodlightActivityConfig && act.floodlightActivityConfig.enhancedConversionsEnabled)
+                Boolean(
+                    (act.floodlightActivityConfig && act.floodlightActivityConfig.enhancedConversionsEnabled) ||
+                    act.enhancedConversionsEnabled ||
+                    (act.webActivityConfig && act.webActivityConfig.enhancedConversionsEnabled)
+                )
             );
 
             // 3. Evaluate Google Tag Gateway (GTG / First-Party Mode) Readiness
@@ -422,9 +450,29 @@ exports.processAdvertiser = async (event, context) => {
             // 4. Stream Floodlight Activities for Audit Scan Table
             const todayStr = new Date().toISOString().split('T')[0];
             const activityRows = activities.map(act => {
-                const isLegacy = webTagType === 'WEB_TAG_TYPE_IMAGE';
-                const tagModStatus = webTagType === 'WEB_TAG_TYPE_DYNAMIC' ? 'MODERN_GOOGLE_TAG' : (isLegacy ? 'LEGACY_IMAGE_TAG' : 'UNKNOWN');
-                
+                const actIdStr = String(act.floodlightActivityId);
+                const isGa = Boolean(act.displayName && (
+                    act.displayName.toLowerCase().includes('google analytics') ||
+                    act.displayName.toLowerCase().includes('ga4')
+                ));
+                const hasActEc = Boolean(
+                    (act.floodlightActivityConfig && act.floodlightActivityConfig.enhancedConversionsEnabled) ||
+                    act.enhancedConversionsEnabled ||
+                    (act.webActivityConfig && act.webActivityConfig.enhancedConversionsEnabled)
+                );
+
+                let tagModStatus = 'UNKNOWN';
+                if (webTagType === 'WEB_TAG_TYPE_DYNAMIC' || isGa || hasActEc) {
+                    tagModStatus = 'MODERN_GOOGLE_TAG';
+                } else if (webTagType === 'WEB_TAG_TYPE_IMAGE') {
+                    tagModStatus = 'LEGACY_IMAGE_TAG';
+                }
+
+                let effectiveWebTagType = webTagType;
+                if (effectiveWebTagType === 'WEB_TAG_TYPE_NONE' && (isGa || tagModStatus === 'MODERN_GOOGLE_TAG')) {
+                    effectiveWebTagType = 'WEB_TAG_TYPE_DYNAMIC';
+                }
+
                 let attrStatus = 'STANDARD_WINDOW';
                 if (clickDays === 0 || impressionDays === 0) {
                     attrStatus = 'ZERO_DAY_WINDOW_WARNING';
@@ -435,14 +483,21 @@ exports.processAdvertiser = async (event, context) => {
                 const sslCompliant = act.sslRequired !== false;
                 const remarketingActive = act.remarketingConfigs ? act.remarketingConfigs.some(r => r.remarketingEnabled) : false;
 
+                // YouTube Enabled Check per activity
+                const isYtTracked = youtubeTrackedActivityIds.has(actIdStr);
+                const isYtEnabled = isYtTracked || (floodlightOptEnabled && tagModStatus === 'MODERN_GOOGLE_TAG');
+
+                // Enhanced Conversions Check per activity
+                const isActEcEnabled = hasActEc || (ecEnabled && tagModStatus === 'MODERN_GOOGLE_TAG');
+
                 return {
-                    floodlightActivityId: String(act.floodlightActivityId),
+                    floodlightActivityId: actIdStr,
                     advertiserId: String(advertiserId),
                     partnerId: String(partnerId || ''),
                     floodlightGroupId: String(cmFloodlightConfigId),
-                    activityName: act.displayName || String(act.floodlightActivityId),
+                    activityName: act.displayName || actIdStr,
                     servingStatus: act.servingStatus || 'UNKNOWN',
-                    webTagType: webTagType,
+                    webTagType: effectiveWebTagType,
                     tagModernizationStatus: tagModStatus,
                     clickLookbackDays: clickDays,
                     impressionLookbackDays: impressionDays,
@@ -450,12 +505,15 @@ exports.processAdvertiser = async (event, context) => {
                     sslRequired: act.sslRequired ? 'YES' : 'NO',
                     sslComplianceStatus: sslCompliant ? 'SSL_COMPLIANT' : 'NON_SSL_COMPLIANT_WARNING',
                     remarketingEnabled: remarketingActive ? 'YES' : 'NO',
+                    ec_enabled: isActEcEnabled ? 'YES' : 'NO',
+                    youtube_enabled: isYtEnabled ? 'YES' : 'NO',
                     auditDate: todayStr
                 };
             });
 
             if (activityRows.length > 0) {
                 try {
+                    await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.floodlight_activities\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
                     await bigquery.dataset(DATASET_ID).table('floodlight_activities').insert(activityRows);
                     console.log(`Successfully inserted ${activityRows.length} floodlight activities for ${advertiserId} into BigQuery.`);
                 } catch (actErr) {
@@ -475,10 +533,12 @@ exports.processAdvertiser = async (event, context) => {
             auto_tagging_enabled: 'YES',
             ec_enabled: ecEnabled ? 'YES' : 'NO',
             gtg_status: gtgStatus,
-            web_tag_type: webTagType
+            web_tag_type: webTagType,
+            dda_status: hasDdaOrSmartBidding ? 'ACTIVE' : 'NOT_CONFIGURED'
         };
 
         try {
+            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.advertiser_settings\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
             await bigquery.dataset(DATASET_ID).table('advertiser_settings').insert([settingsRow]);
             console.log(`Successfully inserted advertiser_settings for ${advertiserId} into BigQuery.`);
         } catch (settErr) {

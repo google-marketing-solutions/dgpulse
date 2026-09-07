@@ -16,7 +16,8 @@ async function ensureTableSchema() {
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.line_items\` ADD COLUMN IF NOT EXISTS insertionOrderId STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_performance\` ADD COLUMN IF NOT EXISTS Revenue_USD FLOAT64, ADD COLUMN IF NOT EXISTS Line_Item STRING, ADD COLUMN IF NOT EXISTS Line_Item_Id INT64;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertisers\` ADD COLUMN IF NOT EXISTS currencyCode STRING;`,
-    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING, ADD COLUMN IF NOT EXISTS dda_status STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS ec_enabled STRING, ADD COLUMN IF NOT EXISTS youtube_enabled STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.creatives\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64;`,
     `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.video_aspect_ratio\` (
