@@ -61,7 +61,7 @@ unpacked_assets AS (
   -- 2. Horizontal Marketing Images (from Demand Gen Image Ads)
   SELECT 
     ad.adGroupAdId AS asset_id,
-    CONCAT(ad.displayName, ' [Horizontal Image]') AS asset_name,
+    ad.displayName AS asset_name,
     ad.adGroupAdId,
     CAST(NULL AS STRING) AS video_id,
     ad.lineItemId,
@@ -84,7 +84,7 @@ unpacked_assets AS (
   -- 3. Square Marketing Images (from Demand Gen Image Ads)
   SELECT 
     ad.adGroupAdId AS asset_id,
-    CONCAT(ad.displayName, ' [Square Image]') AS asset_name,
+    ad.displayName AS asset_name,
     ad.adGroupAdId,
     CAST(NULL AS STRING) AS video_id,
     ad.lineItemId,
@@ -107,7 +107,7 @@ unpacked_assets AS (
   -- 4. Vertical / Portrait Marketing Images (from Demand Gen Image Ads)
   SELECT 
     ad.adGroupAdId AS asset_id,
-    CONCAT(ad.displayName, ' [Vertical Image]') AS asset_name,
+    ad.displayName AS asset_name,
     ad.adGroupAdId,
     CAST(NULL AS STRING) AS video_id,
     ad.lineItemId,
@@ -223,9 +223,10 @@ SELECT
   CASE 
     WHEN a.video_id IS NOT NULL AND a.video_id != '' 
       THEN CONCAT('https://www.youtube.com/watch?v=', a.video_id)
-    ELSE CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups#ad_', a.asset_id)
+    ELSE CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups')
   END AS asset_link,
-  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups#ad_', a.asset_id) AS dv360_url,
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups') AS dv360_url,
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups') AS line_item_link,
   CASE 
     WHEN a.video_id IS NOT NULL AND a.video_id != '' 
       THEN CONCAT('https://www.youtube.com/watch?v=', a.video_id)

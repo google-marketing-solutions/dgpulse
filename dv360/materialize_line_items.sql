@@ -164,6 +164,10 @@ SELECT
   ) AS currency_code,
   COALESCE(s.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
 
+  -- Precomputed Deep Links
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(s.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', li.advertiserId, '/c/', COALESCE(li.campaignId, '0'), '/io/', COALESCE(li.insertionOrderId, s.insertion_order_id, io.insertion_order_id, '0'), '/li/', li.lineItemId, '/adgroups') AS line_item_link,
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(s.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', li.advertiserId, '/c/', COALESCE(li.campaignId, '0'), '/io/', COALESCE(li.insertionOrderId, s.insertion_order_id, io.insertion_order_id, '0'), '/li/', li.lineItemId, '/adgroups') AS dv360_url,
+
   -- Delivery & Cost
   COALESCE(s.impressions, 0) AS impressions,
   COALESCE(s.clicks, 0) AS clicks,
