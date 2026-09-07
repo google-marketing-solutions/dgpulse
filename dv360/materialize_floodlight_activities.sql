@@ -2,9 +2,32 @@ CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_floodlight_activiti
 WITH latest_advertisers AS (
   SELECT 
     advertiserId,
-    ANY_VALUE(displayName) AS advertiser_name
+    ANY_VALUE(displayName) AS advertiser_name,
+    ANY_VALUE(partnerId) AS partner_id
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
   GROUP BY advertiserId
+),
+latest_activities AS (
+  SELECT 
+    advertiserId,
+    floodlightActivityId,
+    ANY_VALUE(partnerId) AS partnerId,
+    ANY_VALUE(floodlightGroupId) AS floodlightGroupId,
+    ANY_VALUE(activityName) AS activityName,
+    ANY_VALUE(servingStatus) AS servingStatus,
+    ANY_VALUE(webTagType) AS webTagType,
+    ANY_VALUE(tagModernizationStatus) AS tagModernizationStatus,
+    ANY_VALUE(clickLookbackDays) AS clickLookbackDays,
+    ANY_VALUE(impressionLookbackDays) AS impressionLookbackDays,
+    ANY_VALUE(attributionLookbackStatus) AS attributionLookbackStatus,
+    ANY_VALUE(sslRequired) AS sslRequired,
+    ANY_VALUE(sslComplianceStatus) AS sslComplianceStatus,
+    ANY_VALUE(remarketingEnabled) AS remarketingEnabled,
+    ANY_VALUE(ec_enabled) AS ec_enabled,
+    ANY_VALUE(youtube_enabled) AS youtube_enabled,
+    MAX(auditDate) AS auditDate
+  FROM `__PROJECT_ID__.__DATASET_ID__.floodlight_activities`
+  GROUP BY advertiserId, floodlightActivityId
 ),
 latest_settings AS (
   SELECT 
@@ -53,7 +76,7 @@ SELECT
   CASE
     WHEN COALESCE(fa.youtube_enabled, 'NO') = 'NO' THEN 'https://support.google.com/displayvideo/answer/12123563'
     WHEN fa.tagModernizationStatus = 'LEGACY_IMAGE_TAG' THEN 'https://support.google.com/campaignmanager/answer/2823194'
-    WHEN COALESCE(fa.ec_enabled, 'NO') = 'NO' THEN 'https://support.google.com/campaignmanager/answer/13019808'
+    WHEN COALESCE(fa.ec_enabled, 'NO') = 'NO' THEN 'https://support.google.com/campaignmanager/answer/14217426'
     WHEN fa.attributionLookbackStatus = 'ZERO_DAY_WINDOW_WARNING' THEN 'https://support.google.com/campaignmanager/answer/2823194'
     ELSE 'https://support.google.com/displayvideo/answer/2697097'
   END AS steps_to_fix_url,
@@ -78,7 +101,7 @@ SELECT
     WHEN COALESCE(sett.gtg_status, 'NOT_CONFIGURED') = 'READY' THEN '🟢 Ready' 
     ELSE '🔴 Needs Upgrade' 
   END AS cls_gtg_status
-FROM `__PROJECT_ID__.__DATASET_ID__.floodlight_activities` fa
+FROM latest_activities fa
 LEFT JOIN latest_advertisers adv
   ON fa.advertiserId = adv.advertiserId
 LEFT JOIN latest_settings sett
@@ -94,11 +117,19 @@ WITH latest_settings AS (
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 ),
+latest_advertisers AS (
+  SELECT 
+    advertiserId,
+    ANY_VALUE(displayName) AS advertiser_name,
+    ANY_VALUE(partnerId) AS partner_id
+  FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
+  GROUP BY advertiserId
+),
 adv_base AS (
   SELECT 
     adv.advertiserId AS advertiser_id,
-    adv.displayName AS account_name,
-    adv.partnerId AS partner_id,
+    adv.advertiser_name AS account_name,
+    adv.partner_id AS partner_id,
     COUNT(fa.activity_id) AS total_activities,
     COUNTIF(fa.youtube_enabled = 'YES') AS yt_passing_activities,
     COUNTIF(fa.cls_dynamic_tag_status = '✅ Dynamic Tag') AS dynamic_passing_activities,
@@ -111,12 +142,12 @@ adv_base AS (
       WHEN sett.gtg_status = 'READY' THEN '🟢 Ready'
       ELSE '🔴 Needs Upgrade'
     END AS gtg_status
-  FROM `__PROJECT_ID__.__DATASET_ID__.advertisers` adv
+  FROM latest_advertisers adv
   LEFT JOIN `__PROJECT_ID__.__DATASET_ID__.final_floodlight_activities_audit` fa
     ON adv.advertiserId = fa.advertiser_id
   LEFT JOIN latest_settings sett
     ON adv.advertiserId = sett.advertiserId
-  GROUP BY adv.advertiserId, adv.displayName, adv.partnerId, sett.dda_status, sett.gtg_status
+  GROUP BY adv.advertiserId, adv.advertiser_name, adv.partner_id, sett.dda_status, sett.gtg_status
 )
 SELECT 
   advertiser_id,
@@ -124,7 +155,7 @@ SELECT
   partner_id,
   CURRENT_DATE() AS audit_date,
   1 AS check_order,
-  '1. YouTube Enabled' AS required_check,
+  'YouTube Enabled' AS required_check,
   CASE 
     WHEN total_activities = 0 THEN '❌ Action Required'
     WHEN yt_passing_activities > 0 AND yt_passing_activities = total_activities THEN '✅ Pass'
@@ -143,7 +174,7 @@ SELECT
   END AS details,
   CASE 
     WHEN total_activities = 0 THEN 0.0
-    ELSE ROUND(IEEE_DIVIDE(yt_passing_activities, total_activities) * 100, 1)
+    ELSE ROUND(IEEE_DIVIDE(yt_passing_activities, total_activities), 4)
   END AS adoption_pct,
   'Set up conversion tracking for YouTube using YouTube-enabled Floodlight activities' AS steps_to_fix,
   'https://support.google.com/displayvideo/answer/12123563' AS steps_to_fix_url
@@ -157,7 +188,7 @@ SELECT
   partner_id,
   CURRENT_DATE() AS audit_date,
   2 AS check_order,
-  '2. Dynamic Tagging' AS required_check,
+  'Dynamic Tagging' AS required_check,
   CASE 
     WHEN total_activities = 0 THEN '❌ Action Required'
     WHEN dynamic_passing_activities = total_activities THEN '✅ Pass'
@@ -176,7 +207,7 @@ SELECT
   END AS details,
   CASE 
     WHEN total_activities = 0 THEN 0.0
-    ELSE ROUND(IEEE_DIVIDE(dynamic_passing_activities, total_activities) * 100, 1)
+    ELSE ROUND(IEEE_DIVIDE(dynamic_passing_activities, total_activities), 4)
   END AS adoption_pct,
   'Enable dynamic tagging in Floodlight group / configuration' AS steps_to_fix,
   'https://support.google.com/campaignmanager/answer/2823194' AS steps_to_fix_url
@@ -190,7 +221,7 @@ SELECT
   partner_id,
   CURRENT_DATE() AS audit_date,
   3 AS check_order,
-  '3. Enhanced Conversions' AS required_check,
+  'Enhanced Conversions' AS required_check,
   CASE 
     WHEN total_activities = 0 THEN '❌ Action Required'
     WHEN ec_passing_activities = total_activities THEN '✅ Pass'
@@ -209,10 +240,10 @@ SELECT
   END AS details,
   CASE 
     WHEN total_activities = 0 THEN 0.0
-    ELSE ROUND(IEEE_DIVIDE(ec_passing_activities, total_activities) * 100, 1)
+    ELSE ROUND(IEEE_DIVIDE(ec_passing_activities, total_activities), 4)
   END AS adoption_pct,
   'Enable Enhanced Conversions for Floodlight at advertiser & activity levels' AS steps_to_fix,
-  'https://support.google.com/campaignmanager/answer/13019808' AS steps_to_fix_url
+  'https://support.google.com/campaignmanager/answer/14217426' AS steps_to_fix_url
 FROM adv_base
 
 UNION ALL
@@ -223,7 +254,7 @@ SELECT
   partner_id,
   CURRENT_DATE() AS audit_date,
   4 AS check_order,
-  '4. Data Driven Attribution (DDA)' AS required_check,
+  'Data Driven Attribution (DDA)' AS required_check,
   CASE 
     WHEN dda_status = '✅ DDA Active' THEN '✅ Pass'
     ELSE '🟡 Last Interaction'
@@ -236,7 +267,7 @@ SELECT
     WHEN dda_status = '✅ DDA Active' THEN 'Smart Bidding / DDA applied on line items'
     ELSE 'Line items using standard / last-click attribution'
   END AS details,
-  CASE WHEN dda_status = '✅ DDA Active' THEN 100.0 ELSE 0.0 END AS adoption_pct,
+  CASE WHEN dda_status = '✅ DDA Active' THEN 1.0 ELSE 0.0 END AS adoption_pct,
   'Create DDA model in CM360 and apply to DV360 line items' AS steps_to_fix,
   'https://support.google.com/campaignmanager/answer/6361280' AS steps_to_fix_url
 FROM adv_base
@@ -249,7 +280,7 @@ SELECT
   partner_id,
   CURRENT_DATE() AS audit_date,
   5 AS check_order,
-  '5. Google Tag Gateway (GTG) Readiness' AS required_check,
+  'Google Tag Gateway (GTG) Readiness' AS required_check,
   CASE 
     WHEN gtg_status = '🟢 Ready' THEN '🟢 Ready'
     ELSE '🔴 Needs Upgrade'
@@ -259,10 +290,10 @@ SELECT
     ELSE 'FAIL'
   END AS status_code,
   CASE 
-    WHEN gtg_status = '🟢 Ready' THEN 'Modern tag deployed; check telemetry ping % at go/fermat'
+    WHEN gtg_status = '🟢 Ready' THEN 'Modern Google Tag deployed and ready for First-Party Mode'
     ELSE 'Legacy tag detected; migrate to modern Google Tag container'
   END AS details,
-  CASE WHEN gtg_status = '🟢 Ready' THEN 100.0 ELSE 0.0 END AS adoption_pct,
-  'Deploy Google Tag Gateway / First-Party Mode container (internal telemetry: go/fermat)' AS steps_to_fix,
-  'https://support.google.com/tagmanager/answer/14800548' AS steps_to_fix_url
+  CASE WHEN gtg_status = '🟢 Ready' THEN 1.0 ELSE 0.0 END AS adoption_pct,
+  'Deploy Google Tag Gateway / First-Party Mode container to protect measurement' AS steps_to_fix,
+  'https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide' AS steps_to_fix_url
 FROM adv_base;

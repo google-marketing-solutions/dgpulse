@@ -223,6 +223,9 @@ gcloud functions deploy dv360-dgpulse \
   --entry-point=fetchAdvertisers \
   --trigger-http \
   --no-allow-unauthenticated \
+  --cpu=1 \
+  --memory=1Gi \
+  --timeout=540s \
   --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},PARTNER_ID=${PARTNER_ID},TOPIC_NAME=${TOPIC_NAME}
 
 # 6. Get the service URL
@@ -248,6 +251,9 @@ gcloud functions deploy dv360-dgpulse-process-advertiser \
   --source=. \
   --entry-point=processAdvertiser \
   --trigger-topic=${TOPIC_NAME} \
+  --cpu=1 \
+  --memory=1Gi \
+  --timeout=540s \
   --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID},YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
 
 # 7. Create Cloud Scheduler job
