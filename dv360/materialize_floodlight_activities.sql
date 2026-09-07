@@ -1,10 +1,19 @@
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_floodlight_activities_audit` AS
-WITH latest_advertisers AS (
+WITH dg_advertisers AS (
+  SELECT DISTINCT CAST(advertiserId AS STRING) AS advertiserId
+  FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  WHERE lineItemType LIKE '%DEMAND_GEN%'
+),
+latest_advertisers AS (
   SELECT 
     advertiserId,
     ANY_VALUE(displayName) AS advertiser_name,
     ANY_VALUE(partnerId) AS partner_id
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
+  WHERE (
+    (SELECT COUNT(1) FROM dg_advertisers) = 0 
+    OR advertiserId IN (SELECT advertiserId FROM dg_advertisers)
+  )
   GROUP BY advertiserId
 ),
 latest_activities AS (
@@ -27,6 +36,7 @@ latest_activities AS (
     ANY_VALUE(youtube_enabled) AS youtube_enabled,
     MAX(auditDate) AS auditDate
   FROM `__PROJECT_ID__.__DATASET_ID__.floodlight_activities`
+  WHERE advertiserId IN (SELECT advertiserId FROM latest_advertisers)
   GROUP BY advertiserId, floodlightActivityId
 ),
 latest_settings AS (
@@ -38,6 +48,7 @@ latest_settings AS (
     ANY_VALUE(dda_status) AS dda_status,
     ANY_VALUE(web_tag_type) AS web_tag_type
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
+  WHERE advertiserId IN (SELECT advertiserId FROM latest_advertisers)
   GROUP BY advertiserId
 )
 SELECT 
@@ -102,14 +113,19 @@ SELECT
     ELSE '🔴 Needs Upgrade' 
   END AS cls_gtg_status
 FROM latest_activities fa
-LEFT JOIN latest_advertisers adv
+INNER JOIN latest_advertisers adv
   ON fa.advertiserId = adv.advertiserId
 LEFT JOIN latest_settings sett
   ON fa.advertiserId = sett.advertiserId;
 
 -- Executive Summary Pre-flight Checklist Table for Conversion Lift Studies (CLS)
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_cls_preflight_audit` AS
-WITH latest_settings AS (
+WITH dg_advertisers AS (
+  SELECT DISTINCT CAST(advertiserId AS STRING) AS advertiserId
+  FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
+  WHERE lineItemType LIKE '%DEMAND_GEN%'
+),
+latest_settings AS (
   SELECT 
     advertiserId,
     ANY_VALUE(gtg_status) AS gtg_status,
@@ -123,6 +139,10 @@ latest_advertisers AS (
     ANY_VALUE(displayName) AS advertiser_name,
     ANY_VALUE(partnerId) AS partner_id
   FROM `__PROJECT_ID__.__DATASET_ID__.advertisers`
+  WHERE (
+    (SELECT COUNT(1) FROM dg_advertisers) = 0 
+    OR advertiserId IN (SELECT advertiserId FROM dg_advertisers)
+  )
   GROUP BY advertiserId
 ),
 adv_base AS (
