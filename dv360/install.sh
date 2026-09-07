@@ -8,7 +8,27 @@ echo "------------------------------------------------"
 echo "DV360 DG Pulse - Installation Script"
 echo "------------------------------------------------"
 
-# 1. Ask for user inputs (or use env vars if provided)
+# Auto-detect existing configuration from deployed Cloud Function if env vars are empty
+if [ -z "$PARTNER_ID" ] || [ -z "$REFRESH_TOKEN" ]; then
+  EXISTING_ENV=$(gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null || true)
+  if [ -n "$EXISTING_ENV" ]; then
+    if [ -z "$PARTNER_ID" ]; then
+      DETECTED_PARTNER=$(echo "$EXISTING_ENV" | grep -oP '"PARTNER_ID":\s*"\K[^"]+' || true)
+      if [ -n "$DETECTED_PARTNER" ]; then
+        PARTNER_ID="$DETECTED_PARTNER"
+        echo "Detected existing Partner ID from deployed Cloud Function: ${PARTNER_ID}"
+      fi
+    fi
+    if [ -z "$REFRESH_TOKEN" ]; then
+      DETECTED_TOKEN=$(echo "$EXISTING_ENV" | grep -oP '"REFRESH_TOKEN":\s*"\K[^"]+' || true)
+      if [ -n "$DETECTED_TOKEN" ]; then
+        REFRESH_TOKEN="$DETECTED_TOKEN"
+        echo "Detected existing Refresh Token from deployed Cloud Function."
+      fi
+    fi
+  fi
+fi
+
 if [ -z "$PARTNER_ID" ]; then
   read -p "Enter Partner ID: " PARTNER_ID
 fi
