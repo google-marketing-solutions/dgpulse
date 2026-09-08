@@ -25,7 +25,6 @@ latest_activities AS (
     ANY_VALUE(activityName) AS activityName,
     ANY_VALUE(servingStatus) AS servingStatus,
     ANY_VALUE(webTagType) AS webTagType,
-    ANY_VALUE(tagModernizationStatus) AS tagModernizationStatus,
     ANY_VALUE(clickLookbackDays) AS clickLookbackDays,
     ANY_VALUE(impressionLookbackDays) AS impressionLookbackDays,
     ANY_VALUE(attributionLookbackStatus) AS attributionLookbackStatus,
@@ -61,11 +60,6 @@ SELECT
   COALESCE(adv.advertiser_name, fa.advertiserId) AS account_name,
   fa.servingStatus AS serving_status,
   fa.webTagType AS web_tag_type,
-  CASE 
-    WHEN fa.tagModernizationStatus = 'MODERN_GOOGLE_TAG' OR fa.webTagType = 'WEB_TAG_TYPE_DYNAMIC' THEN '🟢 Modern Google Tag'
-    WHEN fa.tagModernizationStatus = 'LEGACY_IMAGE_TAG' OR fa.webTagType = 'WEB_TAG_TYPE_IMAGE' THEN '🔴 Legacy Image Tag'
-    ELSE '🔴 Legacy Image Tag'
-  END AS tag_modernization_status,
   fa.clickLookbackDays AS click_lookback_days,
   fa.impressionLookbackDays AS impression_lookback_days,
   fa.attributionLookbackStatus AS attribution_lookback_status,
@@ -88,7 +82,7 @@ SELECT
     ELSE '❌ Needs Setup' 
   END AS cls_youtube_status,
   CASE 
-    WHEN fa.webTagType = 'WEB_TAG_TYPE_DYNAMIC' OR fa.tagModernizationStatus = 'MODERN_GOOGLE_TAG' THEN '✅ Dynamic Tag' 
+    WHEN fa.webTagType = 'WEB_TAG_TYPE_DYNAMIC' THEN '✅ Dynamic Tag' 
     ELSE '❌ Image Tag' 
   END AS cls_dynamic_tag_status,
   CASE 

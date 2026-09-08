@@ -468,7 +468,7 @@ exports.processAdvertiser = async (event, context) => {
                     ''
                 );
 
-                let tagModStatus = 'LEGACY_IMAGE_TAG';
+                let effectiveWebTagType = webTagType;
                 if (
                     actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_GLOBAL_SITE_TAG' ||
                     actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_IFRAME_TAG' ||
@@ -476,15 +476,12 @@ exports.processAdvertiser = async (event, context) => {
                     isGa ||
                     hasActEc
                 ) {
-                    tagModStatus = 'MODERN_GOOGLE_TAG';
+                    effectiveWebTagType = 'WEB_TAG_TYPE_DYNAMIC';
                 } else if (actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_IMAGE_TAG' || webTagType === 'WEB_TAG_TYPE_IMAGE') {
-                    tagModStatus = 'LEGACY_IMAGE_TAG';
+                    effectiveWebTagType = 'WEB_TAG_TYPE_IMAGE';
                 }
 
-                let effectiveWebTagType = webTagType;
-                if (effectiveWebTagType === 'WEB_TAG_TYPE_NONE' && (isGa || tagModStatus === 'MODERN_GOOGLE_TAG')) {
-                    effectiveWebTagType = 'WEB_TAG_TYPE_DYNAMIC';
-                }
+                const isDynamicTag = (effectiveWebTagType === 'WEB_TAG_TYPE_DYNAMIC');
 
                 let attrStatus = 'STANDARD_WINDOW';
                 if (clickDays === 0 || impressionDays === 0) {
@@ -498,10 +495,10 @@ exports.processAdvertiser = async (event, context) => {
 
                 // YouTube Enabled Check per activity
                 const isYtTracked = youtubeTrackedActivityIds.has(actIdStr);
-                const isYtEnabled = isYtTracked || (floodlightOptEnabled && tagModStatus === 'MODERN_GOOGLE_TAG');
+                const isYtEnabled = isYtTracked || (floodlightOptEnabled && isDynamicTag);
 
                 // Enhanced Conversions Check per activity
-                const isActEcEnabled = hasActEc || (ecEnabled && tagModStatus === 'MODERN_GOOGLE_TAG');
+                const isActEcEnabled = hasActEc || (ecEnabled && isDynamicTag);
 
                 return {
                     floodlightActivityId: actIdStr,
@@ -511,7 +508,6 @@ exports.processAdvertiser = async (event, context) => {
                     activityName: act.displayName || actIdStr,
                     servingStatus: act.servingStatus || 'UNKNOWN',
                     webTagType: effectiveWebTagType,
-                    tagModernizationStatus: tagModStatus,
                     clickLookbackDays: clickDays,
                     impressionLookbackDays: impressionDays,
                     attributionLookbackStatus: attrStatus,

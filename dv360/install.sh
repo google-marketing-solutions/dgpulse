@@ -209,7 +209,7 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.video_aspect_ratio \
 
 echo "Creating BigQuery table: ${DATASET_ID}.floodlight_activities..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.floodlight_activities \
-  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,tagModernizationStatus:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,ec_enabled:STRING,youtube_enabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
+  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,ec_enabled:STRING,youtube_enabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
 bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS ec_enabled STRING, ADD COLUMN IF NOT EXISTS youtube_enabled STRING;" 2>/dev/null || true
 
 
