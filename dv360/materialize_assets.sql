@@ -125,44 +125,6 @@ unpacked_assets AS (
   FROM dg_approved_ads ad
   WHERE ad.adType = 'DEMAND_GEN_IMAGE_AD' AND COALESCE(ad.portrait_images_count, 0) > 0
 ),
-line_item_asset_weights AS (
-  SELECT lineItemId, COUNT(*) AS asset_count
-  FROM unpacked_assets
-  GROUP BY lineItemId
-),
-line_item_stats AS (
-  SELECT 
-    COALESCE(Report_Day, CURRENT_DATE()) AS date,
-    CAST(Line_Item_Id AS STRING) AS line_item_id,
-    CAST(Media_Plan_Id AS STRING) AS campaign_id,
-    CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    CAST(Partner_Id AS STRING) AS partner_id,
-    MAX(NULLIF(Device_Type, '')) AS device_type,
-    MAX(NULLIF(Inventory_Source, '')) AS inventory_source,
-    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
-    SUM(Impressions) AS impressions,
-    SUM(Clicks) AS clicks,
-    SUM(Revenue) AS cost,
-    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS cost_usd,
-    SUM(Total_Conversions) AS conversions,
-    SUM(COALESCE(Active_View_Viewable_Impressions, 0)) AS active_view_viewable_impressions,
-    SUM(COALESCE(Active_View_Measurable_Impressions, 0)) AS active_view_measurable_impressions,
-    SUM(COALESCE(Active_View_Eligible_Impressions, 0)) AS active_view_eligible_impressions,
-    SUM(COALESCE(TrueView_Views, 0)) AS trueview_views,
-    SUM(COALESCE(Video_Plays, 0)) AS video_plays,
-    SUM(COALESCE(Video_First_Quartile_Completes, 0)) AS video_first_quartile_completes,
-    SUM(COALESCE(Video_Midpoints, 0)) AS video_midpoints,
-    SUM(COALESCE(Video_Third_Quartile_Completes, 0)) AS video_third_quartile_completes,
-    SUM(COALESCE(Video_Completions, 0)) AS video_completions,
-    SUM(COALESCE(Post_Click_Conversions, 0)) AS post_click_conversions,
-    SUM(COALESCE(Post_View_Conversions, 0)) AS post_view_conversions,
-    SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
-    SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
-  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
-  WHERE Line_Item_Id IS NOT NULL 
-    AND Line_Item_Id IN (SELECT DISTINCT CAST(lineItemId AS INT64) FROM demand_gen_line_items)
-  GROUP BY 1, 2, 3, 4, 5
-),
 latest_campaigns AS (
   SELECT 
     campaignId,
@@ -194,7 +156,7 @@ latest_ios AS (
   GROUP BY 1
 )
 SELECT 
-  COALESCE(lis.date, CURRENT_DATE()) AS date,
+  CURRENT_DATE() AS date,
   a.asset_id,
   a.adGroupAdId AS ad_group_ad_id,
   a.video_id,
@@ -205,78 +167,37 @@ SELECT
   a.image_url,
   a.hosting_source,
   a.entity_status,
+  a.approval_status,
   a.insertion_order_id,
   COALESCE(io.insertion_order_name, a.insertion_order_id, 'N/A') AS insertion_order_name,
   a.lineItemId AS line_item_id,
   COALESCE(a.line_item_name, 'N/A') AS line_item_name,
-  lis.device_type,
-  lis.inventory_source,
   a.advertiser_id,
   a.advertiser_id AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, a.advertiser_id) AS account_name,
-  COALESCE(a.campaign_id, lis.campaign_id, 'N/A') AS campaign_id,
-  COALESCE(cmp.displayName, a.campaign_id, lis.campaign_id, 'N/A') AS campaign_name,
-  COALESCE(lis.currency_code, NULLIF(adv.currency_code, ''), 'USD') AS currency_code,
-  COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
+  COALESCE(a.campaign_id, 'N/A') AS campaign_id,
+  COALESCE(cmp.displayName, a.campaign_id, 'N/A') AS campaign_name,
+  COALESCE(NULLIF(adv.currency_code, ''), 'USD') AS currency_code,
+  COALESCE(adv.partnerId, '__PARTNER_ID__') AS partner_id,
 
   -- Precomputed Deep Links
   CASE 
     WHEN a.video_id IS NOT NULL AND a.video_id != '' 
       THEN CONCAT('https://www.youtube.com/watch?v=', a.video_id)
-    ELSE CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups')
+    ELSE CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups')
   END AS asset_link,
-  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups') AS dv360_url,
-  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(lis.partner_id, adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, lis.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups') AS line_item_link,
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups') AS dv360_url,
+  CONCAT('https://displayvideo.google.com/ng_nav/p/', COALESCE(adv.partnerId, '__PARTNER_ID__'), '/a/', a.advertiser_id, '/c/', COALESCE(a.campaign_id, '0'), '/io/', COALESCE(a.insertion_order_id, '0'), '/li/', a.lineItemId, '/adgroups') AS line_item_link,
   CASE 
     WHEN a.video_id IS NOT NULL AND a.video_id != '' 
       THEN CONCAT('https://www.youtube.com/watch?v=', a.video_id)
     ELSE NULL 
-  END AS youtube_url,
-
-  -- Delivery & Cost (Proportionally attributed by asset weight within line item)
-  COALESCE(SAFE_DIVIDE(lis.impressions, w.asset_count), 0) AS impressions,
-  COALESCE(SAFE_DIVIDE(lis.clicks, w.asset_count), 0) AS clicks,
-  COALESCE(SAFE_DIVIDE(lis.cost, w.asset_count), 0) AS cost,
-  COALESCE(SAFE_DIVIDE(lis.cost_usd, w.asset_count), 0) AS cost_usd,
-  SAFE_DIVIDE(lis.clicks, NULLIF(lis.impressions, 0)) AS ctr,
-  SAFE_DIVIDE(lis.cost, NULLIF(lis.clicks, 0)) AS cpc,
-  SAFE_DIVIDE(lis.cost_usd, NULLIF(lis.clicks, 0)) AS cpc_usd,
-  SAFE_DIVIDE(lis.cost * 1000, NULLIF(lis.impressions, 0)) AS cpm,
-  SAFE_DIVIDE(lis.cost_usd * 1000, NULLIF(lis.impressions, 0)) AS cpm_usd,
-
-  -- Media Quality & Viewability
-  COALESCE(SAFE_DIVIDE(lis.active_view_viewable_impressions, w.asset_count), 0) AS active_view_viewable_impressions,
-  COALESCE(SAFE_DIVIDE(lis.active_view_measurable_impressions, w.asset_count), 0) AS active_view_measurable_impressions,
-  COALESCE(SAFE_DIVIDE(lis.active_view_eligible_impressions, w.asset_count), 0) AS active_view_eligible_impressions,
-  SAFE_DIVIDE(lis.active_view_viewable_impressions, NULLIF(lis.active_view_measurable_impressions, 0)) AS viewability_rate,
-  SAFE_DIVIDE(lis.active_view_measurable_impressions, NULLIF(lis.active_view_eligible_impressions, 0)) AS measurable_rate,
-
-  -- Video & YouTube Delivery
-  COALESCE(SAFE_DIVIDE(lis.trueview_views, w.asset_count), 0) AS trueview_views,
-  SAFE_DIVIDE(lis.trueview_views, NULLIF(lis.impressions, 0)) AS vtr,
-  COALESCE(SAFE_DIVIDE(lis.video_plays, w.asset_count), 0) AS video_plays,
-  COALESCE(SAFE_DIVIDE(lis.video_first_quartile_completes, w.asset_count), 0) AS video_first_quartile_completes,
-  COALESCE(SAFE_DIVIDE(lis.video_midpoints, w.asset_count), 0) AS video_midpoints,
-  COALESCE(SAFE_DIVIDE(lis.video_third_quartile_completes, w.asset_count), 0) AS video_third_quartile_completes,
-  COALESCE(SAFE_DIVIDE(lis.video_completions, w.asset_count), 0) AS video_completions,
-  SAFE_DIVIDE(lis.video_completions, NULLIF(lis.video_plays, 0)) AS video_completion_rate,
-
-  -- Attribution Breakdown
-  COALESCE(SAFE_DIVIDE(lis.conversions, w.asset_count), 0) AS conversions,
-  COALESCE(SAFE_DIVIDE(lis.post_click_conversions, w.asset_count), 0) AS post_click_conversions,
-  COALESCE(SAFE_DIVIDE(lis.post_view_conversions, w.asset_count), 0) AS post_view_conversions,
-  COALESCE(SAFE_DIVIDE(lis.post_click_revenue, w.asset_count), 0) AS post_click_revenue,
-  COALESCE(SAFE_DIVIDE(lis.post_view_revenue, w.asset_count), 0) AS post_view_revenue,
-  SAFE_DIVIDE(lis.post_click_conversions, NULLIF(lis.clicks, 0)) AS post_click_conv_rate
+  END AS youtube_url
 FROM unpacked_assets a
-JOIN line_item_asset_weights w 
-  ON a.lineItemId = w.lineItemId
-LEFT JOIN line_item_stats lis
-  ON a.lineItemId = lis.line_item_id
 LEFT JOIN latest_ios io
   ON a.insertion_order_id = io.insertion_order_id
 LEFT JOIN latest_campaigns cmp
-  ON COALESCE(a.campaign_id, lis.campaign_id) = cmp.campaignId
+  ON a.campaign_id = cmp.campaignId
 LEFT JOIN latest_advertisers adv
   ON a.advertiser_id = adv.advertiserId
 LEFT JOIN latest_settings sett
