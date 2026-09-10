@@ -1571,8 +1571,8 @@ SELECT * FROM UNNEST([
     '✅ Pass' AS status,
     'PASS' AS status_code,
     '1 of 1 activities enabled' AS details,
-    'Set up conversion tracking for YouTube using YouTube-enabled Floodlight activities' AS steps_to_fix,
-    'https://support.google.com/displayvideo/answer/12123563' AS steps_to_fix_url
+    CAST(NULL AS STRING) AS steps_to_fix,
+    CAST(NULL AS STRING) AS steps_to_fix_url
   ),
   STRUCT(
     'adv_8801' AS advertiser_id,
@@ -1584,8 +1584,8 @@ SELECT * FROM UNNEST([
     '✅ Pass' AS status,
     'PASS' AS status_code,
     '1 of 1 dynamic tags' AS details,
-    'Enable dynamic tagging in Floodlight group / configuration' AS steps_to_fix,
-    'https://support.google.com/campaignmanager/answer/2823194' AS steps_to_fix_url
+    CAST(NULL AS STRING) AS steps_to_fix,
+    CAST(NULL AS STRING) AS steps_to_fix_url
   ),
   STRUCT(
     'adv_8801' AS advertiser_id,
@@ -1597,8 +1597,8 @@ SELECT * FROM UNNEST([
     '✅ Pass' AS status,
     'PASS' AS status_code,
     '1 of 1 activities with EC' AS details,
-    'Enable Enhanced Conversions for Floodlight at advertiser & activity levels' AS steps_to_fix,
-    'https://support.google.com/campaignmanager/answer/14217426' AS steps_to_fix_url
+    CAST(NULL AS STRING) AS steps_to_fix,
+    CAST(NULL AS STRING) AS steps_to_fix_url
   ),
   STRUCT(
     'adv_8801' AS advertiser_id,
@@ -1610,8 +1610,8 @@ SELECT * FROM UNNEST([
     '✅ Pass' AS status,
     'PASS' AS status_code,
     'Smart Bidding / DDA applied on line items' AS details,
-    'Create DDA model in CM360 and apply to DV360 line items' AS steps_to_fix,
-    'https://support.google.com/campaignmanager/answer/6361280' AS steps_to_fix_url
+    CAST(NULL AS STRING) AS steps_to_fix,
+    CAST(NULL AS STRING) AS steps_to_fix_url
   ),
   STRUCT(
     'adv_8801' AS advertiser_id,
@@ -1623,8 +1623,8 @@ SELECT * FROM UNNEST([
     '🟢 Ready' AS status,
     'PASS' AS status_code,
     'Modern Google Tag deployed and ready for First-Party Mode' AS details,
-    'Deploy Google Tag Gateway / First-Party Mode container to protect measurement' AS steps_to_fix,
-    'https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide' AS steps_to_fix_url
+    CAST(NULL AS STRING) AS steps_to_fix,
+    CAST(NULL AS STRING) AS steps_to_fix_url
   ),
 
   -- OmniTech Solutions (Needs Upgrade / Partial)
