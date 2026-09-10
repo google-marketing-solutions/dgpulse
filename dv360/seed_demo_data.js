@@ -4,13 +4,41 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const { BigQuery } = require('@google-cloud/bigquery');
 
-const bigquery = new BigQuery();
+async function resolveProjectId(argProject) {
+  if (argProject && argProject !== '{{projectId}}') return argProject;
+  if (process.env.PROJECT_ID && process.env.PROJECT_ID !== '{{projectId}}') return process.env.PROJECT_ID;
+  if (process.env.GOOGLE_CLOUD_PROJECT && process.env.GOOGLE_CLOUD_PROJECT !== '{{projectId}}') return process.env.GOOGLE_CLOUD_PROJECT;
+
+  // Try gcloud config in Cloud Shell / local terminal
+  try {
+    const gcloudProj = execSync('gcloud config get-value project 2>/dev/null', { encoding: 'utf8' }).trim();
+    if (gcloudProj && gcloudProj !== '(unset)' && !gcloudProj.includes('ERROR')) {
+      return gcloudProj;
+    }
+  } catch (e) {}
+
+  // Try GoogleAuth from googleapis / google-auth-library
+  try {
+    const { GoogleAuth } = require('google-auth-library');
+    const auth = new GoogleAuth();
+    const authProj = await auth.getProjectId();
+    if (authProj && authProj !== '{{projectId}}') {
+      return authProj;
+    }
+  } catch (e) {}
+
+  throw new Error(
+    'Could not resolve Google Cloud project ID. Please set PROJECT_ID (e.g. PROJECT_ID=my-project npm run seed:demo).'
+  );
+}
 
 async function main() {
   const datasetId = process.argv[2] || process.env.DEMO_DATASET_ID || 'dv360_dgpulse_demo';
-  const projectId = process.argv[3] || process.env.PROJECT_ID || bigquery.projectId || await bigquery.getProjectId();
+  const projectId = await resolveProjectId(process.argv[3]);
+  const bigquery = new BigQuery({ projectId });
 
   console.log(`=================================================================`);
   console.log(`🚀 Seeding DV360 DGPulse Demo Dataset`);
@@ -50,8 +78,8 @@ async function main() {
 
   for (let i = 0; i < statements.length; i++) {
     const stmt = statements[i];
-    const match = stmt.match(/CREATE OR REPLACE TABLE `[^`]+`\.([a-zA-Z0-9_]+)/i);
-    const tableName = match ? match[1] : `Table ${i + 1}`;
+    const match = stmt.match(/CREATE OR REPLACE TABLE\s+`?([a-zA-Z0-9_.-]+)`?/i);
+    const tableName = match ? match[1].split('.').pop() : `Table ${i + 1}`;
     process.stdout.write(`Seeding [${i + 1}/${statements.length}] ${tableName}... `);
 
     try {

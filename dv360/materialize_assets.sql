@@ -154,6 +154,20 @@ latest_ios AS (
     MAX(NULLIF(displayName, '')) AS insertion_order_name
   FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
   GROUP BY 1
+),
+li_perf AS (
+  SELECT 
+    CAST(Line_Item_Id AS STRING) AS line_item_id,
+    SUM(Impressions) AS impressions,
+    SUM(Clicks) AS clicks,
+    SUM(Revenue) AS cost,
+    SUM(Total_Conversions) AS conversions,
+    SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) AS ctr,
+    SAFE_DIVIDE(SUM(Revenue), SUM(Clicks)) AS cpc,
+    SAFE_DIVIDE(SUM(Revenue) * 1000, SUM(Impressions)) AS cpm
+  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_performance`
+  WHERE Line_Item_Id IS NOT NULL AND Line_Item_Id > 0
+  GROUP BY 1
 )
 SELECT 
   CURRENT_DATE() AS date,
@@ -180,6 +194,15 @@ SELECT
   COALESCE(NULLIF(adv.currency_code, ''), 'USD') AS currency_code,
   COALESCE(adv.partnerId, '__PARTNER_ID__') AS partner_id,
 
+  -- Attributed Line Item Performance Metrics
+  COALESCE(perf.impressions, 0) AS impressions,
+  COALESCE(perf.clicks, 0) AS clicks,
+  COALESCE(perf.cost, 0.0) AS cost,
+  COALESCE(perf.conversions, 0.0) AS conversions,
+  COALESCE(perf.ctr, 0.0) AS ctr,
+  COALESCE(perf.cpc, 0.0) AS cpc,
+  COALESCE(perf.cpm, 0.0) AS cpm,
+
   -- Precomputed Deep Links
   CASE 
     WHEN a.video_id IS NOT NULL AND a.video_id != '' 
@@ -201,4 +224,6 @@ LEFT JOIN latest_campaigns cmp
 LEFT JOIN latest_advertisers adv
   ON a.advertiser_id = adv.advertiserId
 LEFT JOIN latest_settings sett
-  ON a.advertiser_id = sett.advertiserId;
+  ON a.advertiser_id = sett.advertiserId
+LEFT JOIN li_perf perf
+  ON a.lineItemId = perf.line_item_id;
