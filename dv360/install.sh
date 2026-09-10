@@ -295,7 +295,7 @@ export SERVICE_ACCOUNT="${SERVICE_ACCOUNT}"
 export LOCATION="${REGION}"
 node setup_scheduled_queries.js || echo "Warning: Scheduled query update via node helper encountered a warning."
 
-LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=5e126b6a-33fc-4d0a-80cb-7ce6bc990001\
+LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=10b92610-0c4f-445d-8f72-f5616e2bee64\
 &ds.campaign_performance.connector=bigQuery&ds.campaign_performance.projectId=${PROJECT_ID}&ds.campaign_performance.datasetId=${DATASET_ID}&ds.campaign_performance.type=TABLE&ds.campaign_performance.tableId=final_campaign_performance&ds.campaign_performance.refreshFields=false\
 &ds.line_items_performance.connector=bigQuery&ds.line_items_performance.projectId=${PROJECT_ID}&ds.line_items_performance.datasetId=${DATASET_ID}&ds.line_items_performance.type=TABLE&ds.line_items_performance.tableId=final_line_items_performance&ds.line_items_performance.refreshFields=false\
 &ds.insertion_orders_performance.connector=bigQuery&ds.insertion_orders_performance.projectId=${PROJECT_ID}&ds.insertion_orders_performance.datasetId=${DATASET_ID}&ds.insertion_orders_performance.type=TABLE&ds.insertion_orders_performance.tableId=final_insertion_orders_performance&ds.insertion_orders_performance.refreshFields=false\
@@ -303,7 +303,7 @@ LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=5e126b6
 &ds.creative_variety.connector=bigQuery&ds.creative_variety.projectId=${PROJECT_ID}&ds.creative_variety.datasetId=${DATASET_ID}&ds.creative_variety.type=TABLE&ds.creative_variety.tableId=final_creative_variety&ds.creative_variety.refreshFields=false\
 &ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${PROJECT_ID}&ds.audiences_performance.datasetId=${DATASET_ID}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false\
 &ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${PROJECT_ID}&ds.floodlight_audit.datasetId=${DATASET_ID}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false\
-&ds.cls_preflight_audit.connector=bigQuery&ds.cls_preflight_audit.projectId=${PROJECT_ID}&ds.cls_preflight_audit.datasetId=${DATASET_ID}&ds.cls_preflight_audit.type=TABLE&ds.cls_preflight_audit.tableId=final_cls_preflight_audit&ds.cls_preflight_audit.refreshFields=false"
+&ds.floodlight_preflight_audit.connector=bigQuery&ds.floodlight_preflight_audit.projectId=${PROJECT_ID}&ds.floodlight_preflight_audit.datasetId=${DATASET_ID}&ds.floodlight_preflight_audit.type=TABLE&ds.floodlight_preflight_audit.tableId=final_cls_preflight_audit&ds.floodlight_preflight_audit.refreshFields=false"
 
 echo "------------------------------------------------"
 echo "🎉 Installation & Deployment Complete!"
@@ -313,7 +313,7 @@ echo ""
 echo "================================================================="
 echo "📊 One-Click Looker Studio Dashboard Connection:"
 echo "Click the link below to automatically clone the report template and"
-echo "connect all 5 BigQuery tables for Partner ${PARTNER_ID}:"
+echo "connect all 8 BigQuery tables for Partner ${PARTNER_ID}:"
 echo ""
 echo "${LOOKER_LINK}"
 echo "================================================================="

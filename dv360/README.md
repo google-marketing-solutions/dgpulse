@@ -107,14 +107,14 @@ The script automatically:
 * Sets up BigQuery dataset (`dv360_dgpulse`) and all 6 base schema tables.
 * Deploys the extraction and worker Cloud Functions (`dv360-dgpulse`, `dv360-dgpulse-process-advertiser`).
 * Configures Cloud Scheduler for daily execution at 6:00 AM.
-* Deploys daily BigQuery scheduled queries for all 5 materialized analytics views.
+* Deploys daily BigQuery scheduled queries for all 8 materialized analytics views.
 * **Prints the One-Click Looker Studio Linking API URL**.
 
 ---
 
 ## Looker Studio Linking API & Data Source Aliases
 
-The Looker Studio dashboard template ([Report Template ID: `5e126b6a-33fc-4d0a-80cb-7ce6bc990001`](https://datastudio.google.com/c/reporting/5e126b6a-33fc-4d0a-80cb-7ce6bc990001)) connects via the Google Data Studio Linking API. 
+The Looker Studio dashboard template ([Report Template ID: `10b92610-0c4f-445d-8f72-f5616e2bee64`](https://datastudio.google.com/c/reporting/10b92610-0c4f-445d-8f72-f5616e2bee64)) connects via the Google Data Studio Linking API. 
 
 Each data source has a pre-configured alias that automatically binds to your project's BigQuery tables:
 
@@ -124,8 +124,10 @@ Each data source has a pre-configured alias that automatically binds to your pro
 | **DV360 Line Items Performance** | `line_items_performance` | `final_line_items_performance` |
 | **DV360 Insertion Orders Performance** | `insertion_orders_performance` | `final_insertion_orders_performance` |
 | **DV360 Asset Performance** | `assets_performance` | `final_assets_performance` |
+| **DV360 Creative Variety** | `creative_variety` | `final_creative_variety` |
+| **DV360 Audiences Performance** | `audiences_performance` | `final_audiences_performance` |
 | **DV360 Floodlight Activities Audit** | `floodlight_audit` | `final_floodlight_activities_audit` |
-| **DV360 CLS Pre-Flight Audit** | `cls_preflight_audit` | `final_cls_preflight_audit` |
+| **DV360 Floodlight Pre-Flight Audit** | `floodlight_preflight_audit` | `final_cls_preflight_audit` |
 
 ---
 
@@ -138,7 +140,22 @@ gcloud scheduler jobs run dv360-dgpulse-daily-sync --location=us-central1
 
 ### Re-run Materialization Queries Manually
 ```bash
-for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_floodlight_activities.sql; do
+for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql materialize_floodlight_activities.sql; do
   bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/$(gcloud config get-value project)/g" | sed "s/__DATASET_ID__/dv360_dgpulse/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")"
 done
 ```
+
+---
+
+## Demo Dataset & Walkthroughs
+
+To generate a synthetic demo dataset showcasing all dashboard scenarios (all 9 pacing alerts, healthy vs. legacy floodlight activities, conversion lift readiness, and creative varieties) without requiring active live campaigns:
+
+```bash
+# Populate synthetic demo tables in dataset dv360_dgpulse_demo:
+npm run seed:demo
+# Or specify a custom dataset/project:
+node seed_demo_data.js <my_demo_dataset> <my_project_id>
+```
+The script will output a pre-configured One-Click Looker Studio linking URL that connects directly to the demo dataset.
+

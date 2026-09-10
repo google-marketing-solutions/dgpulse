@@ -5,7 +5,8 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "seed:demo": "node seed_demo_data.js"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.7.1",
