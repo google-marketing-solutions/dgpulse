@@ -114,7 +114,7 @@ The script automatically:
 
 ## Looker Studio Linking API & Data Source Aliases
 
-The Looker Studio dashboard template ([Report Template ID: `10b92610-0c4f-445d-8f72-f5616e2bee64`](https://datastudio.google.com/c/reporting/10b92610-0c4f-445d-8f72-f5616e2bee64)) connects via the Google Data Studio Linking API. 
+The [Looker Studio dashboard template](https://datastudio.google.com/c/reporting/d9e9b92c-74b8-4248-b57d-f9bd2a59be2f) connects via the Google Data Studio Linking API. 
 
 Each data source has a pre-configured alias that automatically binds to your project's BigQuery tables:
 

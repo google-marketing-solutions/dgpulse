@@ -92,7 +92,7 @@ async function main() {
     }
   }
 
-  const templateId = '10b92610-0c4f-445d-8f72-f5616e2bee64';
+  const templateId = 'd9e9b92c-74b8-4248-b57d-f9bd2a59be2f';
   const demoLookerUrl = `https://lookerstudio.google.com/reporting/create?c.reportId=${templateId}` +
     `&ds.campaign_performance.connector=bigQuery&ds.campaign_performance.projectId=${projectId}&ds.campaign_performance.datasetId=${datasetId}&ds.campaign_performance.type=TABLE&ds.campaign_performance.tableId=final_campaign_performance&ds.campaign_performance.refreshFields=false` +
     `&ds.line_items_performance.connector=bigQuery&ds.line_items_performance.projectId=${projectId}&ds.line_items_performance.datasetId=${datasetId}&ds.line_items_performance.type=TABLE&ds.line_items_performance.tableId=final_line_items_performance&ds.line_items_performance.refreshFields=false` +
