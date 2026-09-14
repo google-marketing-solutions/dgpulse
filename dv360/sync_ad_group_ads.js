@@ -109,8 +109,13 @@ async function ensureTable() {
     try {
       await bigquery.query({
         query: `ALTER TABLE \`${DATASET_ID}.${TABLE_ID}\` 
+                ADD COLUMN IF NOT EXISTS lineItemId STRING,
+                ADD COLUMN IF NOT EXISTS insertionOrderId STRING,
+                ADD COLUMN IF NOT EXISTS campaignId STRING,
+                ADD COLUMN IF NOT EXISTS approvalStatus STRING,
                 ADD COLUMN IF NOT EXISTS video_id STRING, 
-                ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64;`
+                ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64,
+                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;`
       });
     } catch (e) {}
   }

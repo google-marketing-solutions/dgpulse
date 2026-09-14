@@ -210,8 +210,8 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \
 
 echo "Creating BigQuery table: ${DATASET_ID}.ad_group_ads..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.ad_group_ads \
-  adGroupAdId:STRING,adGroupId:STRING,advertiserId:STRING,displayName:STRING,entityStatus:STRING,adType:STRING,approvalStatus:STRING,video_id:STRING,aspect_ratio:FLOAT,videos_count:INTEGER,square_images_count:INTEGER,portrait_images_count:INTEGER,horizontal_images_count:INTEGER,headlines_count:INTEGER,long_headlines_count:INTEGER,descriptions_count:INTEGER,call_to_actions_count:INTEGER || echo "Table ad_group_ads already exists."
-bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64, ADD COLUMN IF NOT EXISTS approvalStatus STRING;" 2>/dev/null || true
+  adGroupAdId:STRING,adGroupId:STRING,lineItemId:STRING,insertionOrderId:STRING,campaignId:STRING,advertiserId:STRING,displayName:STRING,entityStatus:STRING,adType:STRING,approvalStatus:STRING,video_id:STRING,aspect_ratio:FLOAT,videos_count:INTEGER,square_images_count:INTEGER,portrait_images_count:INTEGER,horizontal_images_count:INTEGER,headlines_count:INTEGER,long_headlines_count:INTEGER,descriptions_count:INTEGER,call_to_actions_count:INTEGER,created_at:TIMESTAMP || echo "Table ad_group_ads already exists."
+bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS lineItemId STRING, ADD COLUMN IF NOT EXISTS insertionOrderId STRING, ADD COLUMN IF NOT EXISTS campaignId STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64, ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;" 2>/dev/null || true
 
 echo "Creating BigQuery table: ${DATASET_ID}.video_aspect_ratio..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.video_aspect_ratio \
@@ -290,11 +290,6 @@ DATASET_ID="${DATASET_ID}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH
 echo "Syncing Demand Gen ad group ads & video aspect ratios..."
 DATASET_ID="${DATASET_ID}" YOUTUBE_API_KEY="${YOUTUBE_API_KEY}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node sync_ad_group_ads.js || echo "Warning: Initial ad sync will complete on next scheduled run."
 
-echo "Running initial materialization queries..."
-for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql materialize_floodlight_activities.sql; do
-  echo "Materializing: $sql"
-  bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/${PROJECT_ID}/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")" || echo "Warning: $sql initial materialization skipped (will run once API/DBM data is populated)."
-done
 
 echo "Setting up / Updating Scheduled Queries for daily materialization..."
 export PROJECT_ID="${PROJECT_ID}"

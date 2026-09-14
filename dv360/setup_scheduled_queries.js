@@ -19,7 +19,7 @@ async function ensureTableSchema() {
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING, ADD COLUMN IF NOT EXISTS dda_status STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS ec_enabled STRING, ADD COLUMN IF NOT EXISTS youtube_enabled STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.creatives\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
-    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS lineItemId STRING, ADD COLUMN IF NOT EXISTS insertionOrderId STRING, ADD COLUMN IF NOT EXISTS campaignId STRING, ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64, ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;`,
     `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.video_aspect_ratio\` (
       video_id STRING,
       aspect_ratio FLOAT64,
@@ -174,9 +174,6 @@ async function setupScheduledQueries() {
         query: processedSql
       }
     };
-    if (SERVICE_ACCOUNT) {
-      transferConfigBody.serviceAccountName = SERVICE_ACCOUNT;
-    }
 
     if (matchingConfig) {
       console.log(`Refreshing existing Scheduled Query: ${displayName} (${matchingConfig.name})...`);
@@ -196,10 +193,14 @@ async function setupScheduledQueries() {
       } catch (e) {}
 
       const parent = `projects/${PROJECT_ID}/locations/${targetRegion}`;
-      await datatransfer.projects.locations.transferConfigs.create({
+      const createParams = {
         parent: parent,
         requestBody: transferConfigBody
-      });
+      };
+      if (SERVICE_ACCOUNT) {
+        createParams.serviceAccountName = SERVICE_ACCOUNT;
+      }
+      await datatransfer.projects.locations.transferConfigs.create(createParams);
       console.log(`Successfully created Scheduled Query: ${displayName}`);
     } catch (createErr) {
       console.error(`Error creating Scheduled Query ${displayName}:`, createErr.message);
