@@ -13,7 +13,7 @@ const BUCKET_NAME = process.env.BUCKET_NAME;
 const CLIENT_SECRET_FILE = process.env.CLIENT_SECRET_FILE || 'client_secret.json';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
 const PARTNER_ID = process.env.PARTNER_ID;
-const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
+const DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : 'dv360_dgpulse');
 
 let dv360Client = null;
 
@@ -44,8 +44,9 @@ async function initializeClient() {
   if (!bucketName || !refreshToken) {
     try {
       const { execSync } = require('child_process');
+      const functionName = PARTNER_ID ? `dv360-dgpulse-${PARTNER_ID}` : 'dv360-dgpulse';
       const envJson = execSync(
-        'gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null',
+        `gcloud functions describe ${functionName} --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null`,
         { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
       );
       if (envJson) {
@@ -258,8 +259,9 @@ async function setupDbmReport(partnerIdOverride) {
 /**
  * Downloads the latest DBM report and ingests rows into BigQuery dbm_performance table.
  */
-async function syncDbmPerformanceReport(partnerIdOverride) {
+async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
   const partnerId = partnerIdOverride || PARTNER_ID;
+  const targetDatasetId = datasetIdOverride || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
   if (!partnerId) throw new Error('PARTNER_ID is required.');
 
   const client = await initializeClient();
@@ -295,12 +297,12 @@ async function syncDbmPerformanceReport(partnerIdOverride) {
 
   if (bqRows.length > 0) {
     try {
-      const dataset = bigquery.dataset(DATASET_ID);
+      const dataset = bigquery.dataset(targetDatasetId);
       const [table] = await dataset.table('dbm_performance').get();
       const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
       if (pId) {
         await bigquery.query({
-          query: `TRUNCATE TABLE \`${pId}.${DATASET_ID}.dbm_performance\`;`
+          query: `TRUNCATE TABLE \`${pId}.${targetDatasetId}.dbm_performance\`;`
         });
       }
     } catch (delErr) {
@@ -310,9 +312,9 @@ async function syncDbmPerformanceReport(partnerIdOverride) {
     const batchSize = 500;
     for (let i = 0; i < bqRows.length; i += batchSize) {
       const batch = bqRows.slice(i, i + batchSize);
-      await bigquery.dataset(DATASET_ID).table('dbm_performance').insert(batch);
+      await bigquery.dataset(targetDatasetId).table('dbm_performance').insert(batch);
     }
-    console.log(`Successfully inserted ${bqRows.length} rows into ${DATASET_ID}.dbm_performance.`);
+    console.log(`Successfully inserted ${bqRows.length} rows into ${targetDatasetId}.dbm_performance.`);
   }
 
   return { success: true, count: bqRows.length };
@@ -375,8 +377,9 @@ function mapAudienceCsvRowToBq(r) {
 /**
  * Downloads the latest DBM Audience report and ingests rows into BigQuery dbm_audiences_performance table.
  */
-async function syncDbmAudienceReport(partnerIdOverride) {
+async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
   const partnerId = partnerIdOverride || PARTNER_ID;
+  const targetDatasetId = datasetIdOverride || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
   if (!partnerId) throw new Error('PARTNER_ID is required.');
 
   const client = await initializeClient();
@@ -412,12 +415,12 @@ async function syncDbmAudienceReport(partnerIdOverride) {
 
   if (bqRows.length > 0) {
     try {
-      const dataset = bigquery.dataset(DATASET_ID);
+      const dataset = bigquery.dataset(targetDatasetId);
       const [table] = await dataset.table('dbm_audiences_performance').get();
       const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
       if (pId) {
         await bigquery.query({
-          query: `TRUNCATE TABLE \`${pId}.${DATASET_ID}.dbm_audiences_performance\`;`
+          query: `TRUNCATE TABLE \`${pId}.${targetDatasetId}.dbm_audiences_performance\`;`
         });
       }
     } catch (delErr) {
@@ -427,9 +430,9 @@ async function syncDbmAudienceReport(partnerIdOverride) {
     const batchSize = 500;
     for (let i = 0; i < bqRows.length; i += batchSize) {
       const batch = bqRows.slice(i, i + batchSize);
-      await bigquery.dataset(DATASET_ID).table('dbm_audiences_performance').insert(batch);
+      await bigquery.dataset(targetDatasetId).table('dbm_audiences_performance').insert(batch);
     }
-    console.log(`Successfully inserted ${bqRows.length} rows into ${DATASET_ID}.dbm_audiences_performance.`);
+    console.log(`Successfully inserted ${bqRows.length} rows into ${targetDatasetId}.dbm_audiences_performance.`);
   }
 
   return { success: true, count: bqRows.length };

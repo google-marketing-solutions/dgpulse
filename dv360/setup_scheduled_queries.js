@@ -4,8 +4,8 @@ const { google } = require('googleapis');
 const { BigQuery } = require('@google-cloud/bigquery');
 
 let PROJECT_ID = process.env.PROJECT_ID;
-const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
 let PARTNER_ID = process.env.PARTNER_ID;
+const DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : 'dv360_dgpulse');
 let SERVICE_ACCOUNT = process.env.SERVICE_ACCOUNT;
 const LOCATION = process.env.LOCATION || process.env.REGION || 'US';
 
@@ -152,14 +152,18 @@ async function setupScheduledQueries() {
 
   for (const sqlFile of sqlFiles) {
     const viewName = path.basename(sqlFile, '.sql');
-    const displayName = `Materialize DV360 ${viewName} Daily`;
+    const displayName = `Materialize DV360 ${viewName} Daily [${PARTNER_ID}]`;
+    const legacyDisplayName = `Materialize DV360 ${viewName} Daily`;
     const rawSql = fs.readFileSync(sqlFile, 'utf8');
     const processedSql = rawSql
       .replace(/__PROJECT_ID__/g, PROJECT_ID)
       .replace(/__DATASET_ID__/g, DATASET_ID)
       .replace(/__PARTNER_ID__/g, PARTNER_ID);
 
-    const matchingConfig = existingConfigs.find(c => c.displayName === displayName);
+    const matchingConfig = existingConfigs.find(c =>
+      c.displayName === displayName ||
+      (c.destinationDatasetId === DATASET_ID && (c.displayName === displayName || c.displayName === legacyDisplayName))
+    );
 
     const transferConfigBody = {
       displayName: displayName,

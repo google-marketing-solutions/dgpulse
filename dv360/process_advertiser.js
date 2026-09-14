@@ -14,7 +14,8 @@ const bigquery = new BigQuery();
 const BUCKET_NAME = process.env.BUCKET_NAME;
 const CLIENT_SECRET_FILE = process.env.CLIENT_SECRET_FILE || 'client_secret.json';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
-const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
+const PARTNER_ID = process.env.PARTNER_ID;
+const DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : 'dv360_dgpulse');
 const TABLE_ID = process.env.TABLE_ID || 'campaigns';
 
 let dv360Client = null;
@@ -121,13 +122,15 @@ exports.processAdvertiser = async (event, context) => {
     const dataStr = Buffer.from(pubsubMessage, 'base64').toString();
     const data = JSON.parse(dataStr);
     const advertiserId = data.advertiserId;
+    const partnerId = data.partnerId || PARTNER_ID;
+    const targetDatasetId = data.datasetId || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
 
     if (!advertiserId) {
         console.error('No advertiserId found in message.');
         return;
     }
 
-    console.log(`Processing advertiser: ${advertiserId}`);
+    console.log(`Processing advertiser: ${advertiserId} (Dataset: ${targetDatasetId}, Partner: ${partnerId || 'unknown'})`);
 
     try {
         const client = await initializeClient();
@@ -142,8 +145,8 @@ exports.processAdvertiser = async (event, context) => {
             displayName: campaign.displayName
         }));
         if (campaignRows.length > 0) {
-            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.campaigns\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
-            await bigquery.dataset(DATASET_ID).table('campaigns').insert(campaignRows);
+            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.campaigns\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            await bigquery.dataset(targetDatasetId).table('campaigns').insert(campaignRows);
             console.log(`Successfully inserted ${campaignRows.length} campaigns into BigQuery.`);
         } else {
             console.log('No campaigns found to insert.');
@@ -162,8 +165,8 @@ exports.processAdvertiser = async (event, context) => {
             lineItemType: li.lineItemType || ''
         }));
         if (lineItemRows.length > 0) {
-            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.line_items\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
-            await bigquery.dataset(DATASET_ID).table('line_items').insert(lineItemRows);
+            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.line_items\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            await bigquery.dataset(targetDatasetId).table('line_items').insert(lineItemRows);
             console.log(`Successfully inserted ${lineItemRows.length} line items into BigQuery.`);
         } else {
             console.log('No line items found to insert.');
@@ -235,8 +238,8 @@ exports.processAdvertiser = async (event, context) => {
         });
 
         if (ioRows.length > 0) {
-            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.insertion_orders\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
-            await bigquery.dataset(DATASET_ID).table('insertion_orders').insert(ioRows);
+            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.insertion_orders\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            await bigquery.dataset(targetDatasetId).table('insertion_orders').insert(ioRows);
             console.log(`Successfully inserted ${ioRows.length} insertion orders into BigQuery.`);
         } else {
             console.log('No insertion orders found to insert.');
@@ -267,9 +270,9 @@ exports.processAdvertiser = async (event, context) => {
             };
         });
         if (creativeRows.length > 0) {
-            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.creatives\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.creatives\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
             for (let i = 0; i < creativeRows.length; i += 500) {
-                await bigquery.dataset(DATASET_ID).table('creatives').insert(creativeRows.slice(i, i + 500));
+                await bigquery.dataset(targetDatasetId).table('creatives').insert(creativeRows.slice(i, i + 500));
             }
             console.log(`Successfully inserted ${creativeRows.length} creatives into BigQuery.`);
         } else {
@@ -351,7 +354,7 @@ exports.processAdvertiser = async (event, context) => {
                 if (videoIds.length > 0) {
                     console.log(`Resolving aspect ratios for ${videoIds.length} video ads via YouTube Data API...`);
                     try {
-                        const ratioMap = await resolveVideoAspectRatios(videoIds, bigquery, DATASET_ID, BUCKET_NAME);
+                        const ratioMap = await resolveVideoAspectRatios(videoIds, bigquery, targetDatasetId, BUCKET_NAME);
                         for (const r of adRows) {
                             if (r.video_id && ratioMap.has(r.video_id)) {
                                 r.aspect_ratio = ratioMap.get(r.video_id);
@@ -362,16 +365,16 @@ exports.processAdvertiser = async (event, context) => {
                     }
                 }
 
-                await ensureAdGroupAdsTable(bigquery, DATASET_ID);
+                await ensureAdGroupAdsTable(bigquery, targetDatasetId);
 
                 try {
                     await bigquery.query({
-                        query: `DELETE FROM \`${DATASET_ID}.ad_group_ads\` WHERE advertiserId = '${advertiserId}'`
+                        query: `DELETE FROM \`${targetDatasetId}.ad_group_ads\` WHERE advertiserId = '${advertiserId}'`
                     });
                 } catch (delErr) {}
 
                 for (let i = 0; i < adRows.length; i += 500) {
-                    await bigquery.dataset(DATASET_ID).table('ad_group_ads').insert(adRows.slice(i, i + 500));
+                    await bigquery.dataset(targetDatasetId).table('ad_group_ads').insert(adRows.slice(i, i + 500));
                 }
                 console.log(`Successfully inserted ${adRows.length} ad group ads into BigQuery.`);
             }
@@ -522,8 +525,8 @@ exports.processAdvertiser = async (event, context) => {
 
             if (activityRows.length > 0) {
                 try {
-                    await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.floodlight_activities\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
-                    await bigquery.dataset(DATASET_ID).table('floodlight_activities').insert(activityRows);
+                    await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.floodlight_activities\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+                    await bigquery.dataset(targetDatasetId).table('floodlight_activities').insert(activityRows);
                     console.log(`Successfully inserted ${activityRows.length} floodlight activities for ${advertiserId} into BigQuery.`);
                 } catch (actErr) {
                     console.warn(`Warning inserting floodlight_activities into BigQuery for ${advertiserId}:`, actErr.message);
@@ -547,8 +550,8 @@ exports.processAdvertiser = async (event, context) => {
         };
 
         try {
-            await bigquery.query({ query: `DELETE FROM \`${DATASET_ID}.advertiser_settings\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
-            await bigquery.dataset(DATASET_ID).table('advertiser_settings').insert([settingsRow]);
+            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.advertiser_settings\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            await bigquery.dataset(targetDatasetId).table('advertiser_settings').insert([settingsRow]);
             console.log(`Successfully inserted advertiser_settings for ${advertiserId} into BigQuery.`);
         } catch (settErr) {
             console.warn(`Warning inserting advertiser_settings into BigQuery for ${advertiserId}:`, settErr.message);

@@ -8,29 +8,29 @@ echo "------------------------------------------------"
 echo "DV360 DG Pulse - Installation Script"
 echo "------------------------------------------------"
 
-# Auto-detect existing configuration from deployed Cloud Function if env vars are empty
-if [ -z "$PARTNER_ID" ] || [ -z "$REFRESH_TOKEN" ]; then
-  EXISTING_ENV=$(gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null || true)
-  if [ -n "$EXISTING_ENV" ]; then
-    if [ -z "$PARTNER_ID" ]; then
-      DETECTED_PARTNER=$(echo "$EXISTING_ENV" | grep -oP '"PARTNER_ID":\s*"\K[^"]+' || true)
-      if [ -n "$DETECTED_PARTNER" ]; then
-        PARTNER_ID="$DETECTED_PARTNER"
-        echo "Detected existing Partner ID from deployed Cloud Function: ${PARTNER_ID}"
-      fi
-    fi
-    if [ -z "$REFRESH_TOKEN" ]; then
-      DETECTED_TOKEN=$(echo "$EXISTING_ENV" | grep -oP '"REFRESH_TOKEN":\s*"\K[^"]+' || true)
-      if [ -n "$DETECTED_TOKEN" ]; then
-        REFRESH_TOKEN="$DETECTED_TOKEN"
-        echo "Detected existing Refresh Token from deployed Cloud Function."
-      fi
-    fi
-  fi
+# 1. Partner ID must ALWAYS be manually input (never inferred from deployed resources)
+if [ -n "$PARTNER_ID" ]; then
+  read -p "Enter Partner ID [default: ${PARTNER_ID}]: " INPUT_PARTNER_ID
+  PARTNER_ID="${INPUT_PARTNER_ID:-$PARTNER_ID}"
+else
+  read -p "Enter Partner ID: " PARTNER_ID
 fi
 
-if [ -z "$PARTNER_ID" ]; then
+while [ -z "$PARTNER_ID" ]; do
+  echo "Partner ID is required. Please enter a valid Partner ID."
   read -p "Enter Partner ID: " PARTNER_ID
+done
+
+# Auto-detect existing configuration from deployed Cloud Function if env vars are empty
+if [ -z "$REFRESH_TOKEN" ]; then
+  EXISTING_ENV=$(gcloud functions describe dv360-dgpulse-${PARTNER_ID} --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse-${PARTNER_ID} --region=us-central1 --format="json(environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null || true)
+  if [ -n "$EXISTING_ENV" ]; then
+    DETECTED_TOKEN=$(echo "$EXISTING_ENV" | grep -oP '"REFRESH_TOKEN":\s*"\K[^"]+' || true)
+    if [ -n "$DETECTED_TOKEN" ]; then
+      REFRESH_TOKEN="$DETECTED_TOKEN"
+      echo "Detected existing Refresh Token from deployed Cloud Function."
+    fi
+  fi
 fi
 
 
@@ -69,8 +69,21 @@ PROJECT_ID=$(gcloud config get-value project)
 REGION="us-central1"
 NODE_VERSION="22"
 
+# Namespaced resource identifiers (isolated per partner for multi-tenant support)
+DATASET_ID="${DATASET_ID:-dv360_dgpulse_${PARTNER_ID}}"
+TABLE_ID="campaigns"
+TOPIC_NAME="${TOPIC_NAME:-dv360-dgpulse-topic-${PARTNER_ID}}"
+FUNCTION_NAME="dv360-dgpulse-${PARTNER_ID}"
+PROCESS_FUNCTION_NAME="dv360-dgpulse-process-advertiser-${PARTNER_ID}"
+JOB_NAME="dv360-dgpulse-daily-sync-${PARTNER_ID}"
+
 echo "Using Project ID: ${PROJECT_ID}"
 echo "Using Region: ${REGION}"
+echo "Using Partner ID: ${PARTNER_ID}"
+echo "Using BigQuery Dataset: ${DATASET_ID}"
+echo "Using Pub/Sub Topic: ${TOPIC_NAME}"
+echo "Using Cloud Functions: ${FUNCTION_NAME} & ${PROCESS_FUNCTION_NAME}"
+echo "Using Cloud Scheduler Job: ${JOB_NAME}"
 
 # Enable necessary APIs
 echo "Enabling necessary APIs..."
@@ -151,15 +164,12 @@ echo "Installing Node.js dependencies..."
 npm install
 
 echo "Setting up daily DBM performance report query..."
-BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node create_report.js
+BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" DATASET_ID="${DATASET_ID}" node create_report.js
 
 # 4b. Create Pub/Sub Topic and BigQuery Dataset/Table
-TOPIC_NAME="dv360-dgpulse-advertiser-topic"
 echo "Creating Pub/Sub topic: ${TOPIC_NAME}..."
 gcloud pubsub topics create ${TOPIC_NAME} || echo "Topic already exists."
 
-DATASET_ID="dv360_dgpulse"
-TABLE_ID="campaigns"
 echo "Creating BigQuery dataset: ${DATASET_ID}..."
 bq mk --dataset --location=${REGION} ${PROJECT_ID}:${DATASET_ID} || echo "Dataset already exists."
 
@@ -214,8 +224,8 @@ bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.flood
 
 
 # 5. Deploy as a Cloud Run Function
-echo "Deploying Cloud Function: dv360-dgpulse..."
-gcloud functions deploy dv360-dgpulse \
+echo "Deploying Cloud Function: ${FUNCTION_NAME}..."
+gcloud functions deploy ${FUNCTION_NAME} \
   --gen2 \
   --runtime=nodejs${NODE_VERSION} \
   --region=${REGION} \
@@ -226,10 +236,10 @@ gcloud functions deploy dv360-dgpulse \
   --cpu=1 \
   --memory=1Gi \
   --timeout=540s \
-  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},PARTNER_ID=${PARTNER_ID},TOPIC_NAME=${TOPIC_NAME}
+  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},PARTNER_ID=${PARTNER_ID},TOPIC_NAME=${TOPIC_NAME},DATASET_ID=${DATASET_ID}
 
 # 6. Get the service URL
-SERVICE_URL=$(gcloud functions describe dv360-dgpulse --region=${REGION} --gen2 --format='value(serviceConfig.uri)')
+SERVICE_URL=$(gcloud functions describe ${FUNCTION_NAME} --region=${REGION} --gen2 --format='value(serviceConfig.uri)')
 echo "Service URL: ${SERVICE_URL}"
 
 PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
@@ -237,14 +247,14 @@ SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
 # Ensure the Cloud Scheduler service account has permission to invoke the service via OIDC
 echo "Granting run.invoker to ${SERVICE_ACCOUNT}..."
-gcloud run services add-iam-policy-binding dv360-dgpulse \
+gcloud run services add-iam-policy-binding ${FUNCTION_NAME} \
   --region=${REGION} \
   --member="serviceAccount:${SERVICE_ACCOUNT}" \
   --role="roles/run.invoker" > /dev/null 2>&1 || true
 
 # 6b. Deploy Cloud Function for processing advertisers
-echo "Deploying Cloud Function: process-advertiser..."
-gcloud functions deploy dv360-dgpulse-process-advertiser \
+echo "Deploying Cloud Function: ${PROCESS_FUNCTION_NAME}..."
+gcloud functions deploy ${PROCESS_FUNCTION_NAME} \
   --gen2 \
   --runtime=nodejs${NODE_VERSION} \
   --region=${REGION} \
@@ -254,10 +264,9 @@ gcloud functions deploy dv360-dgpulse-process-advertiser \
   --cpu=1 \
   --memory=1Gi \
   --timeout=540s \
-  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID},YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID},YOUTUBE_API_KEY=${YOUTUBE_API_KEY},PARTNER_ID=${PARTNER_ID}
 
 # 7. Create Cloud Scheduler job
-JOB_NAME="dv360-dgpulse-daily-sync"
 echo "Creating Cloud Scheduler job: ${JOB_NAME}..."
 
 if ! gcloud scheduler jobs describe ${JOB_NAME} --location=${REGION} > /dev/null 2>&1; then
@@ -276,10 +285,10 @@ else
 fi
 
 echo "Syncing DBM Reports into BigQuery..."
-node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."
+DATASET_ID="${DATASET_ID}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."
 
 echo "Syncing Demand Gen ad group ads & video aspect ratios..."
-YOUTUBE_API_KEY="${YOUTUBE_API_KEY}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node sync_ad_group_ads.js || echo "Warning: Initial ad sync will complete on next scheduled run."
+DATASET_ID="${DATASET_ID}" YOUTUBE_API_KEY="${YOUTUBE_API_KEY}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node sync_ad_group_ads.js || echo "Warning: Initial ad sync will complete on next scheduled run."
 
 echo "Running initial materialization queries..."
 for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql materialize_floodlight_activities.sql; do
@@ -308,12 +317,12 @@ LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=d9e9b92
 echo "------------------------------------------------"
 echo "🎉 Installation & Deployment Complete!"
 echo "Your DV360 DG Pulse service is deployed at: ${SERVICE_URL}"
-echo "The daily sync job is scheduled to run at 6:00 AM daily."
+echo "The daily sync job is scheduled to run at 6:00 AM daily (${JOB_NAME})."
 echo ""
 echo "================================================================="
 echo "📊 One-Click Looker Studio Dashboard Connection:"
 echo "Click the link below to automatically clone the report template and"
-echo "connect all 8 BigQuery tables for Partner ${PARTNER_ID}:"
+echo "connect all 8 BigQuery tables for Partner ${PARTNER_ID} (Dataset: ${DATASET_ID}):"
 echo ""
 echo "${LOOKER_LINK}"
 echo "================================================================="

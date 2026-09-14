@@ -13,12 +13,12 @@ const pubsub = new PubSub();
 const bigquery = new BigQuery();
 
 // Configuration from environment variables
-const TOPIC_NAME = process.env.TOPIC_NAME || 'dv360-advertiser-topic';
+const PARTNER_ID = process.env.PARTNER_ID;
+const TOPIC_NAME = process.env.TOPIC_NAME || (PARTNER_ID ? `dv360-dgpulse-topic-${PARTNER_ID}` : 'dv360-advertiser-topic');
 const BUCKET_NAME = process.env.BUCKET_NAME;
 const CLIENT_SECRET_FILE = process.env.CLIENT_SECRET_FILE || 'client_secret.json';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
-const PARTNER_ID = process.env.PARTNER_ID;
-const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
+const DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : 'dv360_dgpulse');
 
 let dv360Client = null;
 
@@ -53,6 +53,8 @@ async function initializeClient() {
 // Pure HTTP function
 exports.fetchAdvertisers = async (req, res) => {
     const partnerId = req.query.partnerId || PARTNER_ID;
+    const datasetId = req.query.datasetId || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
+    const topicName = req.query.topicName || process.env.TOPIC_NAME || (partnerId ? `dv360-dgpulse-topic-${partnerId}` : TOPIC_NAME);
 
     if (!partnerId) {
         return res.status(400).send('Missing partnerId query parameter or PARTNER_ID env var.');
@@ -60,7 +62,7 @@ exports.fetchAdvertisers = async (req, res) => {
 
     try {
         const client = await initializeClient();
-        console.log(`Fetching advertisers for partner ${partnerId}...`);
+        console.log(`Fetching advertisers for partner ${partnerId} (Dataset: ${datasetId})...`);
         const advertisers = await client.listAllAdvertisers(partnerId);
 
         const advertiserRows = advertisers.map(adv => ({
@@ -75,27 +77,27 @@ exports.fetchAdvertisers = async (req, res) => {
 
         if (advertiserRows.length > 0) {
             try {
-                await bigquery.dataset(DATASET_ID).table('advertisers').insert(advertiserRows);
-                console.log(`Successfully inserted ${advertiserRows.length} advertisers into BigQuery.`);
+                await bigquery.dataset(datasetId).table('advertisers').insert(advertiserRows);
+                console.log(`Successfully inserted ${advertiserRows.length} advertisers into BigQuery dataset ${datasetId}.`);
             } catch (bqErr) {
-                console.warn('Warning inserting advertisers into BigQuery:', bqErr.message);
+                console.warn(`Warning inserting advertisers into BigQuery dataset ${datasetId}:`, bqErr.message);
             }
         }
 
-        console.log(`Publishing ${advertisers.length} advertisers to Pub/Sub topic ${TOPIC_NAME}...`);
+        console.log(`Publishing ${advertisers.length} advertisers to Pub/Sub topic ${topicName}...`);
         for (const adv of advertisers) {
-            const data = JSON.stringify({ advertiserId: adv.advertiserId, partnerId });
+            const data = JSON.stringify({ advertiserId: adv.advertiserId, partnerId, datasetId });
             const dataBuffer = Buffer.from(data);
-            await pubsub.topic(TOPIC_NAME).publishMessage({ data: dataBuffer });
+            await pubsub.topic(topicName).publishMessage({ data: dataBuffer });
         }
 
         // Sync and ingest latest DBM performance and audience reports into BigQuery
         try {
-            console.log(`Syncing DBM reports for partner ${partnerId}...`);
+            console.log(`Syncing DBM reports for partner ${partnerId} into dataset ${datasetId}...`);
             const { syncDbmPerformanceReport, syncDbmAudienceReport } = require('./create_report');
             await Promise.allSettled([
-                syncDbmPerformanceReport(partnerId),
-                syncDbmAudienceReport(partnerId)
+                syncDbmPerformanceReport(partnerId, datasetId),
+                syncDbmAudienceReport(partnerId, datasetId)
             ]);
         } catch (dbmErr) {
             console.warn('Warning syncing DBM reports:', dbmErr.message);

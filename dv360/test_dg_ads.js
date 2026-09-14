@@ -12,7 +12,8 @@ const bigquery = new BigQuery();
 const BUCKET_NAME = process.env.BUCKET_NAME;
 const CLIENT_SECRET_FILE = process.env.CLIENT_SECRET_FILE || 'client_secret.json';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
-const DATASET_ID = process.env.DATASET_ID || 'dv360_dgpulse';
+const PARTNER_ID = process.env.PARTNER_ID;
+const DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : 'dv360_dgpulse');
 
 async function initializeClient() {
   let bucketName = BUCKET_NAME;
@@ -42,8 +43,9 @@ async function initializeClient() {
   if (!refreshToken) {
     try {
       const { execSync } = require('child_process');
+      const functionName = PARTNER_ID ? `dv360-dgpulse-${PARTNER_ID}` : 'dv360-dgpulse';
       const envJson = execSync(
-        'gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null',
+        `gcloud functions describe ${functionName} --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null`,
         { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
       );
       if (envJson) {

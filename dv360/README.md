@@ -104,11 +104,14 @@ The script automatically:
 * Enables all necessary GCP APIs (`displayvideo`, `doubleclickbidmanager`, `run`, `cloudfunctions`, `bigquerydatatransfer`, `cloudscheduler`).
 * Creates the Cloud Storage bucket and uploads `client_secret.json`.
 * Creates the recurring partner-level DBM query via `create_report.js`.
-* Sets up BigQuery dataset (`dv360_dgpulse`) and all 6 base schema tables.
-* Deploys the extraction and worker Cloud Functions (`dv360-dgpulse`, `dv360-dgpulse-process-advertiser`).
-* Configures Cloud Scheduler for daily execution at 6:00 AM.
-* Deploys daily BigQuery scheduled queries for all 8 materialized analytics views.
-* **Prints the One-Click Looker Studio Linking API URL**.
+* Sets up an isolated BigQuery dataset (`dv360_dgpulse_${PARTNER_ID}`) and all base schema tables.
+* Deploys namespaced extraction and worker Cloud Functions (`dv360-dgpulse-${PARTNER_ID}`, `dv360-dgpulse-process-advertiser-${PARTNER_ID}`).
+* Configures Cloud Scheduler for daily execution at 6:00 AM (`dv360-dgpulse-daily-sync-${PARTNER_ID}`).
+* Deploys daily BigQuery scheduled queries for all 8 materialized analytics views scoped to the partner.
+* **Prints the One-Click Looker Studio Linking API URL** connected directly to the partner's dataset.
+
+> [!TIP]
+> **Multi-Partner Support**: Multiple DV360 partners can be deployed in the same GCP project without collisions. Every partner has isolated datasets, Cloud Functions, Pub/Sub topics, and scheduled queries keyed by `${PARTNER_ID}`.
 
 ---
 
@@ -135,13 +138,14 @@ Each data source has a pre-configured alias that automatically binds to your pro
 
 ### Trigger Sync Immediately
 ```bash
-gcloud scheduler jobs run dv360-dgpulse-daily-sync --location=us-central1
+gcloud scheduler jobs run "dv360-dgpulse-daily-sync-${PARTNER_ID}" --location=us-central1
 ```
 
 ### Re-run Materialization Queries Manually
 ```bash
+DATASET_ID="${DATASET_ID:-dv360_dgpulse_${PARTNER_ID}}"
 for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql materialize_floodlight_activities.sql; do
-  bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/$(gcloud config get-value project)/g" | sed "s/__DATASET_ID__/dv360_dgpulse/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")"
+  bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/$(gcloud config get-value project)/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")"
 done
 ```
 
