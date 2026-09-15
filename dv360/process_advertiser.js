@@ -48,9 +48,7 @@ async function ensureAdGroupAdsTable(bq, datasetId) {
             );`
         });
         const alterQueries = [
-            `ALTER TABLE \`${datasetId}.ad_group_ads\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
-            `ALTER TABLE \`${datasetId}.ad_group_ads\` ADD COLUMN IF NOT EXISTS video_id STRING;`,
-            `ALTER TABLE \`${datasetId}.ad_group_ads\` ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64;`
+            `ALTER TABLE \`${datasetId}.ad_group_ads\` ADD COLUMN IF NOT EXISTS lineItemId STRING, ADD COLUMN IF NOT EXISTS insertionOrderId STRING, ADD COLUMN IF NOT EXISTS campaignId STRING, ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64, ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;`
         ];
         for (const aq of alterQueries) {
             try { await bq.query({ query: aq }); } catch (e) {}

@@ -209,6 +209,18 @@ async function setupScheduledQueries() {
 
   console.log('All Scheduled Queries refreshed in BigQuery Data Transfer Service.');
 
+  // Sync DBM performance and audience reports into BigQuery before materializing final tables
+  try {
+    const { syncDbmPerformanceReport, syncDbmAudienceReport } = require('./create_report');
+    console.log(`Syncing DBM performance and audience reports for Partner ${PARTNER_ID}...`);
+    await Promise.allSettled([
+      syncDbmPerformanceReport(PARTNER_ID, DATASET_ID),
+      syncDbmAudienceReport(PARTNER_ID, DATASET_ID)
+    ]);
+  } catch (dbmErr) {
+    console.warn('Warning syncing DBM reports:', dbmErr.message);
+  }
+
   // Ingest real Demand Gen Ad Group Ads before materializing creative variety
   try {
     const { sync } = require('./sync_ad_group_ads');

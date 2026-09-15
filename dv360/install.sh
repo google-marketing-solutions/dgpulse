@@ -60,9 +60,24 @@ fi
 if [ -z "$CLIENT_SECRET" ]; then
   read -p "Enter Client Secret: " CLIENT_SECRET
 fi
-if [ -z "$REFRESH_TOKEN" ]; then
-  read -p "Enter Refresh Token: " REFRESH_TOKEN
+
+# Validate detected/provided REFRESH_TOKEN before proceeding
+if [ -n "$REFRESH_TOKEN" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ]; then
+  TOKEN_CHECK=$(curl -s -X POST https://oauth2.googleapis.com/token \
+    -d "client_id=${CLIENT_ID}" \
+    -d "client_secret=${CLIENT_SECRET}" \
+    -d "refresh_token=${REFRESH_TOKEN}" \
+    -d "grant_type=refresh_token" || true)
+  if echo "$TOKEN_CHECK" | grep -q '"invalid_grant"'; then
+    echo "⚠️ Warning: The existing Refresh Token has expired or been revoked (invalid_grant)."
+    echo "Tip: Run 'node auth.js' to generate a fresh Refresh Token."
+    REFRESH_TOKEN=""
+  fi
 fi
+
+while [ -z "$REFRESH_TOKEN" ]; do
+  read -p "Enter a valid Refresh Token: " REFRESH_TOKEN
+done
 
 # 2. Infer project ID and region
 PROJECT_ID=$(gcloud config get-value project)
@@ -283,6 +298,11 @@ else
     --location=${REGION} \
     --uri="${SERVICE_URL}"
 fi
+
+echo "Triggering initial DV360 advertiser & entity sync via Cloud Scheduler..."
+gcloud scheduler jobs run ${JOB_NAME} --location=${REGION} || echo "Warning: Could not trigger immediate scheduler run."
+echo "Waiting 30 seconds for Pub/Sub advertiser workers to populate raw tables..."
+sleep 30
 
 echo "Syncing DBM Reports into BigQuery..."
 DATASET_ID="${DATASET_ID}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."

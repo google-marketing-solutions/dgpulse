@@ -151,20 +151,20 @@ function parseCsv(text) {
   return rows;
 }
 
+const parseDate = (d) => {
+  if (!d) return null;
+  const parts = d.split(/[\/\-]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+  }
+  return d;
+};
+
 /**
  * Maps CSV column names to BigQuery dbm_performance table schema.
  */
 function mapCsvRowToBq(r) {
-  const parseDate = (d) => {
-    if (!d) return null;
-    const parts = d.split(/[\/\-]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-      return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-    }
-    return d;
-  };
-
   const getCol = (patterns) => {
     for (const key of Object.keys(r)) {
       for (const pat of patterns) {
@@ -267,7 +267,7 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
   const client = await initializeClient();
   const { queryId } = await client.createOrGetPerformanceReportQuery(partnerId);
 
-  const downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+  let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
   if (!downloadUrl) {
     console.log(`No completed report found yet for query ${queryId}. Triggering execution...`);
     try {
@@ -275,7 +275,15 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
     } catch (e) {
       console.warn('Warning triggering DBM query:', e.message);
     }
-    return { success: false, message: 'Report execution triggered. Data will be available on next sync.' };
+    for (let attempt = 1; attempt <= 18; attempt++) {
+      console.log(`Waiting for DBM report ${queryId} to finish generating (attempt ${attempt}/18)...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+      if (downloadUrl) break;
+    }
+    if (!downloadUrl) {
+      return { success: false, message: 'Report execution triggered. Data will be available on next sync.' };
+    }
   }
 
   console.log(`Downloading latest DBM report from ${downloadUrl}...`);
@@ -385,7 +393,7 @@ async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
   const client = await initializeClient();
   const { queryId } = await client.createOrGetAudienceReportQuery(partnerId);
 
-  const downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+  let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
   if (!downloadUrl) {
     console.log(`No completed audience report found yet for query ${queryId}. Triggering execution...`);
     try {
@@ -393,7 +401,15 @@ async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
     } catch (e) {
       console.warn('Warning triggering DBM audience query:', e.message);
     }
-    return { success: false, message: 'Audience report execution triggered. Data will be available on next sync.' };
+    for (let attempt = 1; attempt <= 18; attempt++) {
+      console.log(`Waiting for DBM audience report ${queryId} to finish generating (attempt ${attempt}/18)...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+      if (downloadUrl) break;
+    }
+    if (!downloadUrl) {
+      return { success: false, message: 'Audience report execution triggered. Data will be available on next sync.' };
+    }
   }
 
   console.log(`Downloading latest DBM Audience report from ${downloadUrl}...`);
