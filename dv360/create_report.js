@@ -162,33 +162,49 @@ const parseDate = (d) => {
 };
 
 /**
+ * Resolves a value from a parsed CSV row by matching column names against a
+ * prioritised list of patterns.
+ *
+ * Patterns are the OUTER loop on purpose: the caller passes them most-specific
+ * first, and that priority must win regardless of the order the columns happen
+ * to appear in the CSV. Iterating columns first would make the binding depend
+ * on DV360's column ordering, so a broad pattern such as 'Revenue' could
+ * capture an unintended column like 'Total Conversion Revenue'.
+ */
+function getColFrom(row, patterns) {
+  const keys = Object.keys(row);
+  for (const pat of patterns) {
+    const needle = pat.toLowerCase();
+    // Prefer an exact column-name match before falling back to a substring match.
+    for (const key of keys) {
+      if (key.toLowerCase() === needle) return row[key];
+    }
+    for (const key of keys) {
+      if (key.toLowerCase().includes(needle)) return row[key];
+    }
+  }
+  return null;
+}
+
+function num(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  const cleaned = String(v).replace(/[^\d.-]/g, '');
+  const n = Number(cleaned);
+  return isNaN(n) ? 0 : n;
+}
+
+function intNum(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  const cleaned = String(v).replace(/[^\d-]/g, '');
+  const n = parseInt(cleaned, 10);
+  return isNaN(n) ? 0 : n;
+}
+
+/**
  * Maps CSV column names to BigQuery dbm_performance table schema.
  */
 function mapCsvRowToBq(r) {
-  const getCol = (patterns) => {
-    for (const key of Object.keys(r)) {
-      for (const pat of patterns) {
-        if (key.toLowerCase().includes(pat.toLowerCase())) {
-          return r[key];
-        }
-      }
-    }
-    return null;
-  };
-
-  const num = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
-    const cleaned = String(v).replace(/[^\d.-]/g, '');
-    const n = Number(cleaned);
-    return isNaN(n) ? 0 : n;
-  };
-
-  const intNum = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
-    const cleaned = String(v).replace(/[^\d-]/g, '');
-    const n = parseInt(cleaned, 10);
-    return isNaN(n) ? 0 : n;
-  };
+  const getCol = (patterns) => getColFrom(r, patterns);
 
   return {
     Report_Day: parseDate(getCol(['Report_Day', 'Date', 'Day'])),
@@ -329,30 +345,7 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
 }
 
 function mapAudienceCsvRowToBq(r) {
-  const getCol = (patterns) => {
-    for (const key of Object.keys(r)) {
-      for (const pat of patterns) {
-        if (key.toLowerCase().includes(pat.toLowerCase())) {
-          return r[key];
-        }
-      }
-    }
-    return null;
-  };
-
-  const num = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
-    const cleaned = String(v).replace(/[^\d.-]/g, '');
-    const n = Number(cleaned);
-    return isNaN(n) ? 0 : n;
-  };
-
-  const intNum = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
-    const cleaned = String(v).replace(/[^\d-]/g, '');
-    const n = parseInt(cleaned, 10);
-    return isNaN(n) ? 0 : n;
-  };
+  const getCol = (patterns) => getColFrom(r, patterns);
 
   return {
     Report_Day: parseDate(getCol(['Report_Day', 'Date', 'Day'])),
@@ -454,6 +447,107 @@ async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
   return { success: true, count: bqRows.length };
 }
 
+/**
+ * Maps CSV column names to BigQuery dbm_io_spend_daily table schema.
+ */
+function mapIoPacingCsvRowToBq(r) {
+  const getCol = (patterns) => getColFrom(r, patterns);
+
+  return {
+    Report_Day: parseDate(getCol(['Report_Day', 'Date', 'Day'])),
+    Partner_Id: intNum(getCol(['Partner ID', 'Partner_Id'])),
+    Advertiser_Id: intNum(getCol(['Advertiser ID', 'Advertiser_Id'])),
+    Advertiser_Currency: getCol(['Advertiser Currency', 'Currency']) || '',
+    Insertion_Order: getCol(['Insertion Order Name', 'Insertion Order']) || '',
+    Insertion_Order_Id: intNum(getCol(['Insertion Order ID', 'Insertion_Order_Id'])),
+    Revenue: num(getCol(['Media Cost (Advertiser Currency)', 'Media Cost (Adv Currency)', 'Revenue (Adv Currency)'])),
+    Revenue_USD: num(getCol(['Media Cost (USD)', 'Revenue (USD)'])),
+    Impressions: intNum(getCol(['Impressions'])),
+    Clicks: intNum(getCol(['Clicks']))
+  };
+}
+
+/**
+ * Downloads the ALL_TIME IO pacing report and ingests it into dbm_io_spend_daily.
+ *
+ * Budget pacing compares spend against an insertion order's budget, and that
+ * budget can cover a flight of arbitrary length. dbm_performance cannot serve
+ * this because it is capped at LAST_90_DAYS, which silently truncates spend for
+ * any longer flight and makes every such insertion order look underpaced.
+ */
+async function syncDbmIoPacingReport(partnerIdOverride, datasetIdOverride) {
+  const partnerId = partnerIdOverride || PARTNER_ID;
+  const targetDatasetId = datasetIdOverride || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
+  if (!partnerId) throw new Error('PARTNER_ID is required.');
+
+  const client = await initializeClient();
+  const { queryId } = await client.createOrGetIoPacingReportQuery(partnerId);
+
+  let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+  if (!downloadUrl) {
+    console.log(`No completed IO pacing report found yet for query ${queryId}. Triggering execution...`);
+    try {
+      await client.runQuery(queryId);
+    } catch (e) {
+      console.warn('Warning triggering DBM IO pacing query:', e.message);
+    }
+    // An ALL_TIME report covers the full account history, so allow a longer
+    // window than the 90-day reports before giving up.
+    for (let attempt = 1; attempt <= 36; attempt++) {
+      console.log(`Waiting for DBM IO pacing report ${queryId} to finish generating (attempt ${attempt}/36)...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+      if (downloadUrl) break;
+    }
+    if (!downloadUrl) {
+      return { success: false, message: 'IO pacing report execution triggered. Data will be available on next sync.' };
+    }
+  }
+
+  console.log(`Downloading latest DBM IO pacing report from ${downloadUrl}...`);
+  const response = await fetch(downloadUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download IO pacing report: ${response.statusText}`);
+  }
+
+  const csvText = await response.text();
+  const parsedRows = parseCsv(csvText);
+  console.log(`Parsed ${parsedRows.length} rows from DBM IO pacing CSV.`);
+
+  if (parsedRows.length === 0) {
+    return { success: true, count: 0, message: 'DBM IO pacing CSV contained no data rows.' };
+  }
+
+  const bqRows = parsedRows
+    .map(mapIoPacingCsvRowToBq)
+    .filter(r => r.Insertion_Order_Id > 0 && r.Report_Day);
+  console.log(`Mapped ${bqRows.length} valid IO pacing rows for BigQuery.`);
+
+  if (bqRows.length > 0) {
+    try {
+      const dataset = bigquery.dataset(targetDatasetId);
+      const [table] = await dataset.table('dbm_io_spend_daily').get();
+      const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
+      if (pId) {
+        await bigquery.query({
+          query: `TRUNCATE TABLE \`${pId}.${targetDatasetId}.dbm_io_spend_daily\`;`
+        });
+      }
+    } catch (delErr) {
+      console.warn('Warning clearing dbm_io_spend_daily table:', delErr.message);
+    }
+
+    const batchSize = 500;
+    for (let i = 0; i < bqRows.length; i += batchSize) {
+      const batch = bqRows.slice(i, i + batchSize);
+      await bigquery.dataset(targetDatasetId).table('dbm_io_spend_daily').insert(batch);
+    }
+    console.log(`Successfully inserted ${bqRows.length} rows into ${targetDatasetId}.dbm_io_spend_daily.`);
+  }
+
+  return { success: true, count: bqRows.length };
+}
+
 // CLI / Execution helper
 if (require.main === module) {
   const partnerIdArg = process.argv[2] || process.env.PARTNER_ID;
@@ -462,7 +556,8 @@ if (require.main === module) {
   if (action === 'setup') {
     Promise.all([
       setupDbmReport(partnerIdArg),
-      initializeClient().then(c => c.createOrGetAudienceReportQuery(partnerIdArg))
+      initializeClient().then(c => c.createOrGetAudienceReportQuery(partnerIdArg)),
+      initializeClient().then(c => c.createOrGetIoPacingReportQuery(partnerIdArg))
     ])
       .then(results => {
         console.log('DBM Reports setup complete:', JSON.stringify(results));
@@ -475,7 +570,8 @@ if (require.main === module) {
   } else {
     Promise.allSettled([
       syncDbmPerformanceReport(partnerIdArg),
-      syncDbmAudienceReport(partnerIdArg)
+      syncDbmAudienceReport(partnerIdArg),
+      syncDbmIoPacingReport(partnerIdArg)
     ])
       .then(results => {
         console.log('DBM Reports sync complete:', JSON.stringify(results));
@@ -488,4 +584,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { setupDbmReport, syncDbmPerformanceReport, syncDbmAudienceReport };
+module.exports = { setupDbmReport, syncDbmPerformanceReport, syncDbmAudienceReport, syncDbmIoPacingReport };

@@ -199,6 +199,7 @@ exports.processAdvertiser = async (event, context) => {
         // 2b. Insertion Orders & Budget Pacing
         console.log(`Fetching insertion orders for advertiser ${advertiserId}...`);
         const insertionOrders = await client.listAllInsertionOrders(advertiserId);
+        const segmentRows = [];
         const ioRows = insertionOrders.map(io => {
             let budgetAmount = 0;
             let startDate = null;
@@ -214,6 +215,22 @@ exports.processAdvertiser = async (event, context) => {
                         `${seg.dateRange.endDate.year}-${String(seg.dateRange.endDate.month).padStart(2, '0')}-${String(seg.dateRange.endDate.day).padStart(2, '0')}` : null;
                     if (s && (!startDate || s < startDate)) startDate = s;
                     if (e && (!endDate || e > endDate)) endDate = e;
+
+                    // Retain each segment individually. DV360 paces an insertion
+                    // order against the segment that is currently in flight, not
+                    // against the lifetime roll-up, so the roll-up alone is not
+                    // enough to reproduce the pacing shown in the DV360 UI.
+                    if (s && e) {
+                        segmentRows.push({
+                            insertionOrderId: String(io.insertionOrderId),
+                            advertiserId: String(io.advertiserId),
+                            campaignId: String(io.campaignId),
+                            description: seg.description || '',
+                            budget_amount: seg.budgetAmountMicros ? Number(seg.budgetAmountMicros) / 1000000 : 0,
+                            start_date: s,
+                            end_date: e
+                        });
+                    }
                 }
                 budgetAmount = totalMicros / 1000000;
             }
@@ -241,6 +258,15 @@ exports.processAdvertiser = async (event, context) => {
             console.log(`Successfully inserted ${ioRows.length} insertion orders into BigQuery.`);
         } else {
             console.log('No insertion orders found to insert.');
+        }
+
+        if (segmentRows.length > 0) {
+            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.io_budget_segments\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            const segBatchSize = 500;
+            for (let i = 0; i < segmentRows.length; i += segBatchSize) {
+                await bigquery.dataset(targetDatasetId).table('io_budget_segments').insert(segmentRows.slice(i, i + segBatchSize));
+            }
+            console.log(`Successfully inserted ${segmentRows.length} IO budget segments into BigQuery.`);
         }
 
         // 3. Creatives

@@ -214,6 +214,19 @@ echo "Creating BigQuery table: ${DATASET_ID}.insertion_orders..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.insertion_orders \
   insertionOrderId:STRING,advertiserId:STRING,campaignId:STRING,displayName:STRING,entityStatus:STRING,pacingType:STRING,pacingPeriod:STRING,dailyMaxAmount:FLOAT,budgetUnit:STRING,automationType:STRING,budgetAmount:FLOAT,startDate:DATE,endDate:DATE || echo "Table insertion_orders already exists."
 
+# One row per DV360 budget segment. Budget pacing is evaluated against the
+# segment currently in flight, which the lifetime roll-up on insertion_orders
+# cannot express.
+echo "Creating BigQuery table: ${DATASET_ID}.io_budget_segments..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.io_budget_segments \
+  insertionOrderId:STRING,advertiserId:STRING,campaignId:STRING,description:STRING,budget_amount:FLOAT,start_date:DATE,end_date:DATE || echo "Table io_budget_segments already exists."
+
+# Full-flight IO spend from the ALL_TIME DBM pacing report. dbm_performance is
+# capped at LAST_90_DAYS and so cannot be used to pace longer flights.
+echo "Creating BigQuery table: ${DATASET_ID}.dbm_io_spend_daily..."
+bq mk --table ${PROJECT_ID}:${DATASET_ID}.dbm_io_spend_daily \
+  Report_Day:DATE,Partner_Id:INTEGER,Advertiser_Id:INTEGER,Advertiser_Currency:STRING,Insertion_Order:STRING,Insertion_Order_Id:INTEGER,Revenue:FLOAT,Revenue_USD:FLOAT,Impressions:INTEGER,Clicks:INTEGER || echo "Table dbm_io_spend_daily already exists."
+
 echo "Creating BigQuery table: ${DATASET_ID}.line_items..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.line_items \
   lineItemId:STRING,insertionOrderId:STRING,campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,lineItemType:STRING || echo "Table line_items already exists."

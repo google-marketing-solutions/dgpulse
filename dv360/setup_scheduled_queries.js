@@ -50,6 +50,32 @@ async function ensureTableSchema() {
       Post_Click_Conversions FLOAT64,
       CM_Post_Click_Revenue FLOAT64,
       CM_Post_View_Revenue FLOAT64
+    );`,
+    // Full-flight IO spend, sourced from the ALL_TIME DBM pacing report.
+    // Kept separate from dbm_performance because that table is capped at
+    // LAST_90_DAYS and therefore cannot support budget pacing on longer flights.
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.dbm_io_spend_daily\` (
+      Report_Day DATE,
+      Partner_Id INT64,
+      Advertiser_Id INT64,
+      Advertiser_Currency STRING,
+      Insertion_Order STRING,
+      Insertion_Order_Id INT64,
+      Revenue FLOAT64,
+      Revenue_USD FLOAT64,
+      Impressions INT64,
+      Clicks INT64
+    );`,
+    // One row per DV360 budget segment, so pacing can be evaluated against the
+    // segment currently in flight rather than the lifetime roll-up.
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.io_budget_segments\` (
+      insertionOrderId STRING,
+      advertiserId STRING,
+      campaignId STRING,
+      description STRING,
+      budget_amount FLOAT64,
+      start_date DATE,
+      end_date DATE
     );`
   ];
   for (const q of alterQueries) {
@@ -211,11 +237,12 @@ async function setupScheduledQueries() {
 
   // Sync DBM performance and audience reports into BigQuery before materializing final tables
   try {
-    const { syncDbmPerformanceReport, syncDbmAudienceReport } = require('./create_report');
-    console.log(`Syncing DBM performance and audience reports for Partner ${PARTNER_ID}...`);
+    const { syncDbmPerformanceReport, syncDbmAudienceReport, syncDbmIoPacingReport } = require('./create_report');
+    console.log(`Syncing DBM performance, audience and IO pacing reports for Partner ${PARTNER_ID}...`);
     await Promise.allSettled([
       syncDbmPerformanceReport(PARTNER_ID, DATASET_ID),
-      syncDbmAudienceReport(PARTNER_ID, DATASET_ID)
+      syncDbmAudienceReport(PARTNER_ID, DATASET_ID),
+      syncDbmIoPacingReport(PARTNER_ID, DATASET_ID)
     ]);
   } catch (dbmErr) {
     console.warn('Warning syncing DBM reports:', dbmErr.message);

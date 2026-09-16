@@ -18,15 +18,90 @@ deduped_dbm AS (
   )
   WHERE row_num = 1
 ),
-io_flight_totals AS (
-  SELECT 
+
+-- ---------------------------------------------------------------------------
+-- Budget pacing inputs.
+--
+-- Pacing spend MUST come from dbm_io_spend_daily (the ALL_TIME DBM report) and
+-- NOT from dbm_performance. dbm_performance is capped at LAST_90_DAYS, so using
+-- it here silently truncates spend on any flight longer than 90 days and makes
+-- those insertion orders appear massively underpaced against a budget that
+-- covers the whole flight.
+-- ---------------------------------------------------------------------------
+io_spend_daily AS (
+  SELECT
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
-    SUM(Revenue) AS cumulative_spend,
-    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS cumulative_spend_usd,
-    SUM(Impressions) AS cumulative_impressions
-  FROM deduped_dbm
+    Report_Day,
+    MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
+    SUM(Revenue) AS revenue,
+    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS revenue_usd,
+    SUM(Impressions) AS impressions
+  FROM `__PROJECT_ID__.__DATASET_ID__.dbm_io_spend_daily`
+  WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
+    AND Report_Day IS NOT NULL
+  GROUP BY 1, 2
+),
+flight_spend AS (
+  SELECT
+    insertion_order_id,
+    SUM(revenue) AS flight_spend,
+    SUM(revenue_usd) AS flight_spend_usd,
+    SUM(impressions) AS flight_impressions,
+    MAX(currency_code) AS currency_code,
+    SAFE_DIVIDE(SUM(revenue_usd), NULLIF(SUM(revenue), 0)) AS fx_rate_to_usd
+  FROM io_spend_daily
   GROUP BY 1
 ),
+budget_segments AS (
+  SELECT DISTINCT
+    insertionOrderId AS insertion_order_id,
+    description,
+    budget_amount,
+    start_date,
+    end_date
+  FROM `__PROJECT_ID__.__DATASET_ID__.io_budget_segments`
+  WHERE start_date IS NOT NULL AND end_date IS NOT NULL
+),
+-- DV360 paces an insertion order against the budget segment that is currently
+-- in flight. Rank segments so that the in-flight one wins; if the flight is
+-- over, fall back to the most recently completed segment; if it has not begun,
+-- fall back to the one due to start soonest.
+ranked_segments AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY insertion_order_id
+      ORDER BY
+        CASE
+          WHEN CURRENT_DATE() BETWEEN start_date AND end_date THEN 0
+          WHEN end_date < CURRENT_DATE() THEN 1
+          ELSE 2
+        END ASC,
+        CASE
+          WHEN CURRENT_DATE() BETWEEN start_date AND end_date THEN 0
+          WHEN end_date < CURRENT_DATE() THEN DATE_DIFF(CURRENT_DATE(), end_date, DAY)
+          ELSE DATE_DIFF(start_date, CURRENT_DATE(), DAY)
+        END ASC,
+        start_date DESC
+    ) AS seg_rank
+  FROM budget_segments
+),
+active_segment AS (
+  SELECT * EXCEPT(seg_rank) FROM ranked_segments WHERE seg_rank = 1
+),
+segment_spend AS (
+  SELECT
+    s.insertion_order_id,
+    SUM(d.revenue) AS segment_spend,
+    SUM(d.revenue_usd) AS segment_spend_usd,
+    SUM(d.impressions) AS segment_impressions
+  FROM active_segment s
+  JOIN io_spend_daily d
+    ON d.insertion_order_id = s.insertion_order_id
+   AND d.Report_Day BETWEEN s.start_date AND s.end_date
+  GROUP BY 1
+),
+
 io_stats AS (
   SELECT 
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
@@ -109,6 +184,31 @@ advertiser_currencies AS (
   FROM deduped_dbm
   WHERE Advertiser_Currency IS NOT NULL
   GROUP BY 1
+),
+
+-- Resolves the basis for every pacing calculation below. When budget segments
+-- are available the active segment is used; otherwise this degrades gracefully
+-- to the lifetime flight, which is still correct now that spend is ALL_TIME.
+pacing_basis AS (
+  SELECT
+    io.insertion_order_id,
+    COALESCE(seg.budget_amount, io.budget_amount) AS pacing_budget,
+    COALESCE(seg.start_date, io.start_date) AS pacing_start_date,
+    COALESCE(seg.end_date, io.end_date) AS pacing_end_date,
+    seg.description AS budget_segment_description,
+    seg.insertion_order_id IS NOT NULL AS has_budget_segment,
+    COALESCE(
+      IF(seg.insertion_order_id IS NOT NULL, ss.segment_spend, fs.flight_spend),
+      0
+    ) AS pacing_spend,
+    COALESCE(
+      IF(seg.insertion_order_id IS NOT NULL, ss.segment_spend_usd, fs.flight_spend_usd),
+      0
+    ) AS pacing_spend_usd
+  FROM latest_ios io
+  LEFT JOIN active_segment seg ON io.insertion_order_id = seg.insertion_order_id
+  LEFT JOIN segment_spend ss ON io.insertion_order_id = ss.insertion_order_id
+  LEFT JOIN flight_spend fs ON io.insertion_order_id = fs.insertion_order_id
 )
 SELECT 
   COALESCE(s.date, CURRENT_DATE()) AS date,
@@ -131,77 +231,95 @@ SELECT
     s.currency_code, 
     NULLIF(sett.currency_code, ''), 
     NULLIF(adv.currency_code, ''), 
+    fs.currency_code,
     ac.currency_code
   ) AS currency_code,
   io.pacing_type,
   io.pacing_period,
   io.daily_max_amount,
   io.budget_unit,
-  io.budget_amount,
-  io.start_date,
-  io.end_date,
-  COALESCE(ft.cumulative_spend, 0) AS cumulative_spend,
-  COALESCE(ft.cumulative_spend_usd, 0) AS cumulative_spend_usd,
-  
+
+  -- Pacing is evaluated against the budget segment currently in flight, which
+  -- is how DV360 itself paces. start_date/end_date therefore describe that
+  -- segment; the whole-flight equivalents are exposed as flight_* below.
+  pb.budget_segment_description,
+  pb.has_budget_segment,
+  pb.pacing_budget AS budget_amount,
+  pb.pacing_start_date AS start_date,
+  pb.pacing_end_date AS end_date,
+  pb.pacing_spend AS cumulative_spend,
+  pb.pacing_spend_usd AS cumulative_spend_usd,
+
+  -- Whole-flight totals, retained for reference and reconciliation against the
+  -- lifetime budget shown at the bottom of the DV360 budget segment table.
+  io.budget_amount AS flight_budget_amount,
+  io.start_date AS flight_start_date,
+  io.end_date AS flight_end_date,
+  COALESCE(fs.flight_spend, 0) AS flight_cumulative_spend,
+  COALESCE(fs.flight_spend_usd, 0) AS flight_cumulative_spend_usd,
+  SAFE_DIVIDE(COALESCE(fs.flight_spend, 0), NULLIF(io.budget_amount, 0)) * 100 AS flight_budget_spent_pct,
+
   -- Flight Calculations
-  DATE_DIFF(io.end_date, io.start_date, DAY) AS total_flight_days,
+  -- DATE_DIFF is exclusive of the end day, so +1 counts the flight inclusively
+  -- (a Jul 1 - Sep 30 segment is 92 days, not 91).
+  DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1 AS total_flight_days,
   CASE 
-    WHEN CURRENT_DATE() < io.start_date THEN 0
-    WHEN CURRENT_DATE() > io.end_date THEN DATE_DIFF(io.end_date, io.start_date, DAY)
-    ELSE DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0
+    WHEN CURRENT_DATE() > pb.pacing_end_date THEN DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1
+    ELSE DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1
   END AS elapsed_flight_days,
-  GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)) AS remaining_flight_days,
+  GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY)) AS remaining_flight_days,
   CASE 
-    WHEN CURRENT_DATE() < io.start_date THEN 0.0
-    WHEN CURRENT_DATE() > io.end_date THEN 100.0
-    ELSE SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) * 100
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
+    WHEN CURRENT_DATE() > pb.pacing_end_date THEN 100.0
+    ELSE SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)) * 100
   END AS flight_elapsed_pct,
-  SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)) * 100 AS budget_spent_pct,
+  SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)) * 100 AS budget_spent_pct,
   
   -- Pacing Index % = (Budget Spent % / Flight Elapsed %)
   CASE 
-    WHEN CURRENT_DATE() < io.start_date THEN 0.0
-    WHEN CURRENT_DATE() > io.end_date THEN SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)) * 100
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
+    WHEN CURRENT_DATE() > pb.pacing_end_date THEN SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)) * 100
     ELSE SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
-      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
+      SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
     ) * 100
   END AS pacing_index_pct,
   
   -- Pacing Burn Rate & Delivery Velocity
-  SAFE_DIVIDE(io.budget_amount, NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)) AS target_daily_budget,
+  SAFE_DIVIDE(pb.pacing_budget, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)) AS target_daily_budget,
   CASE 
-    WHEN CURRENT_DATE() < io.start_date THEN 0.0
-    ELSE SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, CASE 
-      WHEN CURRENT_DATE() > io.end_date THEN DATE_DIFF(io.end_date, io.start_date, DAY)
-      ELSE DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
+    ELSE SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, CASE 
+      WHEN CURRENT_DATE() > pb.pacing_end_date THEN DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1
+      ELSE DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1
     END), 0))
   END AS current_daily_burn_rate,
   CASE 
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0.0
-    WHEN CURRENT_DATE() > io.end_date THEN 0.0
-    WHEN CURRENT_DATE() < io.start_date THEN SAFE_DIVIDE(io.budget_amount, NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0))
-    ELSE SAFE_DIVIDE(GREATEST(0, io.budget_amount - COALESCE(ft.cumulative_spend, 0)), NULLIF(GREATEST(1, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY)), 0))
+    WHEN CURRENT_DATE() > pb.pacing_end_date THEN 0.0
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN SAFE_DIVIDE(pb.pacing_budget, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0))
+    ELSE SAFE_DIVIDE(GREATEST(0, pb.pacing_budget - pb.pacing_spend), NULLIF(GREATEST(1, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY)), 0))
   END AS required_daily_burn_rate,
   
   -- Projected Spend & Budget at Risk (Strictly for LIVE Active Flights currently underpacing)
-  COALESCE(ft.cumulative_spend, 0) + (
-    SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
-    GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
+  pb.pacing_spend + (
+    SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) * 
+    GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY))
   ) AS projected_flight_spend,
   
   CASE 
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
     WHEN io.budget_unit = 'BUDGET_UNIT_IMPRESSIONS' THEN 0
-    WHEN CURRENT_DATE() < io.start_date THEN 0
-    WHEN CURRENT_DATE() > io.end_date THEN 0  -- Past completed flights are closed, not at risk
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0
+    WHEN CURRENT_DATE() > pb.pacing_end_date THEN 0  -- Past completed flights are closed, not at risk
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
-      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
-    ) < 0.85 THEN GREATEST(0, io.budget_amount - (
-      COALESCE(ft.cumulative_spend, 0) + (
-        SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
-        GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
+      SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
+    ) < 0.85 THEN GREATEST(0, pb.pacing_budget - (
+      pb.pacing_spend + (
+        SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) * 
+        GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY))
       )
     ))
     ELSE 0
@@ -210,35 +328,35 @@ SELECT
   CASE 
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
     WHEN io.budget_unit = 'BUDGET_UNIT_IMPRESSIONS' THEN 0
-    WHEN CURRENT_DATE() < io.start_date THEN 0
-    WHEN CURRENT_DATE() > io.end_date THEN 0
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0
+    WHEN CURRENT_DATE() > pb.pacing_end_date THEN 0
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
-      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
-    ) < 0.85 THEN GREATEST(0, io.budget_amount - (
-      COALESCE(ft.cumulative_spend, 0) + (
-        SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), io.start_date, DAY)), 0)) * 
-        GREATEST(0, DATE_DIFF(io.end_date, CURRENT_DATE(), DAY))
+      SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
+    ) < 0.85 THEN GREATEST(0, pb.pacing_budget - (
+      pb.pacing_spend + (
+        SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) * 
+        GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY))
       )
-    )) * COALESCE(NULLIF(SAFE_DIVIDE(NULLIF(ft.cumulative_spend_usd, 0), NULLIF(ft.cumulative_spend, 0)), 0), NULLIF(ac.fx_rate_to_usd, 0), IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
+    )) * COALESCE(NULLIF(SAFE_DIVIDE(NULLIF(pb.pacing_spend_usd, 0), NULLIF(pb.pacing_spend, 0)), 0), NULLIF(fs.fx_rate_to_usd, 0), NULLIF(ac.fx_rate_to_usd, 0), IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
     ELSE 0
   END AS budget_at_risk_usd,
 
   -- Pacing Alert Status (with visual indicator markers matching UI legends)
   CASE 
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN '⚪ PAUSED'
-    WHEN io.budget_amount IS NULL OR io.budget_amount = 0 THEN '⚪ NO_BUDGET_SET'
-    WHEN CURRENT_DATE() < io.start_date THEN '⚪ UPCOMING'
-    WHEN CURRENT_DATE() > io.end_date AND COALESCE(ft.cumulative_spend, 0) < io.budget_amount THEN '🟡 UNDERSPENT_FINISHED'
-    WHEN CURRENT_DATE() > io.end_date THEN '⚪ COMPLETED'
-    WHEN COALESCE(ft.cumulative_spend, 0) >= io.budget_amount THEN '🔴 BUDGET_EXHAUSTED'
+    WHEN pb.pacing_budget IS NULL OR pb.pacing_budget = 0 THEN '⚪ NO_BUDGET_SET'
+    WHEN CURRENT_DATE() < pb.pacing_start_date THEN '⚪ UPCOMING'
+    WHEN CURRENT_DATE() > pb.pacing_end_date AND pb.pacing_spend < pb.pacing_budget THEN '🟡 UNDERSPENT_FINISHED'
+    WHEN CURRENT_DATE() > pb.pacing_end_date THEN '⚪ COMPLETED'
+    WHEN pb.pacing_spend >= pb.pacing_budget THEN '🔴 BUDGET_EXHAUSTED'
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
-      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
+      SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
     ) < 0.85 THEN '🟡 UNDERPACING'
     WHEN SAFE_DIVIDE(
-      SAFE_DIVIDE(COALESCE(ft.cumulative_spend, 0), NULLIF(io.budget_amount, 0)),
-      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), io.start_date, DAY), NULLIF(DATE_DIFF(io.end_date, io.start_date, DAY), 0)), 0)
+      SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)),
+      NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
     ) > 1.15 THEN '🔴 OVERPACING'
     ELSE '🟢 ON_TRACK'
   END AS pacing_status,
@@ -284,8 +402,10 @@ SELECT
   s.lost_is_budget,
   s.lost_is_rank
 FROM latest_ios io
-LEFT JOIN io_flight_totals ft
-  ON io.insertion_order_id = ft.insertion_order_id
+LEFT JOIN pacing_basis pb
+  ON io.insertion_order_id = pb.insertion_order_id
+LEFT JOIN flight_spend fs
+  ON io.insertion_order_id = fs.insertion_order_id
 LEFT JOIN io_stats s
   ON io.insertion_order_id = s.insertion_order_id
 LEFT JOIN latest_campaigns c
