@@ -455,11 +455,16 @@ class DV360Client {
           q => q.metadata && q.metadata.title === reportTitle
         );
         if (found) {
-          if (found.metadata && found.metadata.dataRange && found.metadata.dataRange.range === 'LAST_90_DAYS') {
+          const existingGroupBys = (found.params && found.params.groupBys) || [];
+          const hasUnsupportedGroupBy = existingGroupBys.includes('FILTER_AUDIENCE_LIST_NAME');
+          if (!hasUnsupportedGroupBy && found.metadata && found.metadata.dataRange && found.metadata.dataRange.range === 'LAST_90_DAYS') {
             console.log(`Found existing DBM Audience query ID: ${found.queryId}`);
             return { queryId: found.queryId, isNew: false };
           }
-          console.log(`Existing audience query ${found.queryId} has range ${found.metadata && found.metadata.dataRange && found.metadata.dataRange.range}, recreating for LAST_90_DAYS...`);
+          const reason = hasUnsupportedGroupBy
+            ? 'it carries the unsupported FILTER_AUDIENCE_LIST_NAME groupBy'
+            : `it has range ${found.metadata && found.metadata.dataRange && found.metadata.dataRange.range}`;
+          console.log(`Recreating audience query ${found.queryId} because ${reason}...`);
           try {
             await this.dbm.queries.delete({ queryId: found.queryId });
           } catch (delErr) {
@@ -499,8 +504,12 @@ class DV360Client {
           'FILTER_MEDIA_PLAN',
           'FILTER_INSERTION_ORDER',
           'FILTER_LINE_ITEM',
+          // FILTER_AUDIENCE_LIST emits both the audience list ID and its name
+          // as separate CSV columns. There is deliberately no
+          // FILTER_AUDIENCE_LIST_NAME dimension in Bid Manager v2 -- sending
+          // one makes queries.create fail with
+          // "The following filter is not supported".
           'FILTER_AUDIENCE_LIST',
-          'FILTER_AUDIENCE_LIST_NAME',
           'FILTER_AUDIENCE_LIST_TYPE'
         ],
         metrics: [
@@ -534,14 +543,25 @@ class DV360Client {
   }
 
   /**
-   * Creates or retrieves an existing ALL_TIME IO-level spend query for a partner.
+   * Creates or retrieves an existing full-history IO-level spend query.
    *
    * This is intentionally separate from the granular performance report. Budget
-   * pacing must be evaluated over an insertion order's entire flight, which can
-   * span years, whereas the performance report is capped at LAST_90_DAYS to keep
-   * the creative/device/inventory breakdown a manageable size. By dropping those
-   * high-cardinality dimensions here, an ALL_TIME range yields roughly one row
-   * per insertion order per day, which stays small even over multi-year flights.
+   * pacing must be evaluated over an insertion order's whole budget segment,
+   * whereas the performance report is capped at LAST_90_DAYS to keep the
+   * creative/device/inventory breakdown a manageable size. By dropping those
+   * high-cardinality dimensions here, a long range yields roughly one row per
+   * insertion order per day, which stays small even over multi-year flights.
+   *
+   * The query is deliberately left unscheduled. DV360 rejects any query whose
+   * schedule is active and whose range exceeds 90 days:
+   *
+   *   "A report with an active schedule cannot have a date range longer than
+   *    90 days."
+   *
+   * The 90-day cap is a property of the schedule, not of the range, so an
+   * ALL_TIME report is perfectly legal as long as frequency is ONE_TIME.
+   * Freshness is instead guaranteed by syncDbmIoPacingReport, which triggers
+   * queries.run on every sync and waits for that specific run to finish.
    * @param {string} partnerId
    * @returns {Promise<{queryId: string, isNew: boolean}>}
    */
@@ -557,11 +577,16 @@ class DV360Client {
           q => q.metadata && q.metadata.title === reportTitle
         );
         if (found) {
-          if (found.metadata && found.metadata.dataRange && found.metadata.dataRange.range === 'ALL_TIME') {
+          const existingRange = found.metadata && found.metadata.dataRange && found.metadata.dataRange.range;
+          const existingFrequency = found.schedule && found.schedule.frequency;
+          if (existingRange === 'ALL_TIME' && existingFrequency === 'ONE_TIME') {
             console.log(`Found existing DBM IO pacing query ID: ${found.queryId}`);
             return { queryId: found.queryId, isNew: false };
           }
-          console.log(`Existing IO pacing query ${found.queryId} has range ${found.metadata && found.metadata.dataRange && found.metadata.dataRange.range}, recreating for ALL_TIME...`);
+          console.log(
+            `Recreating IO pacing query ${found.queryId}: has range ${existingRange} / frequency ${existingFrequency}, ` +
+            'expected ALL_TIME / ONE_TIME...'
+          );
           try {
             await this.dbm.queries.delete({ queryId: found.queryId });
           } catch (delErr) {
@@ -572,18 +597,6 @@ class DV360Client {
     } catch (e) {
       console.warn('Unable to list existing DBM queries, proceeding to create new query:', e.message);
     }
-
-    const now = new Date();
-    const startDate = {
-      year: now.getUTCFullYear(),
-      month: now.getUTCMonth() + 1,
-      day: now.getUTCDate()
-    };
-    const endDate = {
-      year: now.getUTCFullYear() + 5,
-      month: 12,
-      day: 31
-    };
 
     const queryObj = {
       metadata: {
@@ -610,19 +623,78 @@ class DV360Client {
           { type: 'FILTER_PARTNER', value: String(partnerId) }
         ]
       },
+      // ONE_TIME means "only runs when queries.run is called", which is what
+      // lifts the 90-day range cap. startDate/endDate are only required for
+      // recurring frequencies, so the schedule is otherwise empty.
       schedule: {
-        frequency: 'DAILY',
-        startDate: startDate,
-        endDate: endDate
+        frequency: 'ONE_TIME'
       }
     };
 
-    console.log(`Creating new DBM IO pacing query for partner ${partnerId}...`);
-    const res = await this.executeWithBackoff(() =>
-      this.dbm.queries.create({ requestBody: queryObj })
-    );
-    console.log(`Successfully created DBM IO pacing query ID: ${res.data.queryId}`);
-    return { queryId: res.data.queryId, isNew: true };
+    try {
+      console.log(`Creating new DBM IO pacing query for partner ${partnerId} (ALL_TIME, unscheduled)...`);
+      const res = await this.executeWithBackoff(() =>
+        this.dbm.queries.create({ requestBody: queryObj })
+      );
+      console.log(`Successfully created DBM IO pacing query ID: ${res.data.queryId}`);
+      return { queryId: res.data.queryId, isNew: true };
+    } catch (err) {
+      // Surface just the API message; the default error dumps the entire
+      // request object and buries the reason.
+      const apiMessage =
+        (err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
+        err.message;
+      throw new Error(
+        `DV360 rejected the IO pacing query for partner ${partnerId}: ${apiMessage}`
+      );
+    }
+  }
+
+  /**
+   * Triggers a query and waits for that specific run to complete.
+   *
+   * getLatestReportDownloadUrl alone is not sufficient for an unscheduled
+   * query: it would happily return the report generated by a previous run, so
+   * the data would be frozen at whenever the query was first executed. Keying
+   * the wait on the reportId returned by queries.run guarantees the caller only
+   * ever reads the results of the run it just requested.
+   * @param {string} queryId
+   * @param {{maxAttempts?: number, intervalMs?: number}=} options
+   * @returns {Promise<string|null>} Download URL for the freshly generated CSV
+   */
+  async runQueryAndWait(queryId, options) {
+    const maxAttempts = (options && options.maxAttempts) || 60;
+    const intervalMs = (options && options.intervalMs) || 5000;
+
+    const report = await this.runQuery(queryId);
+    const reportId = report && report.key && report.key.reportId;
+    if (!reportId) {
+      console.warn(`queries.run for ${queryId} returned no reportId; falling back to the latest available report.`);
+      return this.getLatestReportDownloadUrl(queryId);
+    }
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const res = await this.executeWithBackoff(() =>
+        this.dbm.queries.reports.get({ queryId: queryId, reportId: reportId })
+      );
+      const metadata = res.data && res.data.metadata;
+      const state = metadata && metadata.status && metadata.status.state;
+
+      if (state === 'DONE') {
+        console.log(`Report ${reportId} for query ${queryId} completed.`);
+        return metadata.googleCloudStoragePath || null;
+      }
+      if (state === 'FAILED') {
+        const failure = (metadata.status && metadata.status.failure && metadata.status.failure.errorCode) || 'unknown error';
+        throw new Error(`DV360 report ${reportId} for query ${queryId} failed: ${failure}`);
+      }
+
+      console.log(`Waiting for report ${reportId} (query ${queryId}), state ${state} (attempt ${attempt}/${maxAttempts})...`);
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+
+    console.warn(`Report ${reportId} for query ${queryId} did not finish within the wait window.`);
+    return null;
   }
 
   /**

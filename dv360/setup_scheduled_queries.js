@@ -239,11 +239,43 @@ async function setupScheduledQueries() {
   try {
     const { syncDbmPerformanceReport, syncDbmAudienceReport, syncDbmIoPacingReport } = require('./create_report');
     console.log(`Syncing DBM performance, audience and IO pacing reports for Partner ${PARTNER_ID}...`);
-    await Promise.allSettled([
-      syncDbmPerformanceReport(PARTNER_ID, DATASET_ID),
-      syncDbmAudienceReport(PARTNER_ID, DATASET_ID),
-      syncDbmIoPacingReport(PARTNER_ID, DATASET_ID)
-    ]);
+    const syncJobs = [
+      { name: 'performance', run: () => syncDbmPerformanceReport(PARTNER_ID, DATASET_ID) },
+      { name: 'audience', run: () => syncDbmAudienceReport(PARTNER_ID, DATASET_ID) },
+      { name: 'IO pacing', run: () => syncDbmIoPacingReport(PARTNER_ID, DATASET_ID) }
+    ];
+    const results = await Promise.allSettled(syncJobs.map(job => job.run()));
+
+    // These results used to be discarded. A rejected sync then left its source
+    // table empty and the downstream materialization happily produced zeroed
+    // metrics with no indication anything had gone wrong.
+    const failed = [];
+    results.forEach((result, i) => {
+      const name = syncJobs[i].name;
+      if (result.status === 'fulfilled') {
+        const value = result.value || {};
+        if (value.success === false) {
+          console.warn(`DBM ${name} report did not complete: ${value.message}`);
+        } else {
+          console.log(`DBM ${name} report synced (${value.count} rows).`);
+        }
+        return;
+      }
+      const err = result.reason || {};
+      const apiMessage =
+        (err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
+        err.message ||
+        String(err);
+      console.error(`DBM ${name} report FAILED: ${apiMessage}`);
+      failed.push(name);
+    });
+
+    if (failed.length > 0) {
+      console.error(
+        `WARNING: ${failed.length} DBM report(s) failed to sync (${failed.join(', ')}). ` +
+        'Tables derived from them will be stale or empty.'
+      );
+    }
   } catch (dbmErr) {
     console.warn('Warning syncing DBM reports:', dbmErr.message);
   }

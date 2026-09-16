@@ -18,6 +18,56 @@ const DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PART
 let dv360Client = null;
 
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+/**
+ * Replaces the contents of a BigQuery table using a load job.
+ *
+ * Streaming inserts (`table.insert`) were previously used here in batches of
+ * 500. At ~500k rows that is ~1,000 sequential round trips, which dominated the
+ * deployment time. A load job sends everything in a single request, is not
+ * billed, and applies WRITE_TRUNCATE atomically, so it also removes the need
+ * for a separate TRUNCATE that could fail against the streaming buffer.
+ *
+ * @param {string} targetDatasetId
+ * @param {string} tableName
+ * @param {!Array<!Object>} rows
+ * @returns {!Promise<number>} Number of rows loaded.
+ */
+async function replaceTableRows(targetDatasetId, tableName, rows) {
+  if (!rows || rows.length === 0) return 0;
+
+  const tmpFile = path.join(os.tmpdir(), `dgpulse_${tableName}_${Date.now()}.ndjson`);
+  fs.writeFileSync(tmpFile, rows.map(r => JSON.stringify(r)).join('\n'));
+
+  try {
+    console.log(`Loading ${rows.length} rows into ${targetDatasetId}.${tableName}...`);
+    const [job] = await bigquery
+      .dataset(targetDatasetId)
+      .table(tableName)
+      .load(tmpFile, {
+        sourceFormat: 'NEWLINE_DELIMITED_JSON',
+        writeDisposition: 'WRITE_TRUNCATE',
+        // Omitting the schema makes the load reuse the destination table's
+        // existing schema rather than guessing one from the data.
+        autodetect: false
+      });
+
+    const jobErrors = job && job.status && job.status.errors;
+    if (jobErrors && jobErrors.length > 0) {
+      throw new Error(`Load job failed: ${JSON.stringify(jobErrors)}`);
+    }
+    console.log(`Successfully loaded ${rows.length} rows into ${targetDatasetId}.${tableName}.`);
+    return rows.length;
+  } finally {
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch (cleanupErr) {
+      console.warn(`Warning removing temp file ${tmpFile}:`, cleanupErr.message);
+    }
+  }
+}
 
 /**
  * Downloads client_secret.json from GCS or local filesystem and initializes DV360Client.
@@ -319,27 +369,7 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
   const bqRows = parsedRows.map(mapCsvRowToBq).filter(r => r.Insertion_Order_Id > 0 || r.Impressions > 0 || r.Revenue > 0 || r.Revenue_USD > 0);
   console.log(`Mapped ${bqRows.length} valid performance rows for BigQuery.`);
 
-  if (bqRows.length > 0) {
-    try {
-      const dataset = bigquery.dataset(targetDatasetId);
-      const [table] = await dataset.table('dbm_performance').get();
-      const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
-      if (pId) {
-        await bigquery.query({
-          query: `TRUNCATE TABLE \`${pId}.${targetDatasetId}.dbm_performance\`;`
-        });
-      }
-    } catch (delErr) {
-      console.warn('Warning clearing dbm_performance table:', delErr.message);
-    }
-
-    const batchSize = 500;
-    for (let i = 0; i < bqRows.length; i += batchSize) {
-      const batch = bqRows.slice(i, i + batchSize);
-      await bigquery.dataset(targetDatasetId).table('dbm_performance').insert(batch);
-    }
-    console.log(`Successfully inserted ${bqRows.length} rows into ${targetDatasetId}.dbm_performance.`);
-  }
+  await replaceTableRows(targetDatasetId, 'dbm_performance', bqRows);
 
   return { success: true, count: bqRows.length };
 }
@@ -422,27 +452,7 @@ async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
   const bqRows = parsedRows.map(mapAudienceCsvRowToBq).filter(r => r.Insertion_Order_Id > 0 || r.Impressions > 0 || r.Revenue > 0 || r.Revenue_USD > 0);
   console.log(`Mapped ${bqRows.length} valid audience performance rows for BigQuery.`);
 
-  if (bqRows.length > 0) {
-    try {
-      const dataset = bigquery.dataset(targetDatasetId);
-      const [table] = await dataset.table('dbm_audiences_performance').get();
-      const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
-      if (pId) {
-        await bigquery.query({
-          query: `TRUNCATE TABLE \`${pId}.${targetDatasetId}.dbm_audiences_performance\`;`
-        });
-      }
-    } catch (delErr) {
-      console.warn('Warning clearing dbm_audiences_performance table:', delErr.message);
-    }
-
-    const batchSize = 500;
-    for (let i = 0; i < bqRows.length; i += batchSize) {
-      const batch = bqRows.slice(i, i + batchSize);
-      await bigquery.dataset(targetDatasetId).table('dbm_audiences_performance').insert(batch);
-    }
-    console.log(`Successfully inserted ${bqRows.length} rows into ${targetDatasetId}.dbm_audiences_performance.`);
-  }
+  await replaceTableRows(targetDatasetId, 'dbm_audiences_performance', bqRows);
 
   return { success: true, count: bqRows.length };
 }
@@ -483,25 +493,15 @@ async function syncDbmIoPacingReport(partnerIdOverride, datasetIdOverride) {
   const client = await initializeClient();
   const { queryId } = await client.createOrGetIoPacingReportQuery(partnerId);
 
-  let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+  // The pacing query is unscheduled (see createOrGetIoPacingReportQuery), so
+  // DV360 never refreshes it on its own. Always trigger a run and wait for that
+  // specific report; reusing the latest existing report would silently pin
+  // pacing to whenever the query was first executed.
+  // An ALL_TIME report covers the full account history, so allow a longer
+  // window than the 90-day reports before giving up.
+  const downloadUrl = await client.runQueryAndWait(queryId, { maxAttempts: 60, intervalMs: 5000 });
   if (!downloadUrl) {
-    console.log(`No completed IO pacing report found yet for query ${queryId}. Triggering execution...`);
-    try {
-      await client.runQuery(queryId);
-    } catch (e) {
-      console.warn('Warning triggering DBM IO pacing query:', e.message);
-    }
-    // An ALL_TIME report covers the full account history, so allow a longer
-    // window than the 90-day reports before giving up.
-    for (let attempt = 1; attempt <= 36; attempt++) {
-      console.log(`Waiting for DBM IO pacing report ${queryId} to finish generating (attempt ${attempt}/36)...`);
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      downloadUrl = await client.getLatestReportDownloadUrl(queryId);
-      if (downloadUrl) break;
-    }
-    if (!downloadUrl) {
-      return { success: false, message: 'IO pacing report execution triggered. Data will be available on next sync.' };
-    }
+    return { success: false, message: 'IO pacing report is still generating. Data will be available on next sync.' };
   }
 
   console.log(`Downloading latest DBM IO pacing report from ${downloadUrl}...`);
@@ -523,27 +523,7 @@ async function syncDbmIoPacingReport(partnerIdOverride, datasetIdOverride) {
     .filter(r => r.Insertion_Order_Id > 0 && r.Report_Day);
   console.log(`Mapped ${bqRows.length} valid IO pacing rows for BigQuery.`);
 
-  if (bqRows.length > 0) {
-    try {
-      const dataset = bigquery.dataset(targetDatasetId);
-      const [table] = await dataset.table('dbm_io_spend_daily').get();
-      const pId = (table.metadata && table.metadata.tableReference && table.metadata.tableReference.projectId) || bigquery.projectId || process.env.PROJECT_ID;
-      if (pId) {
-        await bigquery.query({
-          query: `TRUNCATE TABLE \`${pId}.${targetDatasetId}.dbm_io_spend_daily\`;`
-        });
-      }
-    } catch (delErr) {
-      console.warn('Warning clearing dbm_io_spend_daily table:', delErr.message);
-    }
-
-    const batchSize = 500;
-    for (let i = 0; i < bqRows.length; i += batchSize) {
-      const batch = bqRows.slice(i, i + batchSize);
-      await bigquery.dataset(targetDatasetId).table('dbm_io_spend_daily').insert(batch);
-    }
-    console.log(`Successfully inserted ${bqRows.length} rows into ${targetDatasetId}.dbm_io_spend_daily.`);
-  }
+  await replaceTableRows(targetDatasetId, 'dbm_io_spend_daily', bqRows);
 
   return { success: true, count: bqRows.length };
 }
@@ -568,17 +548,41 @@ if (require.main === module) {
         process.exit(1);
       });
   } else {
-    Promise.allSettled([
-      syncDbmPerformanceReport(partnerIdArg),
-      syncDbmAudienceReport(partnerIdArg),
-      syncDbmIoPacingReport(partnerIdArg)
-    ])
+    const syncJobs = [
+      { name: 'performance', promise: syncDbmPerformanceReport(partnerIdArg) },
+      { name: 'audience', promise: syncDbmAudienceReport(partnerIdArg) },
+      { name: 'IO pacing', promise: syncDbmIoPacingReport(partnerIdArg) }
+    ];
+    Promise.allSettled(syncJobs.map(job => job.promise))
       .then(results => {
-        console.log('DBM Reports sync complete:', JSON.stringify(results));
-        process.exit(0);
+        // Previously this logged JSON.stringify(results), which serialised the
+        // entire Gaxios error object -- request body, retry config and all --
+        // for every failure, burying the one line that actually mattered.
+        let failures = 0;
+        results.forEach((result, i) => {
+          const name = syncJobs[i].name;
+          if (result.status === 'fulfilled') {
+            const value = result.value || {};
+            if (value.success === false) {
+              console.warn(`DBM ${name} report did not complete: ${value.message}`);
+            } else {
+              console.log(`DBM ${name} report synced (${value.count} rows).`);
+            }
+            return;
+          }
+          const err = result.reason || {};
+          const apiMessage =
+            (err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
+            err.message ||
+            String(err);
+          console.error(`DBM ${name} report FAILED: ${apiMessage}`);
+          failures++;
+        });
+        console.log(`DBM Reports sync complete: ${results.length - failures}/${results.length} succeeded.`);
+        process.exit(failures > 0 ? 1 : 0);
       })
       .catch(err => {
-        console.error('Error syncing DBM reports:', err);
+        console.error('Error syncing DBM reports:', err.message);
         process.exit(1);
       });
   }

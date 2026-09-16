@@ -149,6 +149,7 @@ async function sync() {
       console.log(`Refreshing live insertion orders for advertiser ${advId}...`);
       const ios = await client.listAllInsertionOrders(advId);
       if (ios && ios.length > 0) {
+        const segmentRows = [];
         const ioRows = ios.map(io => {
           let budgetAmount = 0;
           let startDate = null;
@@ -163,6 +164,21 @@ async function sync() {
                 `${seg.dateRange.endDate.year}-${String(seg.dateRange.endDate.month).padStart(2, '0')}-${String(seg.dateRange.endDate.day).padStart(2, '0')}` : null;
               if (s && (!startDate || s < startDate)) startDate = s;
               if (e && (!endDate || e > endDate)) endDate = e;
+
+              // Budget pacing is evaluated against the segment currently in
+              // flight, so each segment must survive rather than being
+              // collapsed into the lifetime total below.
+              if (s && e) {
+                segmentRows.push({
+                  insertionOrderId: String(io.insertionOrderId),
+                  advertiserId: String(advId),
+                  campaignId: String(io.campaignId || ''),
+                  description: seg.description || '',
+                  budget_amount: seg.budgetAmountMicros ? Number(seg.budgetAmountMicros) / 1000000 : 0,
+                  start_date: s,
+                  end_date: e
+                });
+              }
             }
             budgetAmount = totalMicros / 1000000;
           }
@@ -191,6 +207,20 @@ async function sync() {
 
         await bigquery.dataset(DATASET_ID).table('insertion_orders').insert(ioRows);
         console.log(`✓ Updated ${ioRows.length} insertion orders in BigQuery with latest live names.`);
+
+        if (segmentRows.length > 0) {
+          try {
+            await bigquery.query({
+              query: `DELETE FROM \`${DATASET_ID}.io_budget_segments\` WHERE advertiserId = '${advId}'`
+            });
+          } catch (delErr) {}
+
+          const segBatchSize = 500;
+          for (let i = 0; i < segmentRows.length; i += segBatchSize) {
+            await bigquery.dataset(DATASET_ID).table('io_budget_segments').insert(segmentRows.slice(i, i + segBatchSize));
+          }
+          console.log(`✓ Updated ${segmentRows.length} IO budget segments in BigQuery.`);
+        }
       }
     } catch (ioErr) {
       console.warn(`Warning refreshing insertion orders for advertiser ${advId}:`, ioErr.message);
