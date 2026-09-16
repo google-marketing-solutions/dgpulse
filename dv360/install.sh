@@ -268,10 +268,10 @@ gcloud functions deploy ${FUNCTION_NAME} \
   --entry-point=fetchAdvertisers \
   --trigger-http \
   --no-allow-unauthenticated \
-  --cpu=1 \
-  --memory=1Gi \
+  --cpu=2 \
+  --memory=4Gi \
   --timeout=540s \
-  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},PARTNER_ID=${PARTNER_ID},TOPIC_NAME=${TOPIC_NAME},DATASET_ID=${DATASET_ID}
+  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},PARTNER_ID=${PARTNER_ID},TOPIC_NAME=${TOPIC_NAME},DATASET_ID=${DATASET_ID},NODE_OPTIONS=--max-old-space-size=3584
 
 # 6. Get the service URL
 SERVICE_URL=$(gcloud functions describe ${FUNCTION_NAME} --region=${REGION} --gen2 --format='value(serviceConfig.uri)')

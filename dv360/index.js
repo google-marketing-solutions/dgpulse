@@ -91,14 +91,39 @@ exports.fetchAdvertisers = async (req, res) => {
             await pubsub.topic(topicName).publishMessage({ data: dataBuffer });
         }
 
-        // Sync and ingest latest DBM performance and audience reports into BigQuery
+        // Sync and ingest the latest DBM reports into BigQuery.
+        // The IO pacing report must be included here: its DV360 query is
+        // deliberately unscheduled (ALL_TIME ranges are not allowed on a
+        // scheduled query), so this daily run is the only thing that refreshes
+        // dbm_io_spend_daily. Omitting it leaves budget pacing frozen at
+        // whatever the install populated, with no visible error.
         try {
             console.log(`Syncing DBM reports for partner ${partnerId} into dataset ${datasetId}...`);
-            const { syncDbmPerformanceReport, syncDbmAudienceReport } = require('./create_report');
-            await Promise.allSettled([
-                syncDbmPerformanceReport(partnerId, datasetId),
-                syncDbmAudienceReport(partnerId, datasetId)
-            ]);
+            const {
+                syncDbmPerformanceReport,
+                syncDbmAudienceReport,
+                syncDbmIoPacingReport
+            } = require('./create_report');
+            const syncJobs = [
+                { name: 'performance', run: () => syncDbmPerformanceReport(partnerId, datasetId) },
+                { name: 'audience', run: () => syncDbmAudienceReport(partnerId, datasetId) },
+                { name: 'IO pacing', run: () => syncDbmIoPacingReport(partnerId, datasetId) }
+            ];
+            const results = await Promise.allSettled(syncJobs.map(job => job.run()));
+            results.forEach((result, i) => {
+                const name = syncJobs[i].name;
+                if (result.status === 'fulfilled') {
+                    const value = result.value || {};
+                    console.log(`DBM ${name} report synced (${value.count} rows).`);
+                    return;
+                }
+                const err = result.reason || {};
+                const apiMessage =
+                    (err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
+                    err.message ||
+                    String(err);
+                console.error(`DBM ${name} report FAILED: ${apiMessage}`);
+            });
         } catch (dbmErr) {
             console.warn('Warning syncing DBM reports:', dbmErr.message);
         }
@@ -122,3 +147,4 @@ exports.processAdvertiser = require('./process_advertiser').processAdvertiser;
 exports.setupDbmReport = require('./create_report').setupDbmReport;
 exports.syncDbmPerformanceReport = require('./create_report').syncDbmPerformanceReport;
 exports.syncDbmAudienceReport = require('./create_report').syncDbmAudienceReport;
+exports.syncDbmIoPacingReport = require('./create_report').syncDbmIoPacingReport;
