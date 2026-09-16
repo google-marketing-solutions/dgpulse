@@ -158,11 +158,28 @@ async function initializeClient() {
 }
 
 /**
- * Parses standard CSV text with quote handling.
+ * Parses a DBM report CSV into an array of row objects.
+ *
+ * DBM appends a metadata footer after the data, separated by a blank line:
+ *
+ *   Date,Partner ID,...,Media Cost (USD)
+ *   2025/03/03,6631618296,...
+ *   ...
+ *                                  <- blank separator
+ *   Report Time:,2026/09/16 13:02 PM
+ *   Date Range:,All Time
+ *   Filter by Advertiser ID:,6652327328,6652279413,...
+ *
+ * That blank line is the only reliable data/footer boundary, so it must be
+ * detected before empty lines are discarded. A previous version filtered all
+ * blank lines up front and then relied on a column-count check to reject the
+ * footer, which only worked by accident: it held for the wide performance
+ * report (~20 columns) but not for the narrower IO pacing report, where
+ * "Filter by Advertiser ID:" plus seven advertiser IDs was wide enough to pass
+ * and landed in BigQuery as `Invalid date: 'Filter by Advertiser ID:'`.
  */
 function parseCsv(text) {
-  const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
-  if (lines.length === 0) return [];
+  const rawLines = text.split(/\r?\n/);
 
   const parseLine = (line) => {
     const values = [];
@@ -183,15 +200,29 @@ function parseCsv(text) {
     return values;
   };
 
-  const headers = parseLine(lines[0]);
+  const headerIndex = rawLines.findIndex(line => line.trim().length > 0);
+  if (headerIndex === -1) return [];
+
+  const headers = parseLine(rawLines[headerIndex]);
   const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const rawLine = lines[i];
+  for (let i = headerIndex + 1; i < rawLines.length; i++) {
+    const rawLine = rawLines[i];
+
+    // First blank line after the header ends the data section.
+    if (rawLine.trim().length === 0) break;
+
     if (rawLine.startsWith('Total') || rawLine.startsWith('Grand Total') || rawLine.startsWith(',')) {
       continue;
     }
+
     const cols = parseLine(rawLine);
     if (cols.length < headers.length) continue;
+
+    // Backstop in case a future report omits the blank separator: every footer
+    // line is a "Label:" followed by its values, and no data value ends in a
+    // colon.
+    if (cols[0].endsWith(':')) continue;
+
     const row = {};
     headers.forEach((h, idx) => {
       row[h] = cols[idx];
@@ -201,14 +232,25 @@ function parseCsv(text) {
   return rows;
 }
 
+/**
+ * Normalises a DBM date cell to YYYY-MM-DD, or null if it isn't a date.
+ *
+ * Returning null rather than the raw input matters: these values land in a
+ * BigQuery DATE column, and a single unparseable string aborts the entire load
+ * job. Dropping the value lets the per-report row filters discard the row.
+ */
 const parseDate = (d) => {
   if (!d) return null;
   const parts = d.split(/[\/\-]/);
-  if (parts.length === 3) {
-    if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-    return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-  }
-  return d;
+  if (parts.length !== 3) return null;
+  if (!parts.every(p => /^\d+$/.test(p.trim()))) return null;
+
+  const [a, b, c] = parts.map(p => p.trim());
+  const iso = a.length === 4
+    ? `${a}-${b.padStart(2, '0')}-${c.padStart(2, '0')}`
+    : `${c}-${a.padStart(2, '0')}-${b.padStart(2, '0')}`;
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null;
 };
 
 /**
@@ -400,8 +442,8 @@ function mapAudienceCsvRowToBq(r) {
     Total_Conversions: num(getCol(['Total Conversions', 'Conversions'])),
     Post_View_Conversions: num(getCol(['Post-View Conversions', 'Post View Conversions', 'VTC'])),
     Post_Click_Conversions: num(getCol(['Post-Click Conversions', 'Post Click Conversions'])),
-    CM_Post_Click_Revenue: num(getCol(['CM Post-Click Revenue', 'Post-Click Revenue', 'Click Revenue'])),
-    CM_Post_View_Revenue: num(getCol(['CM Post-View Revenue', 'Post-View Revenue', 'View Revenue']))
+    CM_Post_Click_Revenue: num(getCol(['CM360 Post-Click Revenue', 'CM Post-Click Revenue', 'Post-Click Revenue', 'Click Revenue'])),
+    CM_Post_View_Revenue: num(getCol(['CM360 Post-View Revenue', 'CM Post-View Revenue', 'Post-View Revenue', 'View Revenue']))
   };
 }
 

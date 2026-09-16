@@ -518,10 +518,16 @@ class DV360Client {
           'METRIC_MEDIA_COST_ADVERTISER',
           'METRIC_MEDIA_COST_USD',
           'METRIC_TOTAL_CONVERSIONS',
-          'METRIC_POST_VIEW_CONVERSIONS',
-          'METRIC_POST_CLICK_CONVERSIONS',
-          'METRIC_CM_POST_CLICK_REVENUE',
-          'METRIC_CM_POST_VIEW_REVENUE'
+          // Bid Manager v2 names these after the attribution signal rather
+          // than the outcome: METRIC_POST_VIEW_CONVERSIONS /
+          // METRIC_POST_CLICK_CONVERSIONS do not exist. The CSV column
+          // headers are still "Post-View Conversions" / "Post-Click
+          // Conversions", so the row mapper is unaffected.
+          'METRIC_LAST_IMPRESSIONS',
+          'METRIC_LAST_CLICKS',
+          // Renamed from the METRIC_CM_* prefix to METRIC_CM360_*.
+          'METRIC_CM360_POST_CLICK_REVENUE',
+          'METRIC_CM360_POST_VIEW_REVENUE'
         ],
         filters: [
           { type: 'FILTER_PARTNER', value: String(partnerId) }
