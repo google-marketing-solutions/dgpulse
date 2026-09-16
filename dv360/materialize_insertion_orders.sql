@@ -431,7 +431,6 @@ LEFT JOIN advertiser_currencies ac
 -- view reflect the latest date only. Use the base table for performance
 -- reporting; use this view for pacing.
 CREATE OR REPLACE VIEW `__PROJECT_ID__.__DATASET_ID__.final_io_pacing_current` AS
-SELECT AS VALUE
-  ARRAY_AGG(t ORDER BY t.date DESC LIMIT 1)[OFFSET(0)]
-FROM `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_performance` AS t
-GROUP BY t.insertion_order_id;
+SELECT *
+FROM `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_performance`
+QUALIFY ROW_NUMBER() OVER (PARTITION BY insertion_order_id ORDER BY date DESC) = 1;

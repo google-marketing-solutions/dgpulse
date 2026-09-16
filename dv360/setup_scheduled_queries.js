@@ -4,8 +4,15 @@ const { google } = require('googleapis');
 const { BigQuery } = require('@google-cloud/bigquery');
 
 let PROJECT_ID = process.env.PROJECT_ID;
-let PARTNER_ID = process.env.PARTNER_ID;
-const DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : 'dv360_dgpulse');
+// Accept the partner as a positional argument as well as an env var. Without
+// this, `node setup_scheduled_queries.js <partner>` silently ignored the
+// argument, DATASET_ID below fell back to the legacy unsuffixed dataset, and
+// the run operated on the wrong partner's data.
+let PARTNER_ID = process.env.PARTNER_ID || process.argv[2];
+// Deliberately left null when the partner is unknown: it is resolved in
+// setupScheduledQueries() once PARTNER_ID is. Defaulting to 'dv360_dgpulse'
+// here silently targets an abandoned dataset from an earlier install.
+let DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : null);
 let SERVICE_ACCOUNT = process.env.SERVICE_ACCOUNT;
 const LOCATION = process.env.LOCATION || process.env.REGION || 'US';
 
@@ -98,7 +105,11 @@ async function setupScheduledQueries() {
     PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
   }
 
-  if (!PARTNER_ID && PROJECT_ID) {
+  // Only guess the partner from BigQuery when the caller named a dataset. With
+  // no dataset there is nothing safe to read from: the previous behaviour was
+  // to query the legacy unsuffixed `dv360_dgpulse`, which belongs to an earlier
+  // install and yields a stale partner that then poisons every downstream step.
+  if (!PARTNER_ID && PROJECT_ID && DATASET_ID) {
     try {
       const bqTemp = new BigQuery({ projectId: PROJECT_ID });
       const [rows] = await bqTemp.query({
@@ -130,10 +141,15 @@ async function setupScheduledQueries() {
   }
 
   if (!PROJECT_ID || !PARTNER_ID) {
-    throw new Error('PROJECT_ID and PARTNER_ID are required. Please set them as environment variables (e.g. PROJECT_ID=my-project PARTNER_ID=12345 node setup_scheduled_queries.js).');
+    throw new Error('PROJECT_ID and PARTNER_ID are required. Pass the partner as an argument (node setup_scheduled_queries.js 12345) or set PROJECT_ID=my-project PARTNER_ID=12345.');
   }
 
-  console.log(`Setting up scheduled queries for Project: ${PROJECT_ID}, Partner: ${PARTNER_ID}...`);
+  // Resolve now that the partner is known, so the dataset always matches it.
+  if (!DATASET_ID) DATASET_ID = `dv360_dgpulse_${PARTNER_ID}`;
+  process.env.PARTNER_ID = PARTNER_ID;
+  process.env.DATASET_ID = DATASET_ID;
+
+  console.log(`Setting up scheduled queries for Project: ${PROJECT_ID}, Partner: ${PARTNER_ID}, Dataset: ${DATASET_ID}...`);
   await ensureTableSchema();
 
   const auth = new google.auth.GoogleAuth({
