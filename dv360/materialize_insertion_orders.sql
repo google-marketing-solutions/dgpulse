@@ -240,15 +240,15 @@ SELECT
   io.budget_unit,
 
   -- Pacing is evaluated against the budget segment currently in flight, which
-  -- is how DV360 itself paces. start_date/end_date therefore describe that
-  -- segment; the whole-flight equivalents are exposed as flight_* below.
+  -- is how DV360 itself paces. Every segment_* column below describes that
+  -- segment; the whole-flight equivalents are exposed as flight_* beneath them.
   pb.budget_segment_description,
   pb.has_budget_segment,
-  pb.pacing_budget AS budget_amount,
-  pb.pacing_start_date AS start_date,
-  pb.pacing_end_date AS end_date,
-  pb.pacing_spend AS cumulative_spend,
-  pb.pacing_spend_usd AS cumulative_spend_usd,
+  pb.pacing_budget AS segment_budget_amount,
+  pb.pacing_start_date AS segment_start_date,
+  pb.pacing_end_date AS segment_end_date,
+  pb.pacing_spend AS segment_cumulative_spend,
+  pb.pacing_spend_usd AS segment_cumulative_spend_usd,
 
   -- Whole-flight totals, retained for reference and reconciliation against the
   -- lifetime budget shown at the bottom of the DV360 budget segment table.
@@ -259,24 +259,25 @@ SELECT
   COALESCE(fs.flight_spend_usd, 0) AS flight_cumulative_spend_usd,
   SAFE_DIVIDE(COALESCE(fs.flight_spend, 0), NULLIF(io.budget_amount, 0)) * 100 AS flight_budget_spent_pct,
 
-  -- Flight Calculations
-  -- DATE_DIFF is exclusive of the end day, so +1 counts the flight inclusively
+  -- Segment Calculations. These describe the active budget segment, not the
+  -- whole flight; the flight_* columns above are the lifetime equivalents.
+  -- DATE_DIFF is exclusive of the end day, so +1 counts the segment inclusively
   -- (a Jul 1 - Sep 30 segment is 92 days, not 91).
-  DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1 AS total_flight_days,
+  DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1 AS total_segment_days,
   CASE 
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0
     WHEN CURRENT_DATE() > pb.pacing_end_date THEN DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1
     ELSE DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1
-  END AS elapsed_flight_days,
-  GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY)) AS remaining_flight_days,
+  END AS elapsed_segment_days,
+  GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY)) AS remaining_segment_days,
   CASE 
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
     WHEN CURRENT_DATE() > pb.pacing_end_date THEN 100.0
     ELSE SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)) * 100
-  END AS flight_elapsed_pct,
-  SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)) * 100 AS budget_spent_pct,
+  END AS segment_elapsed_pct,
+  SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)) * 100 AS segment_budget_spent_pct,
   
-  -- Pacing Index % = (Budget Spent % / Flight Elapsed %)
+  -- Pacing Index % = (Budget Spent % / Segment Elapsed %)
   CASE 
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
     WHEN CURRENT_DATE() > pb.pacing_end_date THEN SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)) * 100
@@ -302,11 +303,11 @@ SELECT
     ELSE SAFE_DIVIDE(GREATEST(0, pb.pacing_budget - pb.pacing_spend), NULLIF(GREATEST(1, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY)), 0))
   END AS required_daily_burn_rate,
   
-  -- Projected Spend & Budget at Risk (Strictly for LIVE Active Flights currently underpacing)
+  -- Projected Spend & Budget at Risk (strictly for live, active segments currently underpacing)
   pb.pacing_spend + (
     SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) * 
     GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY))
-  ) AS projected_flight_spend,
+  ) AS projected_segment_spend,
   
   CASE 
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
@@ -416,3 +417,21 @@ LEFT JOIN latest_settings sett
   ON io.advertiser_id = sett.advertiserId
 LEFT JOIN advertiser_currencies ac
   ON io.advertiser_id = ac.advertiser_id;
+
+-- One row per insertion order, for pacing scorecards and the pacing table.
+--
+-- final_insertion_orders_performance carries one row per IO *per date*. Every
+-- pacing column on it is an IO-level constant (they are all derived from
+-- CURRENT_DATE(), not from the row's date), so a SUM in Looker multiplies each
+-- IO's value by its number of date rows -- and the multiplier moves whenever
+-- the date filter changes. Selecting the newest row per IO is therefore exact,
+-- not an approximation, and lets scorecards SUM safely.
+--
+-- NOTE: the daily delivery columns (impressions, clicks, cost, ...) in this
+-- view reflect the latest date only. Use the base table for performance
+-- reporting; use this view for pacing.
+CREATE OR REPLACE VIEW `__PROJECT_ID__.__DATASET_ID__.final_io_pacing_current` AS
+SELECT AS VALUE
+  ARRAY_AGG(t ORDER BY t.date DESC LIMIT 1)[OFFSET(0)]
+FROM `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_performance` AS t
+GROUP BY t.insertion_order_id;
