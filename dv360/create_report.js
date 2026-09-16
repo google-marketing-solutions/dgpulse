@@ -576,17 +576,36 @@ if (require.main === module) {
   const action = process.argv[3] || 'sync';
 
   if (action === 'setup') {
-    Promise.all([
-      setupDbmReport(partnerIdArg),
-      initializeClient().then(c => c.createOrGetAudienceReportQuery(partnerIdArg)),
-      initializeClient().then(c => c.createOrGetIoPacingReportQuery(partnerIdArg))
-    ])
+    // allSettled, not all: a failure in one report definition must not hide
+    // whether the other two were created successfully.
+    const setupJobs = [
+      { name: 'performance', promise: setupDbmReport(partnerIdArg) },
+      { name: 'audience', promise: initializeClient().then(c => c.createOrGetAudienceReportQuery(partnerIdArg)) },
+      { name: 'IO pacing', promise: initializeClient().then(c => c.createOrGetIoPacingReportQuery(partnerIdArg)) }
+    ];
+    Promise.allSettled(setupJobs.map(job => job.promise))
       .then(results => {
-        console.log('DBM Reports setup complete:', JSON.stringify(results));
-        process.exit(0);
+        let failures = 0;
+        results.forEach((result, i) => {
+          const name = setupJobs[i].name;
+          if (result.status === 'fulfilled') {
+            const queryId = (result.value && result.value.queryId) || 'ok';
+            console.log(`DBM ${name} report query ready (${queryId}).`);
+            return;
+          }
+          const err = result.reason || {};
+          const apiMessage =
+            (err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
+            err.message ||
+            String(err);
+          console.error(`DBM ${name} report query FAILED: ${apiMessage}`);
+          failures++;
+        });
+        console.log(`DBM Reports setup complete: ${results.length - failures}/${results.length} succeeded.`);
+        process.exit(failures > 0 ? 1 : 0);
       })
       .catch(err => {
-        console.error('Error setting up DBM reports:', err);
+        console.error('Error setting up DBM reports:', err.message);
         process.exit(1);
       });
   } else {

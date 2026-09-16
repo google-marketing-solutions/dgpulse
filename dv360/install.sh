@@ -178,8 +178,15 @@ fi
 echo "Installing Node.js dependencies..."
 npm install
 
-echo "Setting up daily DBM performance report query..."
-BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" DATASET_ID="${DATASET_ID}" node create_report.js
+echo "Setting up daily DBM report queries..."
+# Only create/verify the report definitions here; the actual data sync happens
+# once, later, at the "Syncing DBM Reports into BigQuery" step. Without the
+# explicit "setup" argument this defaulted to a full sync, so every install
+# downloaded and loaded the ~490k-row performance report twice.
+# The || guard matters under `set -e`: create_report.js exits non-zero when a
+# report fails, and an unguarded failure here would abort the install before
+# the Cloud Function deploy and the Looker Studio link at the end.
+BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" DATASET_ID="${DATASET_ID}" node create_report.js "${PARTNER_ID}" setup || echo "Warning: one or more DBM report queries could not be created; see the error above."
 
 # 4b. Create Pub/Sub Topic and BigQuery Dataset/Table
 echo "Creating Pub/Sub topic: ${TOPIC_NAME}..."
