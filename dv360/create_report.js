@@ -486,17 +486,92 @@ function mapAudienceCsvRowToBq(r) {
 }
 
 /**
- * Downloads the latest DBM Audience report and ingests rows into BigQuery dbm_audiences_performance table.
+ * Reads the partner's Demand Gen insertion orders from the synced entity table.
+ *
+ * The audience report is scoped to these. Everything DGPulse surfaces is Demand
+ * Gen -- every materialize_*.sql filters on it -- so anything else pulled here
+ * is discarded downstream anyway. For the reference partner that is 52 of 122
+ * insertion orders.
+ *
+ * Returns an empty array rather than throwing when the table is missing or
+ * empty, which is the expected state on a fresh install: line_items is
+ * populated asynchronously by process_advertiser.js and may not have landed
+ * when the reports are first set up. The query then falls back to partner scope
+ * and is rebuilt on the next run, once the insertion orders are known.
+ *
+ * @param {string} targetDatasetId
+ * @returns {!Promise<!Array<string>>}
  */
-async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
+async function fetchDemandGenInsertionOrderIds(targetDatasetId) {
+  try {
+    // Unqualified dataset reference, resolved against the client's default
+    // project -- the same assumption replaceTableRows already makes.
+    const [rows] = await bigquery.query({
+      query:
+        'SELECT DISTINCT insertionOrderId ' +
+        `FROM \`${targetDatasetId}.line_items\` ` +
+        "WHERE lineItemType LIKE '%DEMAND_GEN%' AND insertionOrderId IS NOT NULL"
+    });
+    const ids = rows.map(r => String(r.insertionOrderId)).filter(Boolean);
+    if (ids.length === 0) {
+      console.warn(
+        `No Demand Gen insertion orders found in ${targetDatasetId}.line_items. ` +
+        'The audience report will be scoped to the whole partner, which is ' +
+        'much slower; it will be rescoped automatically once the entity sync ' +
+        'has run.');
+    } else {
+      console.log(`Scoping audience report to ${ids.length} Demand Gen insertion order(s).`);
+    }
+    return ids;
+  } catch (err) {
+    console.warn(
+      `Could not read Demand Gen insertion orders from ${targetDatasetId}.line_items ` +
+      `(${err.message}). Falling back to partner-wide audience scope.`);
+    return [];
+  }
+}
+
+/**
+ * Downloads the latest DBM Audience report and ingests rows into BigQuery dbm_audiences_performance table.
+ *
+ * @param {string=} partnerIdOverride
+ * @param {string=} datasetIdOverride
+ * @param {{waitForReport: (boolean|undefined)}=} options Set waitForReport to
+ *     false from anything running under a timeout. See the comment on the wait
+ *     below.
+ */
+async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride, options) {
   const partnerId = partnerIdOverride || PARTNER_ID;
   const targetDatasetId = datasetIdOverride || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
   if (!partnerId) throw new Error('PARTNER_ID is required.');
 
   const client = await initializeClient(partnerId);
-  const { queryId } = await client.createOrGetAudienceReportQuery(partnerId);
+  const insertionOrderIds = await fetchDemandGenInsertionOrderIds(targetDatasetId);
+  const { queryId } =
+    await client.createOrGetAudienceReportQuery(partnerId, insertionOrderIds);
+
+  // Waiting is opt-in because report latency here is dominated by DV360's queue
+  // and is not predictable: the same query has been observed completing in 91s,
+  // 239s and 500s, of which only ~16s was actual generation. Nothing running
+  // under the 540s Cloud Function timeout can safely wait for that.
+  //
+  // It does not need to. The query carries a DAILY schedule, so DV360 builds it
+  // unprompted every morning and the sync just collects the finished file --
+  // which is how the performance report has always worked, and why it has never
+  // blocked. Installs run in Cloud Shell with no timeout, so they do wait, to
+  // give a fresh deployment same-day data instead of an empty dashboard.
+  const waitForReport = !options || options.waitForReport !== false;
 
   let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
+  if (!downloadUrl && !waitForReport) {
+    return {
+      success: true,
+      count: 0,
+      message: `No completed audience report available yet for query ${queryId}. ` +
+               'DV360 builds it on its own daily schedule; it will be ingested ' +
+               'on the next sync.'
+    };
+  }
   if (!downloadUrl) {
     console.log(`No completed audience report found yet for query ${queryId}. Triggering execution...`);
 
@@ -507,11 +582,10 @@ async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
     // would hide a broken report indefinitely. It also cannot be satisfied by a
     // stale report from an earlier day.
     //
-    // The window is 5 minutes rather than the previous 90 seconds: the first run
-    // of a newly created query has to build 90 days of history at audience-list
-    // grain, which does not finish in 90 seconds. This matches the IO pacing
-    // report, which had the same problem.
-    downloadUrl = await client.runQueryAndWait(queryId, { maxAttempts: 60, intervalMs: 5000 });
+    // 20 minutes, against a worst observed time of 12m36s for the unscoped
+    // query. This only ever runs at install time, where there is no timeout to
+    // respect and an over-short window costs the operator a day of data.
+    downloadUrl = await client.runQueryAndWait(queryId, { maxAttempts: 80, intervalMs: 15000 });
     if (!downloadUrl) {
       return { success: false, message: 'Audience report is still generating. Data will be available on next sync.' };
     }
@@ -618,9 +692,20 @@ if (require.main === module) {
   if (action === 'setup') {
     // allSettled, not all: a failure in one report definition must not hide
     // whether the other two were created successfully.
+    // The audience query is scoped to the Demand Gen insertion orders, so setup
+    // has to resolve them here as well; otherwise it would create a
+    // partner-wide query that the first sync then has to tear down and rebuild.
+    const audienceDatasetId = process.env.DATASET_ID ||
+        (partnerIdArg ? `dv360_dgpulse_${partnerIdArg}` : DATASET_ID);
     const setupJobs = [
       { name: 'performance', promise: setupDbmReport(partnerIdArg) },
-      { name: 'audience', promise: initializeClient(partnerIdArg).then(c => c.createOrGetAudienceReportQuery(partnerIdArg)) },
+      {
+        name: 'audience',
+        promise: Promise.all([
+          initializeClient(partnerIdArg),
+          fetchDemandGenInsertionOrderIds(audienceDatasetId)
+        ]).then(([c, ioIds]) => c.createOrGetAudienceReportQuery(partnerIdArg, ioIds))
+      },
       { name: 'IO pacing', promise: initializeClient(partnerIdArg).then(c => c.createOrGetIoPacingReportQuery(partnerIdArg)) }
     ];
     Promise.allSettled(setupJobs.map(job => job.promise))

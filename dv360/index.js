@@ -106,7 +106,13 @@ exports.fetchAdvertisers = async (req, res) => {
             } = require('./create_report');
             const syncJobs = [
                 { name: 'performance', run: () => syncDbmPerformanceReport(partnerId, datasetId) },
-                { name: 'audience', run: () => syncDbmAudienceReport(partnerId, datasetId) },
+                // waitForReport: false -- the audience report sits in a DV360
+                // queue whose latency has been measured between 91s and 756s
+                // for the same query, which does not fit inside this function's
+                // 540s timeout. The query is on a DAILY schedule, so this picks
+                // up the file DV360 built overnight rather than triggering and
+                // blocking on a fresh run.
+                { name: 'audience', run: () => syncDbmAudienceReport(partnerId, datasetId, { waitForReport: false }) },
                 { name: 'IO pacing', run: () => syncDbmIoPacingReport(partnerId, datasetId) }
             ];
             const results = await Promise.allSettled(syncJobs.map(job => job.run()));

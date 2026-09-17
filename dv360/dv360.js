@@ -460,10 +460,18 @@ class DV360Client {
 
   /**
    * Creates or retrieves an existing daily DBM audience performance query for a partner.
+   *
    * @param {string} partnerId
+   * @param {!Array<string>=} insertionOrderIds Demand Gen insertion orders to
+   *     restrict the report to. Strongly recommended: scoping the report this
+   *     way measured at least 6.6x faster than the partner-wide equivalent, and
+   *     it is what satisfies the documented precondition for
+   *     includeOnlyTargetedUserLists. Omitting it falls back to partner scope,
+   *     which is correct but slow -- acceptable only before the entity sync has
+   *     populated the line items table.
    * @returns {Promise<{queryId: string, isNew: boolean}>}
    */
-  async createOrGetAudienceReportQuery(partnerId) {
+  async createOrGetAudienceReportQuery(partnerId, insertionOrderIds) {
     const reportTitle = `DV360 DGPulse Audience Report - Partner ${partnerId}`;
     const dataRange = 'LAST_90_DAYS';
 
@@ -528,6 +536,32 @@ class DV360Client {
     // its memory raised to 4 GiB.
     const options = { includeOnlyTargetedUserLists: true };
 
+    // Repeated filter pairs of the same type are OR'd together by Bid Manager,
+    // so this scopes the report to the partner's Demand Gen insertion orders.
+    //
+    // This is a latency fix, not just a tidiness one. The partner-wide version
+    // of this exact query never left the QUEUED state within 10 minutes over a
+    // 7-day range, while the IO-scoped version completed in 91s; over 90 days it
+    // completed in 239s. Reducing the dimensions instead was measured too and
+    // made it *slower* (500s), because generation is only ~16s of that and the
+    // rest is queue time proportional to the amount of data scanned. So the
+    // scoping is what matters and the report keeps its full shape.
+    //
+    // It also satisfies the documented precondition for
+    // includeOnlyTargetedUserLists, which "requires the use of
+    // FILTER_INSERTION_ORDER or FILTER_LINE_ITEM filters".
+    //
+    // An empty list degrades to partner scope rather than failing: the entity
+    // sync that populates line_items may not have run yet on a fresh install.
+    // The caller logs that case; the reuse check below then supersedes the
+    // partner-scoped query as soon as the insertion orders are known.
+    const ioIds = (insertionOrderIds || []).map(String).filter(Boolean);
+    const filters = [{ type: 'FILTER_PARTNER', value: String(partnerId) }];
+    for (const ioId of ioIds) {
+      filters.push({ type: 'FILTER_INSERTION_ORDER', value: ioId });
+    }
+    const filterKeys = filters.map(f => `${f.type}:${f.value}`);
+
     try {
       const existingQueries = await this.executeWithBackoff(() =>
         this.dbm.queries.list({ pageSize: 100 })
@@ -544,10 +578,19 @@ class DV360Client {
           // Compare the shape rather than probing for individual bad fields, so
           // that any future edit to the arrays above supersedes the deployed
           // query exactly once instead of silently serving stale dimensions.
+          //
+          // Filters are part of that shape now that they carry the insertion
+          // order list. If they were left out, a Demand Gen insertion order
+          // created after the query would be excluded from the report forever,
+          // with nothing failing anywhere to indicate it. Recreations are
+          // therefore expected whenever the IO set changes, not a symptom.
+          const foundFilterKeys =
+            (params.filters || []).map(f => `${f.type}:${f.value}`);
           const mismatch =
             foundRange !== dataRange ? `data range is ${foundRange}, expected ${dataRange}` :
             !sameStringSet(params.groupBys, groupBys) ? `groupBys differ (found: ${(params.groupBys || []).join(', ')})` :
             !sameStringSet(params.metrics, metrics) ? `metrics differ (found: ${(params.metrics || []).join(', ')})` :
+            !sameStringSet(foundFilterKeys, filterKeys) ? `filters differ (found ${foundFilterKeys.length}, expected ${filterKeys.length})` :
             null;
 
           if (!mismatch) {
@@ -592,9 +635,7 @@ class DV360Client {
         type: 'STANDARD',
         groupBys: groupBys,
         metrics: metrics,
-        filters: [
-          { type: 'FILTER_PARTNER', value: String(partnerId) }
-        ],
+        filters: filters,
         options: options
       },
       schedule: {
@@ -604,7 +645,10 @@ class DV360Client {
       }
     };
 
-    console.log(`Creating new DBM Audience query for partner ${partnerId}...`);
+    const scope = ioIds.length
+      ? `${ioIds.length} Demand Gen insertion order(s)`
+      : 'the whole partner (no Demand Gen insertion orders supplied)';
+    console.log(`Creating new DBM Audience query for partner ${partnerId}, scoped to ${scope}...`);
     const res = await this.executeWithBackoff(() =>
       this.dbm.queries.create({ requestBody: queryObj })
     );
