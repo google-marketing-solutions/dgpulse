@@ -4,6 +4,26 @@
  */
 const { google } = require('googleapis');
 
+/**
+ * Order-insensitive equality for two lists of enum strings.
+ *
+ * Used to decide whether an already-deployed report query still matches the
+ * shape the code wants. Order is ignored deliberately: the API is not
+ * documented to preserve the order groupBys were submitted in, and a reuse
+ * check that reports a false mismatch is worse than no check at all -- it
+ * recreates the query on every single run.
+ * @param {!Array<string>|undefined} a
+ * @param {!Array<string>|undefined} b
+ * @returns {boolean}
+ */
+function sameStringSet(a, b) {
+  const left = a || [];
+  const right = b || [];
+  if (left.length !== right.length) return false;
+  const seen = new Set(left);
+  return right.every(x => seen.has(x));
+}
+
 class DV360Client {
   /**
    * @param {string} clientId
@@ -445,6 +465,68 @@ class DV360Client {
    */
   async createOrGetAudienceReportQuery(partnerId) {
     const reportTitle = `DV360 DGPulse Audience Report - Partner ${partnerId}`;
+    const dataRange = 'LAST_90_DAYS';
+
+    // Declared once so the reuse check below and the create call cannot drift
+    // apart. They previously encoded different expectations, which is only
+    // harmless while the query never gets created successfully.
+    //
+    // FILTER_MEDIA_PLAN is deliberately absent. Bid Manager rejects the campaign
+    // dimension in combination with the audience list dimensions: queries.create
+    // fails with "The combination of dimensions, metrics, and filters in your
+    // report is invalid". This was established by bisection against the working
+    // performance query rather than inferred -- the identical request succeeds
+    // with only this field removed, and still fails when any other single
+    // dimension is removed instead, so it is this dimension and not a cap on
+    // dimension count. Campaign is recovered downstream in
+    // materialize_audiences.sql by joining the insertion order to the
+    // insertion_orders entity table, which is also more complete than the report
+    // column was.
+    const groupBys = [
+      'FILTER_DATE',
+      'FILTER_PARTNER',
+      'FILTER_ADVERTISER',
+      'FILTER_ADVERTISER_CURRENCY',
+      'FILTER_INSERTION_ORDER',
+      'FILTER_LINE_ITEM',
+      // FILTER_AUDIENCE_LIST emits the list *name* only, as an "Audience List"
+      // column. FILTER_USER_LIST is the matching ID dimension ("Audience List
+      // ID"); without it Audience_List_Id lands as 0 on every row, which
+      // materialize_audiences.sql both dedupes and groups on. There is
+      // deliberately no FILTER_AUDIENCE_LIST_NAME dimension in Bid Manager v2 --
+      // sending one makes queries.create fail with "The following filter is not
+      // supported".
+      'FILTER_AUDIENCE_LIST',
+      'FILTER_USER_LIST',
+      'FILTER_AUDIENCE_LIST_TYPE'
+    ];
+
+    const metrics = [
+      'METRIC_IMPRESSIONS',
+      'METRIC_CLICKS',
+      'METRIC_MEDIA_COST_ADVERTISER',
+      'METRIC_MEDIA_COST_USD',
+      'METRIC_TOTAL_CONVERSIONS',
+      // Bid Manager v2 names these after the attribution signal rather
+      // than the outcome: METRIC_POST_VIEW_CONVERSIONS /
+      // METRIC_POST_CLICK_CONVERSIONS do not exist. The CSV column
+      // headers are still "Post-View Conversions" / "Post-Click
+      // Conversions", so the row mapper is unaffected.
+      'METRIC_LAST_IMPRESSIONS',
+      'METRIC_LAST_CLICKS',
+      // Renamed from the METRIC_CM_* prefix to METRIC_CM360_*.
+      'METRIC_CM360_POST_CLICK_REVENUE',
+      'METRIC_CM360_POST_VIEW_REVENUE'
+    ];
+
+    // Restricts rows to audience lists the line items actually target. Without
+    // it the report also returns every other list the reached users happen to
+    // belong to, which is audience composition rather than audience
+    // performance, and multiplies the row count for no benefit here. That
+    // matters beyond tidiness: this report is ingested in the same function
+    // invocation as the 491k-row performance report, which already had to have
+    // its memory raised to 4 GiB.
+    const options = { includeOnlyTargetedUserLists: true };
 
     try {
       const existingQueries = await this.executeWithBackoff(() =>
@@ -455,16 +537,28 @@ class DV360Client {
           q => q.metadata && q.metadata.title === reportTitle
         );
         if (found) {
-          const existingGroupBys = (found.params && found.params.groupBys) || [];
-          const hasUnsupportedGroupBy = existingGroupBys.includes('FILTER_AUDIENCE_LIST_NAME');
-          if (!hasUnsupportedGroupBy && found.metadata && found.metadata.dataRange && found.metadata.dataRange.range === 'LAST_90_DAYS') {
+          const params = found.params || {};
+          const foundRange = (found.metadata && found.metadata.dataRange &&
+                              found.metadata.dataRange.range) || null;
+
+          // Compare the shape rather than probing for individual bad fields, so
+          // that any future edit to the arrays above supersedes the deployed
+          // query exactly once instead of silently serving stale dimensions.
+          const mismatch =
+            foundRange !== dataRange ? `data range is ${foundRange}, expected ${dataRange}` :
+            !sameStringSet(params.groupBys, groupBys) ? `groupBys differ (found: ${(params.groupBys || []).join(', ')})` :
+            !sameStringSet(params.metrics, metrics) ? `metrics differ (found: ${(params.metrics || []).join(', ')})` :
+            null;
+
+          if (!mismatch) {
             console.log(`Found existing DBM Audience query ID: ${found.queryId}`);
             return { queryId: found.queryId, isNew: false };
           }
-          const reason = hasUnsupportedGroupBy
-            ? 'it carries the unsupported FILTER_AUDIENCE_LIST_NAME groupBy'
-            : `it has range ${found.metadata && found.metadata.dataRange && found.metadata.dataRange.range}`;
-          console.log(`Recreating audience query ${found.queryId} because ${reason}...`);
+
+          // Logged in full because a reuse check that never matches recreates
+          // the query on every run, and those accumulate against the pageSize
+          // above until the other reports stop finding themselves too.
+          console.log(`Recreating audience query ${found.queryId} because ${mismatch}...`);
           try {
             await this.dbm.queries.delete({ queryId: found.queryId });
           } catch (delErr) {
@@ -491,47 +585,17 @@ class DV360Client {
     const queryObj = {
       metadata: {
         title: reportTitle,
-        dataRange: { range: 'LAST_90_DAYS' },
+        dataRange: { range: dataRange },
         format: 'CSV'
       },
       params: {
         type: 'STANDARD',
-        groupBys: [
-          'FILTER_DATE',
-          'FILTER_PARTNER',
-          'FILTER_ADVERTISER',
-          'FILTER_ADVERTISER_CURRENCY',
-          'FILTER_MEDIA_PLAN',
-          'FILTER_INSERTION_ORDER',
-          'FILTER_LINE_ITEM',
-          // FILTER_AUDIENCE_LIST emits both the audience list ID and its name
-          // as separate CSV columns. There is deliberately no
-          // FILTER_AUDIENCE_LIST_NAME dimension in Bid Manager v2 -- sending
-          // one makes queries.create fail with
-          // "The following filter is not supported".
-          'FILTER_AUDIENCE_LIST',
-          'FILTER_AUDIENCE_LIST_TYPE'
-        ],
-        metrics: [
-          'METRIC_IMPRESSIONS',
-          'METRIC_CLICKS',
-          'METRIC_MEDIA_COST_ADVERTISER',
-          'METRIC_MEDIA_COST_USD',
-          'METRIC_TOTAL_CONVERSIONS',
-          // Bid Manager v2 names these after the attribution signal rather
-          // than the outcome: METRIC_POST_VIEW_CONVERSIONS /
-          // METRIC_POST_CLICK_CONVERSIONS do not exist. The CSV column
-          // headers are still "Post-View Conversions" / "Post-Click
-          // Conversions", so the row mapper is unaffected.
-          'METRIC_LAST_IMPRESSIONS',
-          'METRIC_LAST_CLICKS',
-          // Renamed from the METRIC_CM_* prefix to METRIC_CM360_*.
-          'METRIC_CM360_POST_CLICK_REVENUE',
-          'METRIC_CM360_POST_VIEW_REVENUE'
-        ],
+        groupBys: groupBys,
+        metrics: metrics,
         filters: [
           { type: 'FILTER_PARTNER', value: String(partnerId) }
-        ]
+        ],
+        options: options
       },
       schedule: {
         frequency: 'DAILY',

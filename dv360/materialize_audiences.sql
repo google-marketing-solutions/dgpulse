@@ -23,7 +23,10 @@ audience_stats AS (
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Partner_Id AS STRING) AS partner_id,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    CAST(Media_Plan_Id AS STRING) AS campaign_id,
+    -- campaign_id is intentionally not selected here. Bid Manager rejects
+    -- FILTER_MEDIA_PLAN in combination with the audience list dimensions, so
+    -- the report no longer returns Media_Plan_Id and this column would be NULL
+    -- for every row. It is recovered from the insertion order below.
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
     CAST(Line_Item_Id AS STRING) AS line_item_id,
     COALESCE(CAST(Audience_List_Id AS STRING), 'N/A') AS audience_id,
@@ -40,7 +43,18 @@ audience_stats AS (
     SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
     SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
   FROM deduped_dbm
-  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+),
+-- Campaign is no longer available from the audience report, so resolve it from
+-- the insertion order instead. This is also strictly more reliable than the old
+-- report column: it resolves for every insertion order, including ones whose
+-- audience rows were dropped by the Demand Gen filter above.
+io_campaigns AS (
+  SELECT
+    insertionOrderId,
+    MAX(NULLIF(campaignId, '')) AS campaignId
+  FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
+  GROUP BY insertionOrderId
 ),
 latest_campaigns AS (
   SELECT 
@@ -87,8 +101,8 @@ SELECT
   s.advertiser_id,
   s.advertiser_id AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, s.advertiser_id) AS account_name,
-  s.campaign_id,
-  COALESCE(c.displayName, s.campaign_id) AS campaign_name,
+  ioc.campaignId AS campaign_id,
+  COALESCE(c.displayName, ioc.campaignId) AS campaign_name,
   s.insertion_order_id,
   COALESCE(io.displayName, s.insertion_order_id) AS insertion_order_name,
   s.line_item_id,
@@ -126,7 +140,8 @@ SELECT
   SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS avg_cpc,
   SAFE_DIVIDE(COALESCE(s.cost_usd, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS avg_cpc_usd
 FROM audience_stats s
-LEFT JOIN latest_campaigns c ON s.campaign_id = c.campaignId
+LEFT JOIN io_campaigns ioc ON s.insertion_order_id = ioc.insertionOrderId
+LEFT JOIN latest_campaigns c ON ioc.campaignId = c.campaignId
 LEFT JOIN latest_ios io ON s.insertion_order_id = io.insertionOrderId
 LEFT JOIN latest_line_items li ON s.line_item_id = li.lineItemId
 LEFT JOIN latest_advertisers adv ON s.advertiser_id = adv.advertiserId
