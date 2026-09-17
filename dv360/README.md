@@ -70,6 +70,25 @@ Before deploying, ensure you have:
        * `https://www.googleapis.com/auth/display-video`
        * `https://www.googleapis.com/auth/doubleclickbidmanager`
      * *(If using External user type)*: On the **Test users** screen, add your email address so you are permitted to authorize during testing.
+
+   > ⚠️ **This choice decides whether your daily sync keeps running unattended.**
+   >
+   > Google expires refresh tokens after **7 days** for any app whose publishing
+   > status is **Testing**. When that happens the deployed Cloud Function starts
+   > failing every night with `invalid_grant`, and no data reaches BigQuery until
+   > someone manually generates and redeploys a new token.
+   >
+   > | Setup | Refresh token lifetime |
+   > |---|---|
+   > | **Internal** user type (Workspace org) | Does not expire — **recommended** |
+   > | **External**, publishing status *In production* | Does not expire |
+   > | **External**, publishing status *Testing* | **Expires after 7 days** |
+   >
+   > If you are deploying inside your own Workspace organization, choose
+   > **Internal** and there is nothing further to do. If you must use **External**,
+   > go to the OAuth consent screen and click **PUBLISH APP** to move it out of
+   > Testing before you generate the refresh token in step 1. Leaving it in
+   > Testing is fine only for short-lived evaluation.
    * Navigate to **APIs & Services** ➔ **Credentials**:
      * Click **+ CREATE CREDENTIALS** ➔ **OAuth client ID**.
      * Select **Web application** as the application type.
@@ -148,6 +167,64 @@ for sql in materialize_campaigns.sql materialize_line_items.sql materialize_inse
   bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/$(gcloud config get-value project)/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")"
 done
 ```
+
+---
+
+## Troubleshooting
+
+### `invalid_grant` on every report
+
+This has two unrelated causes. Check which one applies before regenerating anything — a regenerated token will not fix the second.
+
+The scripts print their credential source on startup:
+
+```
+Using refresh token from: Cloud Function dv360-dgpulse-<PARTNER_ID>.
+```
+
+**Cause 1 — the token expired.** Expected if your OAuth app is still in *Testing*
+publishing status (see Prerequisites). Generate a new one and write it to the
+deployed function:
+
+```bash
+node auth.js   # copy the printed refresh_token
+
+gcloud functions deploy "dv360-dgpulse-${PARTNER_ID}" \
+  --region=us-central1 --gen2 \
+  --update-env-vars "REFRESH_TOKEN=<new token>"
+```
+
+> ⚠️ Use `--update-env-vars`, **never** `--set-env-vars`. The latter replaces the
+> entire environment, discarding `BUCKET_NAME`, `PARTNER_ID` and `DATASET_ID`,
+> which breaks the function in a way that looks unrelated to the token change.
+
+If you also run the scripts locally, put the same value in `dv360/.env`:
+
+```bash
+echo "REFRESH_TOKEN=<new token>" >> .env
+```
+
+**Cause 2 — the wrong credential was picked up.** Credentials are resolved in
+priority order: `REFRESH_TOKEN` in the environment, then `dv360/.env`, then the
+deployed Cloud Function `dv360-dgpulse-<PARTNER_ID>`. If a stale value is sitting
+in an earlier source it silently wins over the correct one. The startup line
+above tells you which source was used; clear whichever one is stale.
+
+Always pass the partner ID explicitly so the correct function is consulted:
+
+```bash
+node create_report.js "${PARTNER_ID}" setup   # verify report definitions only
+node create_report.js "${PARTNER_ID}" sync    # full data sync
+```
+
+### Report queries are recreated on every run
+
+If the logs show `Creating new DBM ... query` on every run instead of
+`Found existing DBM ... query ID`, the reuse check is failing and a new query is
+being registered each time. These accumulate against the 100-query lookup window
+and will eventually stop the other reports from finding themselves too. The
+recreation reason is logged — check whether the deployed query's dimensions still
+match the code.
 
 ---
 

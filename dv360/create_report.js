@@ -499,19 +499,21 @@ async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
   let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
   if (!downloadUrl) {
     console.log(`No completed audience report found yet for query ${queryId}. Triggering execution...`);
-    try {
-      await client.runQuery(queryId);
-    } catch (e) {
-      console.warn('Warning triggering DBM audience query:', e.message);
-    }
-    for (let attempt = 1; attempt <= 18; attempt++) {
-      console.log(`Waiting for DBM audience report ${queryId} to finish generating (attempt ${attempt}/18)...`);
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      downloadUrl = await client.getLatestReportDownloadUrl(queryId);
-      if (downloadUrl) break;
-    }
+
+    // runQueryAndWait keys the wait on the reportId this run produced, which
+    // matters for two reasons. It distinguishes a report that FAILED from one
+    // that is merely slow -- the previous loop polled for any completed report
+    // and so reported both as "data will be available on next sync", which
+    // would hide a broken report indefinitely. It also cannot be satisfied by a
+    // stale report from an earlier day.
+    //
+    // The window is 5 minutes rather than the previous 90 seconds: the first run
+    // of a newly created query has to build 90 days of history at audience-list
+    // grain, which does not finish in 90 seconds. This matches the IO pacing
+    // report, which had the same problem.
+    downloadUrl = await client.runQueryAndWait(queryId, { maxAttempts: 60, intervalMs: 5000 });
     if (!downloadUrl) {
-      return { success: false, message: 'Audience report execution triggered. Data will be available on next sync.' };
+      return { success: false, message: 'Audience report is still generating. Data will be available on next sync.' };
     }
   }
 
