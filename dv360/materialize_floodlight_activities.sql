@@ -36,6 +36,29 @@ latest_activities AS (
     MAX(auditDate) AS auditDate
   FROM `__PROJECT_ID__.__DATASET_ID__.floodlight_activities`
   WHERE advertiserId IN (SELECT advertiserId FROM latest_advertisers)
+    -- Serving activities only.
+    --
+    -- Disabled activities vastly outnumber live ones (~5,000 vs ~174 on
+    -- partner 6631618296) and were inflating every account-level denominator
+    -- in final_cls_preflight_audit -- e.g. "637 of 637 activities enabled"
+    -- and "0 of 2206 activities with EC", where the true serving population
+    -- is a small fraction of that.
+    --
+    -- Filtering here fixes BOTH tables in one place: final_cls_preflight_audit
+    -- is built from final_floodlight_activities_audit via adv_base (below),
+    -- so the rollup inherits this filter automatically. Do not add a second
+    -- filter downstream.
+    --
+    -- The raw floodlight_activities table is deliberately left complete, so
+    -- the disabled population stays queryable and this change is reversible
+    -- without re-syncing from the DV360 API.
+    --
+    -- Enum values are FLOODLIGHT_ACTIVITY_SERVING_STATUS_{ENABLED,DISABLED,
+    -- UNSPECIFIED}; process_advertiser.js additionally writes the literal
+    -- 'UNKNOWN' when the API omits the field. This is a strict equality by
+    -- deliberate choice, so UNSPECIFIED/UNKNOWN are excluded along with
+    -- DISABLED.
+    AND servingStatus = 'FLOODLIGHT_ACTIVITY_SERVING_STATUS_ENABLED'
   GROUP BY advertiserId, floodlightActivityId
 ),
 latest_settings AS (
@@ -174,7 +197,7 @@ SELECT
     ELSE 'FAIL'
   END AS status_code,
   CASE
-    WHEN total_activities = 0 THEN 'No Floodlight activities configured'
+    WHEN total_activities = 0 THEN 'No serving Floodlight activities'
     ELSE CONCAT(CAST(yt_passing_activities AS STRING), ' of ', CAST(total_activities AS STRING), ' activities enabled')
   END AS details,
   CASE 
@@ -209,7 +232,7 @@ SELECT
     ELSE 'FAIL'
   END AS status_code,
   CASE
-    WHEN total_activities = 0 THEN 'No Floodlight activities configured'
+    WHEN total_activities = 0 THEN 'No serving Floodlight activities'
     ELSE CONCAT(CAST(dynamic_passing_activities AS STRING), ' of ', CAST(total_activities AS STRING), ' dynamic tags')
   END AS details,
   CASE 
@@ -244,7 +267,7 @@ SELECT
     ELSE 'FAIL'
   END AS status_code,
   CASE
-    WHEN total_activities = 0 THEN 'No Floodlight activities configured'
+    WHEN total_activities = 0 THEN 'No serving Floodlight activities'
     ELSE CONCAT(CAST(ec_passing_activities AS STRING), ' of ', CAST(total_activities AS STRING), ' activities with EC')
   END AS details,
   CASE 
