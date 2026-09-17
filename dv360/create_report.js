@@ -71,12 +71,20 @@ async function replaceTableRows(targetDatasetId, tableName, rows) {
 
 /**
  * Downloads client_secret.json from GCS or local filesystem and initializes DV360Client.
+ *
+ * @param {string=} partnerIdOverride Partner the caller is acting for. Callers
+ *     that were given a partner explicitly (for example from a CLI argument)
+ *     must pass it: process.env.PARTNER_ID is not set when this module is run
+ *     from the command line.
  */
-async function initializeClient() {
+async function initializeClient(partnerIdOverride) {
   if (dv360Client) return dv360Client;
+
+  const partnerId = partnerIdOverride || PARTNER_ID;
 
   let bucketName = process.env.BUCKET_NAME;
   let refreshToken = process.env.REFRESH_TOKEN;
+  let tokenSource = refreshToken ? 'REFRESH_TOKEN environment variable' : null;
 
   // 1. Check local .env file if missing
   if ((!bucketName || !refreshToken) && fs.existsSync('.env')) {
@@ -85,27 +93,50 @@ async function initializeClient() {
       const [k, v] = line.split('=');
       if (k && v) {
         if (!bucketName && k.trim() === 'BUCKET_NAME') bucketName = v.trim().replace(/^"|"$/g, '');
-        if (!refreshToken && k.trim() === 'REFRESH_TOKEN') refreshToken = v.trim().replace(/^"|"$/g, '');
+        if (!refreshToken && k.trim() === 'REFRESH_TOKEN') {
+          refreshToken = v.trim().replace(/^"|"$/g, '');
+          tokenSource = '.env file';
+        }
       }
     }
   }
 
-  // 1b. Auto-discover from deployed Cloud Function environment variables if still missing
+  // 1b. Auto-discover from the deployed Cloud Function's environment variables
+  // if still missing.
+  //
+  // The function name is derived from the partner the caller actually asked
+  // for. This previously read the module-level PARTNER_ID, which is populated
+  // only from the environment, so `node create_report.js <partnerId> setup`
+  // resolved to the legacy unsuffixed function instead -- the CLI argument
+  // never reached here -- and picked up its long-dead refresh token. Every call
+  // then failed with invalid_grant while the valid token sat unused on the
+  // partner's own function.
+  //
+  // There is deliberately no fallback to the unsuffixed name once a partner is
+  // known. It cannot help, since one partner's token does not live on another
+  // partner's function, and it actively hurts by silently substituting stale
+  // credentials for what should be a clear "function not found".
   if (!bucketName || !refreshToken) {
+    const functionName = partnerId ? `dv360-dgpulse-${partnerId}` : 'dv360-dgpulse';
     try {
       const { execSync } = require('child_process');
-      const functionName = PARTNER_ID ? `dv360-dgpulse-${PARTNER_ID}` : 'dv360-dgpulse';
       const envJson = execSync(
-        `gcloud functions describe ${functionName} --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(environmentVariables)" 2>/dev/null`,
+        `gcloud functions describe ${functionName} --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || ` +
+        `gcloud functions describe ${functionName} --region=us-central1 --format="json(environmentVariables)" 2>/dev/null`,
         { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
       );
       if (envJson) {
         const parsed = JSON.parse(envJson);
         const envVars = (parsed.serviceConfig && parsed.serviceConfig.environmentVariables) || parsed.environmentVariables || parsed;
         if (!bucketName && envVars.BUCKET_NAME) bucketName = envVars.BUCKET_NAME;
-        if (!refreshToken && envVars.REFRESH_TOKEN) refreshToken = envVars.REFRESH_TOKEN;
+        if (!refreshToken && envVars.REFRESH_TOKEN) {
+          refreshToken = envVars.REFRESH_TOKEN;
+          tokenSource = `Cloud Function ${functionName}`;
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn(`Could not read configuration from Cloud Function ${functionName}: ${e.message}`);
+    }
   }
 
   let credentials = null;
@@ -145,8 +176,15 @@ async function initializeClient() {
   }
 
   if (!refreshToken) {
-    throw new Error('Missing REFRESH_TOKEN environment variable.');
+    throw new Error(
+      `Missing REFRESH_TOKEN. Checked: environment, .env, and Cloud Function ` +
+      `${partnerId ? `dv360-dgpulse-${partnerId}` : 'dv360-dgpulse'}.`);
   }
+
+  // Recorded explicitly because invalid_grant has two unrelated causes here --
+  // an expired token, or the wrong token being discovered -- and they are
+  // indistinguishable from the error alone.
+  console.log(`Using refresh token from: ${tokenSource || 'unknown source'}.`);
 
   dv360Client = new DV360Client(
     credentials,
@@ -348,7 +386,7 @@ async function setupDbmReport(partnerIdOverride) {
     throw new Error('PARTNER_ID is required.');
   }
 
-  const client = await initializeClient();
+  const client = await initializeClient(partnerId);
   const { queryId, isNew } = await client.createOrGetPerformanceReportQuery(partnerId);
 
   if (isNew) {
@@ -372,7 +410,7 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
   const targetDatasetId = datasetIdOverride || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
   if (!partnerId) throw new Error('PARTNER_ID is required.');
 
-  const client = await initializeClient();
+  const client = await initializeClient(partnerId);
   const { queryId } = await client.createOrGetPerformanceReportQuery(partnerId);
 
   let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
@@ -455,7 +493,7 @@ async function syncDbmAudienceReport(partnerIdOverride, datasetIdOverride) {
   const targetDatasetId = datasetIdOverride || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
   if (!partnerId) throw new Error('PARTNER_ID is required.');
 
-  const client = await initializeClient();
+  const client = await initializeClient(partnerId);
   const { queryId } = await client.createOrGetAudienceReportQuery(partnerId);
 
   let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
@@ -532,7 +570,7 @@ async function syncDbmIoPacingReport(partnerIdOverride, datasetIdOverride) {
   const targetDatasetId = datasetIdOverride || process.env.DATASET_ID || (partnerId ? `dv360_dgpulse_${partnerId}` : DATASET_ID);
   if (!partnerId) throw new Error('PARTNER_ID is required.');
 
-  const client = await initializeClient();
+  const client = await initializeClient(partnerId);
   const { queryId } = await client.createOrGetIoPacingReportQuery(partnerId);
 
   // The pacing query is unscheduled (see createOrGetIoPacingReportQuery), so
@@ -580,8 +618,8 @@ if (require.main === module) {
     // whether the other two were created successfully.
     const setupJobs = [
       { name: 'performance', promise: setupDbmReport(partnerIdArg) },
-      { name: 'audience', promise: initializeClient().then(c => c.createOrGetAudienceReportQuery(partnerIdArg)) },
-      { name: 'IO pacing', promise: initializeClient().then(c => c.createOrGetIoPacingReportQuery(partnerIdArg)) }
+      { name: 'audience', promise: initializeClient(partnerIdArg).then(c => c.createOrGetAudienceReportQuery(partnerIdArg)) },
+      { name: 'IO pacing', promise: initializeClient(partnerIdArg).then(c => c.createOrGetIoPacingReportQuery(partnerIdArg)) }
     ];
     Promise.allSettled(setupJobs.map(job => job.promise))
       .then(results => {
