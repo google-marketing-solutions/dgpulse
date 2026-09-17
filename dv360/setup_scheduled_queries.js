@@ -32,32 +32,39 @@ async function ensureTableSchema() {
       aspect_ratio FLOAT64,
       updated_at TIMESTAMP
     );`,
+    // Sourced from a YOUTUBE-type report, not a STANDARD one, which is why
+    // there is no Partner, Media_Plan, Line_Item, conversion or CM360 revenue
+    // column here: none of those can accompany the audience segment dimension.
+    // See createOrGetAudienceReportQuery in dv360.js for the measurements.
+    //
+    // Audience_Segment holds a taxonomy path, e.g.
+    // "/Business Services/Business Financial Services". There is no segment ID
+    // in this report, so the segment name is the only key available.
     `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.dbm_audiences_performance\` (
       Report_Day DATE,
-      Partner STRING,
-      Partner_Id INT64,
-      Advertiser STRING,
       Advertiser_Id INT64,
       Advertiser_Currency STRING,
-      Media_Plan STRING,
-      Media_Plan_Id INT64,
-      Insertion_Order STRING,
       Insertion_Order_Id INT64,
-      Line_Item STRING,
-      Line_Item_Id INT64,
-      Audience_List STRING,
-      Audience_List_Id INT64,
-      Audience_List_Type STRING,
+      Audience_Segment STRING,
+      Audience_Segment_Type STRING,
       Revenue FLOAT64,
       Revenue_USD FLOAT64,
       Impressions INT64,
-      Clicks INT64,
-      Total_Conversions FLOAT64,
-      Post_View_Conversions FLOAT64,
-      Post_Click_Conversions FLOAT64,
-      CM_Post_Click_Revenue FLOAT64,
-      CM_Post_View_Revenue FLOAT64
+      Clicks INT64
     );`,
+    // Migration for deployments created before the switch to the YouTube
+    // report. CREATE TABLE IF NOT EXISTS will not alter an existing table, so
+    // without this the load job fails on unknown fields.
+    //
+    // The obsolete columns (Audience_List, Audience_List_Id, Media_Plan_Id,
+    // Total_Conversions and the rest) are deliberately left in place rather
+    // than dropped. They are nullable and simply go unwritten, whereas
+    // dropping columns is destructive and buys nothing. The table never held
+    // data in any case -- the query that was meant to fill it never returned a
+    // single row.
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_audiences_performance\`
+       ADD COLUMN IF NOT EXISTS Audience_Segment STRING,
+       ADD COLUMN IF NOT EXISTS Audience_Segment_Type STRING;`,
     // Full-flight IO spend, sourced from the ALL_TIME DBM pacing report.
     // Kept separate from dbm_performance because that table is capped at
     // LAST_90_DAYS and therefore cannot support budget pacing on longer flights.

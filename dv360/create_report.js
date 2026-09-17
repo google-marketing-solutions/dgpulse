@@ -454,36 +454,52 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
   return { success: true, count: bqRows.length };
 }
 
+/**
+ * Maps a row of the YouTube audience report CSV to dbm_audiences_performance.
+ *
+ * The column set is much narrower than it was, because the report this reads
+ * is a YOUTUBE report rather than a STANDARD one (see
+ * createOrGetAudienceReportQuery). Specifically absent, and not recoverable
+ * here:
+ *
+ *   Partner / Partner_Id  -- FILTER_PARTNER is not in the groupBys; the report
+ *                            is already filtered to one partner.
+ *   Media_Plan(_Id)       -- FILTER_MEDIA_PLAN is rejected in this combination.
+ *                            materialize_audiences.sql recovers campaign by
+ *                            joining the insertion order instead.
+ *   Line_Item(_Id)        -- accepted by the API but deliberately omitted, as
+ *                            it multiplies rows without feeding the dashboard.
+ *   conversions, VTC,     -- no conversion metric can coexist with the audience
+ *   CM360 revenue            segment dimension. Every candidate was rejected at
+ *                            create time.
+ *
+ * Audience_Segment carries a taxonomy path such as
+ * "/Business Services/Business Financial Services", and Audience_Segment_Type
+ * classifies it, e.g. "In-market segment". Neither has a numeric ID in this
+ * report, which is why the old Audience_List_Id column is gone rather than
+ * merely unpopulated.
+ */
 function mapAudienceCsvRowToBq(r) {
   const getCol = (patterns) => getColFrom(r, patterns);
 
   return {
     Report_Day: parseDate(getCol(['Report_Day', 'Date', 'Day'])),
-    Partner: getCol(['Partner Name', 'Partner']) || '',
-    Partner_Id: intNum(getCol(['Partner ID', 'Partner_Id'])),
-    Advertiser: getCol(['Advertiser Name', 'Advertiser']) || '',
     Advertiser_Id: intNum(getCol(['Advertiser ID', 'Advertiser_Id'])),
     Advertiser_Currency: getCol(['Advertiser Currency', 'Currency']) || '',
-    Media_Plan: getCol(['Campaign', 'Media Plan']) || '',
-    Media_Plan_Id: intNum(getCol(['Campaign ID', 'Media Plan ID'])),
-    Insertion_Order: getCol(['Insertion Order Name', 'Insertion Order']) || '',
     Insertion_Order_Id: intNum(getCol(['Insertion Order ID', 'Insertion_Order_Id'])),
-    Line_Item: getCol(['Line Item Name', 'Line Item']) || '',
-    Line_Item_Id: intNum(getCol(['Line Item ID', 'Line_Item_Id', 'Line Item Id'])),
-    Audience_List: getCol(['Audience List Name', 'Audience List', 'Audience Segment', 'Audience Name', 'User List Name']) || '',
-    Audience_List_Id: intNum(getCol(['Audience List ID', 'Audience_List_Id', 'Audience ID', 'User List ID'])),
-    Audience_List_Type: getCol(['Audience List Type', 'Audience Type', 'List Type', 'Type']) || '',
-    Revenue: num(getCol(['Media Cost (Advertiser Currency)', 'Revenue (Adv Currency)', 'Revenue', 'Media Cost (Adv Currency)'])),
-    Revenue_USD: num(getCol(['Media Cost (USD)', 'Revenue (USD)', 'Cost (USD)', 'Revenue_USD'])),
+    // The exact headers are "Audience segment" and "Audience segment type",
+    // lower-cased after the first word. The alternatives cover the Display
+    // wording in case this ever reads a STANDARD report again.
+    Audience_Segment: getCol(['Audience segment', 'Audience Segment', 'Audience List']) || '',
+    Audience_Segment_Type:
+        getCol(['Audience segment type', 'Audience Segment Type', 'Audience List Type']) || '',
+    Revenue: num(getCol(['Media Cost (Advertiser Currency)', 'Media Cost (Adv Currency)'])),
+    Revenue_USD: num(getCol(['Media Cost (USD)', 'Cost (USD)'])),
     Impressions: intNum(getCol(['Impressions'])),
-    Clicks: intNum(getCol(['Clicks'])),
-    Total_Conversions: num(getCol(['Total Conversions', 'Conversions'])),
-    Post_View_Conversions: num(getCol(['Post-View Conversions', 'Post View Conversions', 'VTC'])),
-    Post_Click_Conversions: num(getCol(['Post-Click Conversions', 'Post Click Conversions'])),
-    CM_Post_Click_Revenue: num(getCol(['CM360 Post-Click Revenue', 'CM Post-Click Revenue', 'Post-Click Revenue', 'Click Revenue'])),
-    CM_Post_View_Revenue: num(getCol(['CM360 Post-View Revenue', 'CM Post-View Revenue', 'Post-View Revenue', 'View Revenue']))
+    Clicks: intNum(getCol(['Clicks']))
   };
 }
+
 
 /**
  * Reads the partner's Demand Gen insertion orders from the synced entity table.

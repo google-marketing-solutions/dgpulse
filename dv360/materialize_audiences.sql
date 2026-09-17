@@ -1,54 +1,64 @@
+-- Audience performance, sourced from a YOUTUBE-type Bid Manager report.
+--
+-- The source table changed shape substantially. The Display audience-list
+-- dimensions (Audience_List, Audience_List_Id, Audience_List_Type) return no
+-- data at all for Demand Gen inventory, because they belong to the Audience
+-- Performance report, which is not available for YouTube & partners line
+-- items. The report now uses FILTER_TRUEVIEW_AUDIENCE_SEGMENT instead. See
+-- createOrGetAudienceReportQuery in dv360.js.
+--
+-- Consequences visible in this file:
+--   * No line item. Accepted by the API but omitted, as it multiplied rows
+--     without feeding the dashboard.
+--   * No audience ID. The YouTube report emits a taxonomy path
+--     ("/Business Services/Business Financial Services") and no numeric key,
+--     so the segment name is the grain.
+--   * No conversions, VTC, CPA or ROAS. No conversion metric of any kind can
+--     accompany the audience segment dimension -- each candidate was rejected
+--     by queries.create individually. CTR, CPC and CPM are provided instead so
+--     the page still has efficiency measures.
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_audiences_performance` AS
-WITH demand_gen_line_items AS (
-  SELECT DISTINCT campaignId, insertionOrderId, lineItemId
+WITH demand_gen_ios AS (
+  SELECT DISTINCT insertionOrderId
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   WHERE lineItemType LIKE '%DEMAND_GEN%'
+    AND insertionOrderId IS NOT NULL
 ),
+-- The report is already scoped to the Demand Gen insertion orders by its own
+-- filters, so this normally removes nothing. It is kept because that scoping
+-- degrades to partner-wide when the entity sync has not yet populated
+-- line_items on a fresh install, and in that window the report would otherwise
+-- carry Display and other YouTube inventory into a Demand Gen dashboard.
+-- Unlike every other table in DGPulse, these rows have no lineItemType of
+-- their own to filter on.
 deduped_dbm AS (
   SELECT * EXCEPT(row_num) FROM (
     SELECT *, ROW_NUMBER() OVER(
-      PARTITION BY Report_Day, Insertion_Order_Id, COALESCE(Line_Item_Id, 0), COALESCE(Audience_List_Id, 0), Audience_List
+      PARTITION BY Report_Day, Insertion_Order_Id, Audience_Segment, Audience_Segment_Type
     ) AS row_num
     FROM `__PROJECT_ID__.__DATASET_ID__.dbm_audiences_performance`
     WHERE Insertion_Order_Id IS NOT NULL AND Insertion_Order_Id > 0
-      AND (
-        Insertion_Order_Id IN (SELECT DISTINCT CAST(insertionOrderId AS INT64) FROM demand_gen_line_items WHERE insertionOrderId IS NOT NULL)
-        OR (Line_Item_Id IS NOT NULL AND Line_Item_Id IN (SELECT DISTINCT CAST(lineItemId AS INT64) FROM demand_gen_line_items))
-      )
+      AND CAST(Insertion_Order_Id AS STRING) IN (SELECT insertionOrderId FROM demand_gen_ios)
   )
   WHERE row_num = 1
 ),
 audience_stats AS (
-  SELECT 
+  SELECT
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
-    CAST(Partner_Id AS STRING) AS partner_id,
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
-    -- campaign_id is intentionally not selected here. Bid Manager rejects
-    -- FILTER_MEDIA_PLAN in combination with the audience list dimensions, so
-    -- the report no longer returns Media_Plan_Id and this column would be NULL
-    -- for every row. It is recovered from the insertion order below.
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
-    CAST(Line_Item_Id AS STRING) AS line_item_id,
-    COALESCE(CAST(Audience_List_Id AS STRING), 'N/A') AS audience_id,
-    COALESCE(NULLIF(Audience_List, ''), 'Unassigned / Optimized Expansion') AS audience_segment,
-    COALESCE(NULLIF(Audience_List_Type, ''), 'OTHER') AS raw_audience_type,
+    COALESCE(NULLIF(Audience_Segment, ''), 'Unassigned / Optimized Targeting') AS audience_segment,
+    COALESCE(NULLIF(Audience_Segment_Type, ''), 'OTHER') AS raw_audience_type,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SUM(Impressions) AS impressions,
     SUM(Clicks) AS clicks,
     SUM(Revenue) AS cost,
-    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS cost_usd,
-    SUM(Total_Conversions) AS conversions,
-    SUM(COALESCE(Post_View_Conversions, 0)) AS vtc,
-    SUM(COALESCE(Post_Click_Conversions, 0)) AS post_click_conversions,
-    SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
-    SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
+    SUM(COALESCE(NULLIF(Revenue_USD, 0), Revenue)) AS cost_usd
   FROM deduped_dbm
-  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+  GROUP BY 1, 2, 3, 4, 5
 ),
--- Campaign is no longer available from the audience report, so resolve it from
--- the insertion order instead. This is also strictly more reliable than the old
--- report column: it resolves for every insertion order, including ones whose
--- audience rows were dropped by the Demand Gen filter above.
+-- Campaign is not available from the audience report -- FILTER_MEDIA_PLAN is
+-- rejected in this combination -- so resolve it from the insertion order.
 io_campaigns AS (
   SELECT
     insertionOrderId,
@@ -57,29 +67,21 @@ io_campaigns AS (
   GROUP BY insertionOrderId
 ),
 latest_campaigns AS (
-  SELECT 
+  SELECT
     campaignId,
     MAX(NULLIF(displayName, '')) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
   GROUP BY campaignId
 ),
 latest_ios AS (
-  SELECT 
+  SELECT
     insertionOrderId,
     MAX(NULLIF(displayName, '')) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.insertion_orders`
   GROUP BY insertionOrderId
 ),
-latest_line_items AS (
-  SELECT 
-    lineItemId,
-    MAX(NULLIF(displayName, '')) AS displayName
-  FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
-  WHERE lineItemType LIKE '%DEMAND_GEN%'
-  GROUP BY lineItemId
-),
 latest_advertisers AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(displayName, '')) AS displayName,
     MAX(NULLIF(currencyCode, '')) AS currency_code,
@@ -88,16 +90,19 @@ latest_advertisers AS (
   GROUP BY advertiserId
 ),
 latest_settings AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(displayName, '')) AS advertiser_name,
     MAX(NULLIF(currency_code, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
   GROUP BY advertiserId
 )
-SELECT 
+SELECT
   s.date,
-  COALESCE(s.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
+  -- Partner is no longer a column on the report: it is filtered to a single
+  -- partner, so the dimension would have been constant. Resolved from the
+  -- advertiser, with the deployment's own partner as the final fallback.
+  COALESCE(adv.partnerId, '__PARTNER_ID__') AS partner_id,
   s.advertiser_id,
   s.advertiser_id AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, s.advertiser_id) AS account_name,
@@ -105,44 +110,64 @@ SELECT
   COALESCE(c.displayName, ioc.campaignId) AS campaign_name,
   s.insertion_order_id,
   COALESCE(io.displayName, s.insertion_order_id) AS insertion_order_name,
-  s.line_item_id,
-  COALESCE(li.displayName, s.line_item_id) AS line_item_name,
-  s.audience_id,
   s.audience_segment,
-  
-  -- Clean Audience Types matching Google Ads UI: USER_LIST (1PD), CUSTOM_AUDIENCE, USER_INTEREST, LOOKALIKE, OTHER
-  CASE 
-    WHEN UPPER(s.raw_audience_type) LIKE '%FIRST_PARTY%' OR UPPER(s.raw_audience_type) LIKE '%1P%' OR UPPER(s.raw_audience_type) LIKE '%CUSTOMER%' THEN 'USER_LIST (1PD)'
+
+  -- The YouTube report's segment types read as human labels rather than enums
+  -- ("In-market segment", "Affinity segment", "Remarketing list"), so these
+  -- patterns match words, not enum fragments. Anything unrecognised passes
+  -- through unchanged rather than collapsing to OTHER, so a new segment type
+  -- shows up on the dashboard as itself instead of silently merging into a
+  -- bucket.
+  CASE
+    WHEN UPPER(s.raw_audience_type) LIKE '%REMARKETING%'
+      OR UPPER(s.raw_audience_type) LIKE '%YOUR DATA%'
+      OR UPPER(s.raw_audience_type) LIKE '%CUSTOMER MATCH%'
+      OR UPPER(s.raw_audience_type) LIKE '%FIRST%PARTY%' THEN 'USER_LIST (1PD)'
+    WHEN UPPER(s.raw_audience_type) LIKE '%SIMILAR%'
+      OR UPPER(s.raw_audience_type) LIKE '%LOOKALIKE%' THEN 'LOOKALIKE'
     WHEN UPPER(s.raw_audience_type) LIKE '%CUSTOM%' THEN 'CUSTOM_AUDIENCE'
-    WHEN UPPER(s.raw_audience_type) LIKE '%INTEREST%' OR UPPER(s.raw_audience_type) LIKE '%AFFINITY%' OR UPPER(s.raw_audience_type) LIKE '%IN_MARKET%' THEN 'USER_INTEREST (Google Audience)'
-    WHEN UPPER(s.raw_audience_type) LIKE '%SIMILAR%' OR UPPER(s.raw_audience_type) LIKE '%LOOKALIKE%' THEN 'LOOKALIKE'
-    WHEN UPPER(s.raw_audience_type) LIKE '%THIRD_PARTY%' OR UPPER(s.raw_audience_type) LIKE '%3P%' THEN 'THIRD_PARTY'
+    WHEN UPPER(s.raw_audience_type) LIKE '%IN-MARKET%'
+      OR UPPER(s.raw_audience_type) LIKE '%IN MARKET%'
+      OR UPPER(s.raw_audience_type) LIKE '%AFFINITY%'
+      OR UPPER(s.raw_audience_type) LIKE '%INTEREST%'
+      OR UPPER(s.raw_audience_type) LIKE '%LIFE EVENT%'
+      OR UPPER(s.raw_audience_type) LIKE '%DEMOGRAPHIC%' THEN 'USER_INTEREST (Google Audience)'
+    WHEN UPPER(s.raw_audience_type) LIKE '%THIRD%PARTY%' THEN 'THIRD_PARTY'
     ELSE s.raw_audience_type
   END AS audience_type,
-  
-  CASE 
-    WHEN UPPER(s.raw_audience_type) LIKE '%FIRST_PARTY%' OR UPPER(s.raw_audience_type) LIKE '%1P%' OR UPPER(s.raw_audience_type) LIKE '%CUSTOMER%' THEN 'YES'
+
+  -- Kept as the raw label so the dashboard can show exactly what DV360 called
+  -- it, independent of the bucketing above.
+  s.raw_audience_type AS audience_type_raw,
+
+  CASE
+    WHEN UPPER(s.raw_audience_type) LIKE '%REMARKETING%'
+      OR UPPER(s.raw_audience_type) LIKE '%YOUR DATA%'
+      OR UPPER(s.raw_audience_type) LIKE '%CUSTOMER MATCH%'
+      OR UPPER(s.raw_audience_type) LIKE '%FIRST%PARTY%' THEN 'YES'
     ELSE 'NO'
   END AS is_first_party,
 
   COALESCE(s.currency_code, NULLIF(adv.currency_code, ''), NULLIF(sett.currency_code, '')) AS currency_code,
-  
-  -- Performance Metrics
+
+  -- Performance metrics.
+  --
+  -- There is deliberately no conversions, vtc, cpa or roas column: no
+  -- conversion metric can be requested alongside the audience segment
+  -- dimension. CTR, CPC and CPM are the efficiency measures available from
+  -- impressions, clicks and cost alone.
   COALESCE(s.impressions, 0) AS impressions,
   COALESCE(s.clicks, 0) AS clicks,
   COALESCE(s.cost, 0) AS cost,
   COALESCE(s.cost_usd, 0) AS cost_usd,
-  COALESCE(s.conversions, 0) AS conversions,
-  COALESCE(s.vtc, 0) AS vtc,
-  SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(COALESCE(s.conversions, 0), 0)) AS cpa,
-  SAFE_DIVIDE(COALESCE(s.cost_usd, 0), NULLIF(COALESCE(s.conversions, 0), 0)) AS cpa_usd,
-  SAFE_DIVIDE(COALESCE(s.post_click_revenue, 0) + COALESCE(s.post_view_revenue, 0), NULLIF(COALESCE(s.cost, 0), 0)) AS roas,
+  SAFE_DIVIDE(COALESCE(s.clicks, 0), NULLIF(COALESCE(s.impressions, 0), 0)) AS ctr,
   SAFE_DIVIDE(COALESCE(s.cost, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS avg_cpc,
-  SAFE_DIVIDE(COALESCE(s.cost_usd, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS avg_cpc_usd
+  SAFE_DIVIDE(COALESCE(s.cost_usd, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS avg_cpc_usd,
+  SAFE_DIVIDE(COALESCE(s.cost, 0) * 1000, NULLIF(COALESCE(s.impressions, 0), 0)) AS cpm,
+  SAFE_DIVIDE(COALESCE(s.cost_usd, 0) * 1000, NULLIF(COALESCE(s.impressions, 0), 0)) AS cpm_usd
 FROM audience_stats s
 LEFT JOIN io_campaigns ioc ON s.insertion_order_id = ioc.insertionOrderId
 LEFT JOIN latest_campaigns c ON ioc.campaignId = c.campaignId
 LEFT JOIN latest_ios io ON s.insertion_order_id = io.insertionOrderId
-LEFT JOIN latest_line_items li ON s.line_item_id = li.lineItemId
 LEFT JOIN latest_advertisers adv ON s.advertiser_id = adv.advertiserId
 LEFT JOIN latest_settings sett ON s.advertiser_id = sett.advertiserId;

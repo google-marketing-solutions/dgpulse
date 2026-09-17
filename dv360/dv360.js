@@ -461,13 +461,26 @@ class DV360Client {
   /**
    * Creates or retrieves an existing daily DBM audience performance query for a partner.
    *
+   * This is a YOUTUBE report, not a STANDARD one, and it uses the
+   * FILTER_TRUEVIEW_* dimensions rather than the audience list dimensions.
+   * That is not a stylistic choice. The Display audience family
+   * (FILTER_AUDIENCE_LIST, FILTER_USER_LIST, FILTER_AUDIENCE_LIST_TYPE,
+   * includeOnlyTargetedUserLists) belongs to the Audience Performance report,
+   * which "isn't available for YouTube & partners line items"
+   * (https://support.google.com/displayvideo/answer/2650629). Demand Gen is in
+   * that family, so those dimensions are accepted by queries.create, run to
+   * completion, and return a CSV containing nothing at all -- the worst
+   * possible failure mode, because it looks like a working pipeline.
+   *
+   * Measured on partner 6631618296 over 7 days, scoped to its 52 Demand Gen
+   * insertion orders: the audience list shape returned 0 rows in every
+   * combination tried, while the identical request with the audience
+   * dimensions removed returned 795. The shape below returns 1871 rows in 21s.
+   *
    * @param {string} partnerId
    * @param {!Array<string>=} insertionOrderIds Demand Gen insertion orders to
-   *     restrict the report to. Strongly recommended: scoping the report this
-   *     way measured at least 6.6x faster than the partner-wide equivalent, and
-   *     it is what satisfies the documented precondition for
-   *     includeOnlyTargetedUserLists. Omitting it falls back to partner scope,
-   *     which is correct but slow -- acceptable only before the entity sync has
+   *     restrict the report to. Omitting it falls back to partner scope, which
+   *     is correct but slow -- acceptable only before the entity sync has
    *     populated the line items table.
    * @returns {Promise<{queryId: string, isNew: boolean}>}
    */
@@ -479,77 +492,64 @@ class DV360Client {
     // apart. They previously encoded different expectations, which is only
     // harmless while the query never gets created successfully.
     //
-    // FILTER_MEDIA_PLAN is deliberately absent. Bid Manager rejects the campaign
-    // dimension in combination with the audience list dimensions: queries.create
-    // fails with "The combination of dimensions, metrics, and filters in your
-    // report is invalid". This was established by bisection against the working
-    // performance query rather than inferred -- the identical request succeeds
-    // with only this field removed, and still fails when any other single
-    // dimension is removed instead, so it is this dimension and not a cap on
-    // dimension count. Campaign is recovered downstream in
-    // materialize_audiences.sql by joining the insertion order to the
-    // insertion_orders entity table, which is also more complete than the report
-    // column was.
+    // Every dimension here was added one at a time against a report that was
+    // already returning rows, because Bid Manager's rejection message --
+    // "The combination of dimensions, metrics, and filters in your report is
+    // invalid" -- never names the offending field. Adding several at once
+    // tells you nothing.
+    //
+    // FILTER_MEDIA_PLAN is rejected outright in this combination, so campaign
+    // is recovered downstream in materialize_audiences.sql by joining the
+    // insertion order to the insertion_orders entity table. FILTER_LINE_ITEM
+    // and FILTER_TRUEVIEW_AD_GROUP were both accepted but are left out: they
+    // multiply the row count without adding anything the dashboard shows.
     const groupBys = [
       'FILTER_DATE',
-      'FILTER_PARTNER',
       'FILTER_ADVERTISER',
+      // Required whenever a cost metric is present. Without it queries.create
+      // fails with the unusually clear "Advertiser Currency must be included
+      // as a dimension."
       'FILTER_ADVERTISER_CURRENCY',
-      'FILTER_INSERTION_ORDER',
-      'FILTER_LINE_ITEM',
-      // FILTER_AUDIENCE_LIST emits the list *name* only, as an "Audience List"
-      // column. FILTER_USER_LIST is the matching ID dimension ("Audience List
-      // ID"); without it Audience_List_Id lands as 0 on every row, which
-      // materialize_audiences.sql both dedupes and groups on. There is
-      // deliberately no FILTER_AUDIENCE_LIST_NAME dimension in Bid Manager v2 --
-      // sending one makes queries.create fail with "The following filter is not
-      // supported".
-      'FILTER_AUDIENCE_LIST',
-      'FILTER_USER_LIST',
-      'FILTER_AUDIENCE_LIST_TYPE'
+      // The YouTube-family equivalents of the audience list dimensions.
+      // FILTER_TRUEVIEW_AUDIENCE_SEGMENT emits a taxonomy path such as
+      // "/Business Services/Business Financial Services"; the _TYPE dimension
+      // classifies it, e.g. "In-market segment".
+      'FILTER_TRUEVIEW_AUDIENCE_SEGMENT',
+      'FILTER_TRUEVIEW_AUDIENCE_SEGMENT_TYPE',
+      'FILTER_INSERTION_ORDER'
     ];
 
+    // No conversion metric can accompany the audience segment dimension. All
+    // four candidates were rejected at create time, individually:
+    //   METRIC_TRUEVIEW_CONVERSION_MANY_PER_VIEW
+    //   METRIC_TRUEVIEW_VIEW_THROUGH_CONVERSION
+    //   METRIC_TOTAL_CONVERSIONS
+    //   the first two together
+    // This is why the audience page carries no Conversions, VTC or CPA column.
+    // Do not re-add them expecting the report to simply return zeros; it fails
+    // to create, which takes the whole report down rather than one column.
     const metrics = [
       'METRIC_IMPRESSIONS',
       'METRIC_CLICKS',
       'METRIC_MEDIA_COST_ADVERTISER',
-      'METRIC_MEDIA_COST_USD',
-      'METRIC_TOTAL_CONVERSIONS',
-      // Bid Manager v2 names these after the attribution signal rather
-      // than the outcome: METRIC_POST_VIEW_CONVERSIONS /
-      // METRIC_POST_CLICK_CONVERSIONS do not exist. The CSV column
-      // headers are still "Post-View Conversions" / "Post-Click
-      // Conversions", so the row mapper is unaffected.
-      'METRIC_LAST_IMPRESSIONS',
-      'METRIC_LAST_CLICKS',
-      // Renamed from the METRIC_CM_* prefix to METRIC_CM360_*.
-      'METRIC_CM360_POST_CLICK_REVENUE',
-      'METRIC_CM360_POST_VIEW_REVENUE'
+      'METRIC_MEDIA_COST_USD'
     ];
 
-    // Restricts rows to audience lists the line items actually target. Without
-    // it the report also returns every other list the reached users happen to
-    // belong to, which is audience composition rather than audience
-    // performance, and multiplies the row count for no benefit here. That
-    // matters beyond tidiness: this report is ingested in the same function
-    // invocation as the 491k-row performance report, which already had to have
-    // its memory raised to 4 GiB.
-    const options = { includeOnlyTargetedUserLists: true };
 
     // Repeated filter pairs of the same type are OR'd together by Bid Manager,
     // so this scopes the report to the partner's Demand Gen insertion orders.
     //
-    // This is a latency fix, not just a tidiness one. The partner-wide version
-    // of this exact query never left the QUEUED state within 10 minutes over a
-    // 7-day range, while the IO-scoped version completed in 91s; over 90 days it
-    // completed in 239s. Reducing the dimensions instead was measured too and
-    // made it *slower* (500s), because generation is only ~16s of that and the
-    // rest is queue time proportional to the amount of data scanned. So the
-    // scoping is what matters and the report keeps its full shape.
+    // Scoping is what keeps this report fast. A partner-wide audience query
+    // never left the QUEUED state within 10 minutes over a 7-day range, while
+    // the IO-scoped equivalent completed in well under two. Trimming
+    // dimensions instead was measured and made things *worse*, because
+    // generation is a small fraction of the total and the rest is queue time
+    // proportional to data scanned.
     //
-    // It also satisfies the documented precondition for
-    // includeOnlyTargetedUserLists, which "requires the use of
-    // FILTER_INSERTION_ORDER or FILTER_LINE_ITEM filters".
+    // It is also the only thing keeping this report Demand Gen only. Unlike
+    // every other table in DGPulse, the audience rows carry no lineItemType to
+    // filter on downstream, so an unscoped query would silently mix Display
+    // and YouTube inventory into the audience page.
     //
     // An empty list degrades to partner scope rather than failing: the entity
     // sync that populates line_items may not have run yet on a fresh install.
@@ -586,7 +586,12 @@ class DV360Client {
           // therefore expected whenever the IO set changes, not a symptom.
           const foundFilterKeys =
             (params.filters || []).map(f => `${f.type}:${f.value}`);
+          // Report type is checked first and deliberately. The deployed query
+          // for any existing installation is a STANDARD one, and a STANDARD
+          // query whose dimensions happened to match would be reused and go on
+          // returning nothing. Comparing the type is what retires it.
           const mismatch =
+            (params.type || 'STANDARD') !== 'YOUTUBE' ? `report type is ${params.type || 'STANDARD'}, expected YOUTUBE` :
             foundRange !== dataRange ? `data range is ${foundRange}, expected ${dataRange}` :
             !sameStringSet(params.groupBys, groupBys) ? `groupBys differ (found: ${(params.groupBys || []).join(', ')})` :
             !sameStringSet(params.metrics, metrics) ? `metrics differ (found: ${(params.metrics || []).join(', ')})` :
@@ -632,11 +637,12 @@ class DV360Client {
         format: 'CSV'
       },
       params: {
-        type: 'STANDARD',
+        // YOUTUBE, not STANDARD: the FILTER_TRUEVIEW_* dimensions are only
+        // valid in a YouTube report. See the comment on this method.
+        type: 'YOUTUBE',
         groupBys: groupBys,
         metrics: metrics,
-        filters: filters,
-        options: options
+        filters: filters
       },
       schedule: {
         frequency: 'DAILY',
