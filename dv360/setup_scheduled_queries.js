@@ -214,10 +214,29 @@ async function setupScheduledQueries() {
       (c.destinationDatasetId === DATASET_ID && (c.displayName === displayName || c.displayName === legacyDisplayName))
     );
 
+    // destinationDatasetId is deliberately NOT set.
+    //
+    // Every query here is DDL that names its own fully-qualified target, so a
+    // destination dataset is redundant. Worse, setting it makes BigQuery
+    // enforce a consistency check: it extracts "the dataset specified in the
+    // query" and compares it against the destination. For a lone
+    // CREATE OR REPLACE TABLE the extraction succeeds and the check passes,
+    // which is why five of these scheduled fine. For a multi-statement script
+    // the extraction yields '' and the run dies with:
+    //
+    //   Dataset specified in the query ('') is not consistent with
+    //   Destination dataset 'dv360_dgpulse_<partner>'.
+    //
+    // That silently killed the daily runs of materialize_insertion_orders
+    // (table + final_io_pacing_current view) and
+    // materialize_floodlight_activities (audit table + cls preflight table)
+    // on every install. The immediate materialization pass below always
+    // succeeded, so the tables looked populated at install time and then
+    // quietly went stale -- including the IO pacing view behind the main
+    // dashboard page. Do not reinstate this field.
     const transferConfigBody = {
       displayName: displayName,
       dataSourceId: 'scheduled_query',
-      destinationDatasetId: DATASET_ID,
       schedule: 'every day 08:00',
       params: {
         query: processedSql
