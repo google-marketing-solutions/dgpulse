@@ -402,6 +402,11 @@ class DV360Client {
       // METRIC_POST_CLICK_CONVERSIONS.
       'METRIC_LAST_CLICKS',
       'METRIC_LAST_IMPRESSIONS',
+      // CM360 revenue, split the same click/view way. Feeds post_click_revenue
+      // and post_view_revenue in the campaign, insertion order and line item
+      // materializations.
+      'METRIC_CM360_POST_CLICK_REVENUE',
+      'METRIC_CM360_POST_VIEW_REVENUE',
       'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
       'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
       'METRIC_ACTIVE_VIEW_ELIGIBLE_IMPRESSIONS',
@@ -411,7 +416,18 @@ class DV360Client {
       'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
       'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
       'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS',
-      'METRIC_VIDEO_COMPLETION_RATE'
+      'METRIC_VIDEO_COMPLETION_RATE',
+      // Pacing and constraint signals. io_goal_pacing_pct, lost_is_budget and
+      // lost_is_rank are exposed by all three performance materializations and
+      // were fed hardcoded zeros until now.
+      //
+      // The lost impression share pair is the real answer to "is this campaign
+      // limited by budget". The dashboard currently infers that from paused
+      // entity status, which is a proxy for a signal that was available the
+      // whole time.
+      'METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL',
+      'METRIC_TRUEVIEW_LOST_IS_BUDGET',
+      'METRIC_TRUEVIEW_LOST_IS_RANK'
     ];
 
     // Held back and deleted only once the replacement exists. The previous

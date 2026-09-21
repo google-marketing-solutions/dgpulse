@@ -379,11 +379,22 @@ function mapCsvRowToBq(r) {
     // zero rather than failing.
     Post_Click_Conversions: num(getCol(['Post-Click Conversions', 'Post Click Conversions', 'Last Clicks'])),
     Post_View_Conversions: num(getCol(['Post-View Conversions', 'Post View Conversions', 'Last Impressions'])),
-    CM_Post_Click_Revenue: 0,
-    CM_Post_View_Revenue: 0,
-    Percentage_From_Current_IO_Goal: 0,
-    TrueView_Lost_IS_Budget: 0,
-    TrueView_Lost_IS_Rank: 0
+    // The last of the hardcoded zeros. Every one of these had a real metric
+    // available in Bid Manager the whole time; none were being requested, so
+    // post_click_revenue, post_view_revenue, io_goal_pacing_pct, lost_is_budget
+    // and lost_is_rank were dead in all three performance materializations
+    // (campaigns, insertion orders, line items).
+    //
+    // Header spellings are the documented display names from
+    // bid-manager/reference/rest/v2/filters-metrics, with defensive variants.
+    // Getting a header wrong here does not fail -- num() returns 0 for a
+    // missing column, which reproduces exactly the bug being fixed. Verify
+    // against real data after deploying rather than trusting these strings.
+    CM_Post_Click_Revenue: num(getCol(['CM360 Post-Click Revenue', 'CM360 Post Click Revenue', 'Post-Click Revenue'])),
+    CM_Post_View_Revenue: num(getCol(['CM360 Post-View Revenue', 'CM360 Post View Revenue', 'Post-View Revenue'])),
+    Percentage_From_Current_IO_Goal: num(getCol(['Percentage from Current IO Goal', 'Percentage From Current IO Goal', '% from Current IO Goal'])),
+    TrueView_Lost_IS_Budget: num(getCol(['Lost Impression Share (Budget)', 'TrueView: Lost IS (Budget)', 'Lost IS (Budget)'])),
+    TrueView_Lost_IS_Rank: num(getCol(['Lost Impression Share (Rank)', 'TrueView: Lost IS (Rank)', 'Lost IS (Rank)']))
   };
 }
 
@@ -451,6 +462,38 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
   const csvText = await response.text();
   const parsedRows = parseCsv(csvText);
   console.log(`Parsed ${parsedRows.length} rows from DBM CSV.`);
+
+  // Guard against the failure mode this pipeline has already shipped once.
+  //
+  // getCol returns null for a header it cannot find and num() turns that into
+  // 0, so a single wrong spelling produces a column of confident zeros with no
+  // error anywhere. Five metrics sat like that in production. Naming the
+  // missing headers here converts a silent data defect into a visible warning.
+  if (parsedRows.length > 0) {
+    const headers = Object.keys(parsedRows[0]);
+    const expected = {
+      'Post-Click Conversions': ['post-click conversions', 'post click conversions', 'last clicks'],
+      'Post-View Conversions': ['post-view conversions', 'post view conversions', 'last impressions'],
+      'CM360 Post-Click Revenue': ['cm360 post-click revenue', 'cm360 post click revenue', 'post-click revenue'],
+      'CM360 Post-View Revenue': ['cm360 post-view revenue', 'cm360 post view revenue', 'post-view revenue'],
+      'Percentage from Current IO Goal': ['percentage from current io goal', '% from current io goal'],
+      'Lost Impression Share (Budget)': ['lost impression share (budget)', 'trueview: lost is (budget)', 'lost is (budget)'],
+      'Lost Impression Share (Rank)': ['lost impression share (rank)', 'trueview: lost is (rank)', 'lost is (rank)']
+    };
+    const lower = headers.map(h => h.toLowerCase());
+    const missing = Object.keys(expected).filter(
+      label => !expected[label].some(p => lower.some(h => h.includes(p))));
+    if (missing.length > 0) {
+      console.warn(
+        `DBM CSV is missing ${missing.length} expected metric column(s): ${missing.join(', ')}. ` +
+        'These will be stored as 0. Either the metric was rejected by the report ' +
+        'or the header was renamed -- check the mapper patterns in ' +
+        'mapCsvRowToBq against the headers below.');
+      console.warn(`DBM CSV headers received: ${headers.join(' | ')}`);
+    } else {
+      console.log(`All ${Object.keys(expected).length} previously-hardcoded metric columns are present in the CSV.`);
+    }
+  }
 
   if (parsedRows.length === 0) {
     return { success: true, count: 0, message: 'DBM CSV contained no data rows.' };
