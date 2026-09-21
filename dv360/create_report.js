@@ -331,6 +331,27 @@ function intNum(v) {
 }
 
 /**
+ * Like num(), but returns null for an absent column instead of 0.
+ *
+ * Use this for any metric that is not currently being requested from Bid
+ * Manager. num() cannot distinguish "the advertiser genuinely scored zero"
+ * from "this column was never in the CSV", and it resolves that ambiguity as
+ * zero -- which is how post_click_revenue, io_goal_pacing_pct and the lost
+ * impression share pair sat on the dashboard as confident, permanent zeros
+ * while no one had ever asked the API for them.
+ *
+ * NULL is the honest answer and it is visibly different downstream: AVG and
+ * SUM skip nulls, so an unavailable metric reads as blank rather than as a
+ * real measurement of nothing.
+ */
+function numOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const cleaned = String(v).replace(/[^\d.-]/g, '');
+  const n = Number(cleaned);
+  return isNaN(n) ? null : n;
+}
+
+/**
  * Maps CSV column names to BigQuery dbm_performance table schema.
  */
 function mapCsvRowToBq(r) {
@@ -379,22 +400,29 @@ function mapCsvRowToBq(r) {
     // zero rather than failing.
     Post_Click_Conversions: num(getCol(['Post-Click Conversions', 'Post Click Conversions', 'Last Clicks'])),
     Post_View_Conversions: num(getCol(['Post-View Conversions', 'Post View Conversions', 'Last Impressions'])),
-    // The last of the hardcoded zeros. Every one of these had a real metric
-    // available in Bid Manager the whole time; none were being requested, so
-    // post_click_revenue, post_view_revenue, io_goal_pacing_pct, lost_is_budget
-    // and lost_is_rank were dead in all three performance materializations
-    // (campaigns, insertion orders, line items).
+    // CM360 revenue: confirmed accepted by queries.create alongside this
+    // report's dimensions, so these two carry real values.
     //
     // Header spellings are the documented display names from
     // bid-manager/reference/rest/v2/filters-metrics, with defensive variants.
-    // Getting a header wrong here does not fail -- num() returns 0 for a
-    // missing column, which reproduces exactly the bug being fixed. Verify
-    // against real data after deploying rather than trusting these strings.
+    // Getting a header wrong here does not fail loudly -- it just yields 0,
+    // which reproduces exactly the bug being fixed. Verify against real data
+    // after deploying rather than trusting these strings.
     CM_Post_Click_Revenue: num(getCol(['CM360 Post-Click Revenue', 'CM360 Post Click Revenue', 'Post-Click Revenue'])),
     CM_Post_View_Revenue: num(getCol(['CM360 Post-View Revenue', 'CM360 Post View Revenue', 'Post-View Revenue'])),
-    Percentage_From_Current_IO_Goal: num(getCol(['Percentage from Current IO Goal', 'Percentage From Current IO Goal', '% from Current IO Goal'])),
-    TrueView_Lost_IS_Budget: num(getCol(['Lost Impression Share (Budget)', 'TrueView: Lost IS (Budget)', 'Lost IS (Budget)'])),
-    TrueView_Lost_IS_Rank: num(getCol(['Lost Impression Share (Rank)', 'TrueView: Lost IS (Rank)', 'Lost IS (Rank)']))
+    // Not requested: Bid Manager rejects METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL,
+    // METRIC_TRUEVIEW_LOST_IS_BUDGET and METRIC_TRUEVIEW_LOST_IS_RANK against
+    // this report's dimensions. See the metrics array in dv360.js.
+    //
+    // numOrNull, not num, and the distinction matters more than it looks.
+    // These columns will not be in the CSV, and num() would turn that absence
+    // back into 0 -- the precise defect this whole change set exists to
+    // remove, reintroduced one line below where it was fixed. NULL keeps the
+    // schema stable for the dashboard while stating plainly that the number is
+    // not available. Restore num() if and when the metrics are requested.
+    Percentage_From_Current_IO_Goal: numOrNull(getCol(['Percentage from Current IO Goal', 'Percentage From Current IO Goal', '% from Current IO Goal'])),
+    TrueView_Lost_IS_Budget: numOrNull(getCol(['Lost Impression Share (Budget)', 'TrueView: Lost IS (Budget)', 'Lost IS (Budget)'])),
+    TrueView_Lost_IS_Rank: numOrNull(getCol(['Lost Impression Share (Rank)', 'TrueView: Lost IS (Rank)', 'Lost IS (Rank)']))
   };
 }
 

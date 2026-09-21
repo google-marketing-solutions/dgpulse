@@ -416,18 +416,30 @@ class DV360Client {
       'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
       'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
       'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS',
-      'METRIC_VIDEO_COMPLETION_RATE',
-      // Pacing and constraint signals. io_goal_pacing_pct, lost_is_budget and
-      // lost_is_rank are exposed by all three performance materializations and
-      // were fed hardcoded zeros until now.
+      'METRIC_VIDEO_COMPLETION_RATE'
+      // Deliberately absent, having been rejected by queries.create:
       //
-      // The lost impression share pair is the real answer to "is this campaign
-      // limited by budget". The dashboard currently infers that from paused
-      // entity status, which is a proxy for a signal that was available the
-      // whole time.
-      'METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL',
-      'METRIC_TRUEVIEW_LOST_IS_BUDGET',
-      'METRIC_TRUEVIEW_LOST_IS_RANK'
+      //   METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL
+      //   METRIC_TRUEVIEW_LOST_IS_BUDGET
+      //   METRIC_TRUEVIEW_LOST_IS_RANK
+      //
+      // Each was tested alone against this exact groupBys list and each was
+      // refused with "The combination of dimensions, metrics, and filters in
+      // your report is invalid" -- so it is not an interaction between them,
+      // and adding them in a smaller group will not help. They took the whole
+      // report down with them when they were included, because a rejected
+      // create aborts the entire performance sync, not just the new columns.
+      //
+      // What has NOT been established is why they are refused: whether the
+      // metrics are unavailable in a STANDARD report at all, or merely
+      // incompatible with dimensions this report needs (FILTER_CREATIVE_ID and
+      // FILTER_LINE_ITEM are the usual offenders for IO-level and TrueView
+      // metrics). Until that is known, do not re-add them here on the
+      // assumption that a different combination will work -- probe first.
+      // probe_performance_metrics.js is set up for exactly this.
+      //
+      // Downstream, io_goal_pacing_pct, lost_is_budget and lost_is_rank are
+      // now NULL rather than 0. See mapCsvRowToBq in create_report.js.
     ];
 
     // Held back and deleted only once the replacement exists. The previous
