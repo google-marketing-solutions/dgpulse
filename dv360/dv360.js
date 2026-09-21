@@ -361,6 +361,65 @@ class DV360Client {
    */
   async createOrGetPerformanceReportQuery(partnerId) {
     const reportTitle = `DV360 DGPulse Performance Report - Partner ${partnerId}`;
+    const dataRange = 'LAST_90_DAYS';
+
+    // Declared before the reuse check so the check and the create call cannot
+    // encode different expectations. They previously did: the check compared
+    // only the date range, so any edit to these arrays was accepted into the
+    // code, ignored by the already-deployed query, and silently never took
+    // effect. Post_Click_Conversions and Post_View_Conversions sat hardcoded
+    // to 0 downstream for exactly that reason.
+    const groupBys = [
+      'FILTER_DATE',
+      'FILTER_PARTNER',
+      'FILTER_ADVERTISER',
+      'FILTER_ADVERTISER_CURRENCY',
+      'FILTER_MEDIA_PLAN',
+      'FILTER_INSERTION_ORDER',
+      'FILTER_LINE_ITEM',
+      'FILTER_CREATIVE_ID',
+      'FILTER_DEVICE_TYPE',
+      'FILTER_INVENTORY_SOURCE_NAME'
+    ];
+
+    const metrics = [
+      'METRIC_IMPRESSIONS',
+      'METRIC_CLICKS',
+      'METRIC_MEDIA_COST_ADVERTISER',
+      'METRIC_MEDIA_COST_USD',
+      'METRIC_TOTAL_CONVERSIONS',
+      // The click/view split of METRIC_TOTAL_CONVERSIONS.
+      //
+      // These two enum names are dangerously misleading. Despite reading like
+      // counts of clicks and impressions, Bid Manager documents them as
+      // "Post-Click Conversions" and "Post-View Conversions" respectively --
+      // they are conversion metrics, not traffic metrics. Verified in
+      // bid-manager/reference/rest/v2/filters-metrics.
+      //
+      // Do not remove them as apparent duplicates of METRIC_CLICKS and
+      // METRIC_IMPRESSIONS. There is no other way to break total conversions
+      // into click- and view-attributed halves: the API exposes no
+      // METRIC_POST_CLICK_CONVERSIONS.
+      'METRIC_LAST_CLICKS',
+      'METRIC_LAST_IMPRESSIONS',
+      'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
+      'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
+      'METRIC_ACTIVE_VIEW_ELIGIBLE_IMPRESSIONS',
+      'METRIC_TRUEVIEW_VIEWS',
+      'METRIC_RICH_MEDIA_VIDEO_PLAYS',
+      'METRIC_RICH_MEDIA_VIDEO_FIRST_QUARTILE_COMPLETES',
+      'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
+      'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
+      'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS',
+      'METRIC_VIDEO_COMPLETION_RATE'
+    ];
+
+    // Held back and deleted only once the replacement exists. The previous
+    // order deleted first, which meant a rejected queries.create left the
+    // partner with no performance report at all -- that is the main dashboard,
+    // not a side panel. Creating first makes a failed upgrade a no-op rather
+    // than an outage.
+    let staleQueryId = null;
 
     try {
       const existingQueries = await this.executeWithBackoff(() =>
@@ -371,16 +430,22 @@ class DV360Client {
           q => q.metadata && q.metadata.title === reportTitle
         );
         if (found) {
-          if (found.metadata && found.metadata.dataRange && found.metadata.dataRange.range === 'LAST_90_DAYS') {
-            console.log(`Found existing DBM 90-day query ID: ${found.queryId}`);
+          const params = found.params || {};
+          const foundRange = (found.metadata && found.metadata.dataRange &&
+                              found.metadata.dataRange.range) || null;
+          const mismatch =
+            foundRange !== dataRange ? `data range is ${foundRange}, expected ${dataRange}` :
+            !sameStringSet(params.groupBys, groupBys) ? `groupBys differ (found ${(params.groupBys || []).length}, expected ${groupBys.length})` :
+            !sameStringSet(params.metrics, metrics) ? `metrics differ (found ${(params.metrics || []).length}, expected ${metrics.length})` :
+            null;
+
+          if (!mismatch) {
+            console.log(`Found existing DBM performance query ID: ${found.queryId}`);
             return { queryId: found.queryId, isNew: false };
           }
-          console.log(`Existing query ${found.queryId} has range ${found.metadata && found.metadata.dataRange && found.metadata.dataRange.range}, recreating for LAST_90_DAYS...`);
-          try {
-            await this.dbm.queries.delete({ queryId: found.queryId });
-          } catch (delErr) {
-            console.warn('Could not delete old query, will create a new one:', delErr.message);
-          }
+
+          console.log(`Recreating performance query ${found.queryId} because ${mismatch}...`);
+          staleQueryId = found.queryId;
         }
       }
     } catch (e) {
@@ -405,40 +470,13 @@ class DV360Client {
     const queryObj = {
       metadata: {
         title: reportTitle,
-        dataRange: { range: 'LAST_90_DAYS' },
+        dataRange: { range: dataRange },
         format: 'CSV'
       },
       params: {
         type: 'STANDARD',
-        groupBys: [
-          'FILTER_DATE',
-          'FILTER_PARTNER',
-          'FILTER_ADVERTISER',
-          'FILTER_ADVERTISER_CURRENCY',
-          'FILTER_MEDIA_PLAN',
-          'FILTER_INSERTION_ORDER',
-          'FILTER_LINE_ITEM',
-          'FILTER_CREATIVE_ID',
-          'FILTER_DEVICE_TYPE',
-          'FILTER_INVENTORY_SOURCE_NAME'
-        ],
-        metrics: [
-          'METRIC_IMPRESSIONS',
-          'METRIC_CLICKS',
-          'METRIC_MEDIA_COST_ADVERTISER',
-          'METRIC_MEDIA_COST_USD',
-          'METRIC_TOTAL_CONVERSIONS',
-          'METRIC_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS',
-          'METRIC_ACTIVE_VIEW_MEASURABLE_IMPRESSIONS',
-          'METRIC_ACTIVE_VIEW_ELIGIBLE_IMPRESSIONS',
-          'METRIC_TRUEVIEW_VIEWS',
-          'METRIC_RICH_MEDIA_VIDEO_PLAYS',
-          'METRIC_RICH_MEDIA_VIDEO_FIRST_QUARTILE_COMPLETES',
-          'METRIC_RICH_MEDIA_VIDEO_MIDPOINTS',
-          'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
-          'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS',
-          'METRIC_VIDEO_COMPLETION_RATE'
-        ],
+        groupBys: groupBys,
+        metrics: metrics,
         filters: [
           { type: 'FILTER_PARTNER', value: String(partnerId) }
         ]
@@ -455,6 +493,22 @@ class DV360Client {
       this.dbm.queries.create({ requestBody: queryObj })
     );
     console.log(`Successfully created DBM query ID: ${res.data.queryId}`);
+
+    // Only now is the old query expendable. If the create above had thrown,
+    // this line is never reached and the partner keeps its working report.
+    if (staleQueryId) {
+      try {
+        await this.dbm.queries.delete({ queryId: staleQueryId });
+        console.log(`Deleted superseded performance query ${staleQueryId}.`);
+      } catch (delErr) {
+        console.warn(
+          `Created ${res.data.queryId} but could not delete superseded query ` +
+          `${staleQueryId}: ${delErr.message}. Remove it by hand -- it will go ` +
+          'on running daily and occupies a slot against the pageSize 100 lookup ' +
+          'that the other reports use to find themselves.');
+      }
+    }
+
     return { queryId: res.data.queryId, isNew: true };
   }
 

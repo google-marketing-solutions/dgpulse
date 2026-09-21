@@ -367,8 +367,18 @@ function mapCsvRowToBq(r) {
     Video_Third_Quartile_Completes: intNum(getCol(['Third-Quartile', 'Third Quartile'])),
     Video_Completions: intNum(getCol(['Video: Completions', 'Video Completions', 'Completions'])),
     Video_Completion_Rate: num(getCol(['Completion Rate', 'Video Completion Rate'])),
-    Post_Click_Conversions: 0,
-    Post_View_Conversions: 0,
+    // Sourced from METRIC_LAST_CLICKS and METRIC_LAST_IMPRESSIONS, which Bid
+    // Manager emits under these headers. Both were hardcoded to 0 until the
+    // report was actually asked for the metrics -- materialize_campaigns.sql
+    // has summed and exposed these columns the whole time, so the dashboard
+    // showed a confident, permanent zero.
+    //
+    // 'Post-Click Conversions' is the documented header; the unhyphenated and
+    // 'Last Clicks' spellings are defensive, matching the style used for every
+    // other column here, because a header rename silently reintroduces the
+    // zero rather than failing.
+    Post_Click_Conversions: num(getCol(['Post-Click Conversions', 'Post Click Conversions', 'Last Clicks'])),
+    Post_View_Conversions: num(getCol(['Post-View Conversions', 'Post View Conversions', 'Last Impressions'])),
     CM_Post_Click_Revenue: 0,
     CM_Post_View_Revenue: 0,
     Percentage_From_Current_IO_Goal: 0,
