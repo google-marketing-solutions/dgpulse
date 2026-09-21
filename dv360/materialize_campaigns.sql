@@ -42,10 +42,7 @@ aggregated_stats AS (
     SUM(COALESCE(Post_Click_Conversions, 0)) AS post_click_conversions,
     SUM(COALESCE(Post_View_Conversions, 0)) AS post_view_conversions,
     SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
-    SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue,
-    AVG(Percentage_From_Current_IO_Goal) AS io_goal_pacing_pct,
-    AVG(TrueView_Lost_IS_Budget) AS lost_is_budget,
-    AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
+    SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
   FROM deduped_dbm
   GROUP BY 1, 2
 ),
@@ -164,12 +161,7 @@ SELECT
   COALESCE(stats.post_view_conversions, 0) AS post_view_conversions,
   COALESCE(stats.post_click_revenue, 0) AS post_click_revenue,
   COALESCE(stats.post_view_revenue, 0) AS post_view_revenue,
-  SAFE_DIVIDE(COALESCE(stats.post_click_conversions, 0), NULLIF(COALESCE(stats.clicks, 0), 0)) AS post_click_conv_rate,
-
-  -- Headroom & Pacing
-  stats.io_goal_pacing_pct,
-  stats.lost_is_budget,
-  stats.lost_is_rank
+  SAFE_DIVIDE(COALESCE(stats.post_click_conversions, 0), NULLIF(COALESCE(stats.clicks, 0), 0)) AS post_click_conv_rate
 FROM latest_campaigns meta
 LEFT JOIN aggregated_stats stats
   ON meta.campaignId = stats.campaign_id

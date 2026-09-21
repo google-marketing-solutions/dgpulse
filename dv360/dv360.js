@@ -417,29 +417,36 @@ class DV360Client {
       'METRIC_RICH_MEDIA_VIDEO_THIRD_QUARTILE_COMPLETES',
       'METRIC_RICH_MEDIA_VIDEO_COMPLETIONS',
       'METRIC_VIDEO_COMPLETION_RATE'
-      // Deliberately absent, having been rejected by queries.create:
+      // Deliberately absent. All three were rejected by queries.create when
+      // added here, and a rejected create aborts the entire performance sync,
+      // not merely the new columns -- these three took the whole report down
+      // with them. Do not re-add any of them speculatively; the reasons below
+      // were each established by validation testing, and are recorded in full
+      // in probe_performance_metrics.js.
       //
       //   METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL
-      //   METRIC_TRUEVIEW_LOST_IS_BUDGET
-      //   METRIC_TRUEVIEW_LOST_IS_RANK
+      //     Valid only at insertion order grain or coarser -- the API is
+      //     explicit that FILTER_INSERTION_ORDER must be present, and creative,
+      //     device, inventory source and line item are each individually
+      //     disqualifying. This report needs all four, so it cannot go here.
+      //     It also cannot join the IO pacing report, which is at the right
+      //     grain: a factorial over partner breakdown, date range and metric
+      //     set showed the metric set was the only factor that mattered, and
+      //     it will not share a report with cost metrics. It would need a
+      //     third query of its own, for a figure the dashboard already
+      //     approximates from spend against flight dates.
       //
-      // Each was tested alone against this exact groupBys list and each was
-      // refused with "The combination of dimensions, metrics, and filters in
-      // your report is invalid" -- so it is not an interaction between them,
-      // and adding them in a smaller group will not help. They took the whole
-      // report down with them when they were included, because a rejected
-      // create aborts the entire performance sync, not just the new columns.
+      //   METRIC_TRUEVIEW_LOST_IS_BUDGET, METRIC_TRUEVIEW_LOST_IS_RANK
+      //     Accepted only under report type YOUTUBE, at line item or ad group
+      //     grain; refused under STANDARD everywhere. Obtainable from a
+      //     separate YouTube-typed report, which was judged not worth building
+      //     -- the dashboard does not show them, and is_limited_by_budget in
+      //     materialize_campaigns.sql already answers the same question.
       //
-      // What has NOT been established is why they are refused: whether the
-      // metrics are unavailable in a STANDARD report at all, or merely
-      // incompatible with dimensions this report needs (FILTER_CREATIVE_ID and
-      // FILTER_LINE_ITEM are the usual offenders for IO-level and TrueView
-      // metrics). Until that is known, do not re-add them here on the
-      // assumption that a different combination will work -- probe first.
-      // probe_performance_metrics.js is set up for exactly this.
-      //
-      // Downstream, io_goal_pacing_pct, lost_is_budget and lost_is_rank are
-      // now NULL rather than 0. See mapCsvRowToBq in create_report.js.
+      // All three had their columns removed from the schema, the CSV mapping
+      // and the three performance materializations, rather than being left as
+      // permanent nulls. If any is ever wanted, the shapes it was accepted at
+      // are recorded in probe_performance_metrics.js.
     ];
 
     // Held back and deleted only once the replacement exists. The previous

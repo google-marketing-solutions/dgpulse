@@ -316,6 +316,24 @@ function getColFrom(row, patterns) {
   return null;
 }
 
+/**
+ * Parses a CSV cell to a number, treating anything unparseable as 0.
+ *
+ * Be careful what you apply this to. num() cannot distinguish "the advertiser
+ * genuinely scored zero" from "this column was never in the CSV", and it
+ * resolves that ambiguity as zero. That is exactly how post_click_conversions,
+ * post_view_conversions and the CM360 revenue pair sat on the dashboard as
+ * confident, permanent zeros while no one had ever asked the API for them --
+ * a wrong number is worse than a missing one, because nobody goes looking.
+ *
+ * So it is only safe for metrics the report actually requests. The guard is
+ * the missing-header check in syncDbmPerformanceReport, which warns by name
+ * when an expected column is absent; keep that map in step with the metrics
+ * array in dv360.js. For a metric that is deliberately not requested, do not
+ * reach for a null-returning variant -- drop the column instead. One was
+ * written and then deleted here, because a column that can never hold a value
+ * earns its schema slot only by being genuinely pending, and none of ours were.
+ */
 function num(v) {
   if (v === null || v === undefined || v === '') return 0;
   const cleaned = String(v).replace(/[^\d.-]/g, '');
@@ -328,27 +346,6 @@ function intNum(v) {
   const cleaned = String(v).replace(/[^\d-]/g, '');
   const n = parseInt(cleaned, 10);
   return isNaN(n) ? 0 : n;
-}
-
-/**
- * Like num(), but returns null for an absent column instead of 0.
- *
- * Use this for any metric that is not currently being requested from Bid
- * Manager. num() cannot distinguish "the advertiser genuinely scored zero"
- * from "this column was never in the CSV", and it resolves that ambiguity as
- * zero -- which is how post_click_revenue, io_goal_pacing_pct and the lost
- * impression share pair sat on the dashboard as confident, permanent zeros
- * while no one had ever asked the API for them.
- *
- * NULL is the honest answer and it is visibly different downstream: AVG and
- * SUM skip nulls, so an unavailable metric reads as blank rather than as a
- * real measurement of nothing.
- */
-function numOrNull(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const cleaned = String(v).replace(/[^\d.-]/g, '');
-  const n = Number(cleaned);
-  return isNaN(n) ? null : n;
 }
 
 /**
@@ -409,20 +406,24 @@ function mapCsvRowToBq(r) {
     // which reproduces exactly the bug being fixed. Verify against real data
     // after deploying rather than trusting these strings.
     CM_Post_Click_Revenue: num(getCol(['CM360 Post-Click Revenue', 'CM360 Post Click Revenue', 'Post-Click Revenue'])),
-    CM_Post_View_Revenue: num(getCol(['CM360 Post-View Revenue', 'CM360 Post View Revenue', 'Post-View Revenue'])),
-    // Not requested: Bid Manager rejects METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL,
-    // METRIC_TRUEVIEW_LOST_IS_BUDGET and METRIC_TRUEVIEW_LOST_IS_RANK against
-    // this report's dimensions. See the metrics array in dv360.js.
+    CM_Post_View_Revenue: num(getCol(['CM360 Post-View Revenue', 'CM360 Post View Revenue', 'Post-View Revenue']))
+    // Three metrics were trialled here and removed outright rather than left
+    // as permanently empty columns, because a column that can never hold a
+    // value is just a slower way of lying about the data:
     //
-    // numOrNull, not num, and the distinction matters more than it looks.
-    // These columns will not be in the CSV, and num() would turn that absence
-    // back into 0 -- the precise defect this whole change set exists to
-    // remove, reintroduced one line below where it was fixed. NULL keeps the
-    // schema stable for the dashboard while stating plainly that the number is
-    // not available. Restore num() if and when the metrics are requested.
-    Percentage_From_Current_IO_Goal: numOrNull(getCol(['Percentage from Current IO Goal', 'Percentage From Current IO Goal', '% from Current IO Goal'])),
-    TrueView_Lost_IS_Budget: numOrNull(getCol(['Lost Impression Share (Budget)', 'TrueView: Lost IS (Budget)', 'Lost IS (Budget)'])),
-    TrueView_Lost_IS_Rank: numOrNull(getCol(['Lost Impression Share (Rank)', 'TrueView: Lost IS (Rank)', 'Lost IS (Rank)']))
+    //   Percentage_From_Current_IO_Goal -- valid only at insertion order grain
+    //   or coarser, and it will not share a report with cost metrics. Both
+    //   this report and the IO pacing report carry cost, so it would need a
+    //   third query of its own. Pacing is already derived from spend against
+    //   flight dates, which makes this largely redundant.
+    //
+    //   TrueView_Lost_IS_Budget, TrueView_Lost_IS_Rank -- accepted only under
+    //   report type YOUTUBE at ad group or line item grain, so likewise a
+    //   separate query, table and join. is_limited_by_budget in
+    //   materialize_campaigns.sql already answers the same question.
+    //
+    // probe_performance_metrics.js records the exact shapes each was accepted
+    // and refused at, so none of that has to be rediscovered.
   };
 }
 
@@ -503,10 +504,13 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
       'Post-Click Conversions': ['post-click conversions', 'post click conversions', 'last clicks'],
       'Post-View Conversions': ['post-view conversions', 'post view conversions', 'last impressions'],
       'CM360 Post-Click Revenue': ['cm360 post-click revenue', 'cm360 post click revenue', 'post-click revenue'],
-      'CM360 Post-View Revenue': ['cm360 post-view revenue', 'cm360 post view revenue', 'post-view revenue'],
-      'Percentage from Current IO Goal': ['percentage from current io goal', '% from current io goal'],
-      'Lost Impression Share (Budget)': ['lost impression share (budget)', 'trueview: lost is (budget)', 'lost is (budget)'],
-      'Lost Impression Share (Rank)': ['lost impression share (rank)', 'trueview: lost is (rank)', 'lost is (rank)']
+      'CM360 Post-View Revenue': ['cm360 post-view revenue', 'cm360 post view revenue', 'post-view revenue']
+      // This map must list only metrics the report actually requests. A metric
+      // we deliberately do not ask for would be "missing" on every single run,
+      // and a warning that always fires is one everybody learns to scroll past
+      // -- which would defeat the purpose of having it at all. The lost
+      // impression share pair and the IO goal percentage were dropped from
+      // here when they were dropped from the request.
     };
     const lower = headers.map(h => h.toLowerCase());
     const missing = Object.keys(expected).filter(

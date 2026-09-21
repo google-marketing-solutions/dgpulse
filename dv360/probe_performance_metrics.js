@@ -1,57 +1,61 @@
 /**
- * @fileoverview Establishes, in a single run, whether the three rejected
- * pacing metrics can be obtained from Bid Manager in any usable shape.
+ * @fileoverview Decides, in one run, which Bid Manager metrics a given report
+ * shape will accept.
  *
- * Round one (this same script, earlier form) tested five metrics the
- * performance report had been extended with, after queries.create started
- * refusing the 22-metric shape and took the whole performance sync down with
- * it. It found:
+ * This is a reusable instrument rather than a one-off script. It submits a
+ * matrix of candidate report shapes to queries.create, which validates
+ * synchronously and rejects an invalid combination immediately -- no report is
+ * generated and nothing is polled -- so dozens of shapes can be settled in the
+ * time the round trips take. The variant matrix below is rewritten for each
+ * question; the harness around it does not change.
  *
- *   ACCEPTED, singly and together, alongside the production dimensions --
- *     METRIC_CM360_POST_CLICK_REVENUE, METRIC_CM360_POST_VIEW_REVENUE.
- *     Both are now in the production metrics array.
+ * Three rules this tool exists to enforce, each learned by getting it wrong:
  *
- *   REJECTED against the production dimensions, each one on its own --
- *     METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL, METRIC_TRUEVIEW_LOST_IS_BUDGET,
- *     METRIC_TRUEVIEW_LOST_IS_RANK. Since each fails alone, no smaller
- *     grouping of them will work.
+ *   Every shape gets a control. A dimension set that is itself invalid will
+ *   reject anything, and reading that as "the metric is unavailable" is how an
+ *   early round reported a verdict on metrics it had never actually tested.
+ *   Cells whose control failed are printed as untestable, not as evidence.
  *
- * Round one could not say *why* those three are refused, and its report
- * claimed more than it knew. Its minimal-dimension family was built on
- * date + advertiser while the base metrics included cost, so every shape in
- * that family died on "Advertiser Currency must be included as a dimension"
- * before the API ever considered the metric. The family had no control of its
- * own, so the flaw was invisible to the script and it printed "unavailable"
- * for metrics it had not actually tested. Round two exists because of that.
+ *   Only HTTP 400 is a verdict. A 429, 401 or 5xx means the question went
+ *   unanswered; those print as ERROR rather than REJECTED, because treating a
+ *   rate limit as a rejection would have us delete a metric that was fine.
  *
- * The question now is narrow: for each of the three, is there any shape that
- * works? Four per metric, each carrying the candidate alone so nothing else
- * can be blamed --
+ *   Vary one thing at a time, or vary everything at once and read it as a
+ *   factorial. What does not work is assuming two shapes differ in one respect
+ *   when they differ in three.
  *
- *   STD     core dims, STANDARD        is it valid in STANDARD at all
- *   STD_IO  core + insertion order     does it need IO context
- *   YT      core dims, YOUTUBE         is it YouTube-only, as the audience
- *                                      segment metrics turned out to be
- *   YT_IO   core + IO, YOUTUBE         both
+ * Cumulative findings, all from queries.create validation against partner
+ * 6631618296. Kept here because each round's conclusion is the next round's
+ * premise, and because these are expensive answers worth not re-deriving:
  *
- * plus a drop-one sweep over the production groupBys, which distinguishes
- * "this metric is unavailable" from "this metric cannot coexist with
- * FILTER_CREATIVE_ID" -- a difference worth a second query, not a dropped
- * feature.
+ *   ACCEPTED by the performance report, now in production --
+ *   METRIC_CM360_POST_CLICK_REVENUE, METRIC_CM360_POST_VIEW_REVENUE.
  *
- * Every family has a control proving its dimension set is valid on its own,
- * and a family whose control fails is reported as uninterpretable rather than
- * read as evidence. That is the specific lesson from round one.
+ *   REJECTED by the performance report, each one on its own, so no subset of
+ *   them would have worked -- METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL,
+ *   METRIC_TRUEVIEW_LOST_IS_BUDGET, METRIC_TRUEVIEW_LOST_IS_RANK.
  *
- * Why one run rather than a sequence. queries.create validates synchronously
- * and rejects a bad shape immediately -- no report is generated, nothing is
- * polled -- so every shape can be tested at once and the whole matrix returns
- * in the time the round trips take.
+ *   METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL is valid at date + advertiser +
+ *   currency + insertion order. The API is explicit: "Insertion Order or
+ *   Insertion Order ID is required when Percentage from Current IO Goal is
+ *   selected." It is refused at any finer grain -- creative, device, inventory
+ *   source and line item are each individually disqualifying -- and also
+ *   refused, for reasons this round is chasing, by the real IO pacing report.
+ *
+ *   METRIC_TRUEVIEW_LOST_IS_BUDGET, METRIC_TRUEVIEW_LOST_IS_RANK and their
+ *   sibling METRIC_TRUEVIEW_IMPRESSION_SHARE are accepted under report type
+ *   YOUTUBE at line item, at ad group, and at IO + line item + ad group. All
+ *   are refused under STANDARD at every grain, and refused even under YOUTUBE
+ *   once FILTER_TRUEVIEW_AD is added. Obtainable, but only from a
+ *   YouTube-typed report of their own.
+ *
+ * The question this run is asking is documented immediately above FACTORS.
  *
  * Nothing is left behind. Every query created is deleted in the finally block
  * and on SIGINT, and all of them are ONE_TIME and prefixed ZZ_DGPULSE_MPROBE_
- * so they cannot be mistaken for, or collide with, the production report whose
- * title createOrGetPerformanceReportQuery matches on.
+ * so they cannot be mistaken for, or collide with, the production reports whose
+ * titles createOrGetPerformanceReportQuery and createOrGetIoPacingReportQuery
+ * match on.
  *
  * Usage: node probe_performance_metrics.js <partnerId>
  */
@@ -127,70 +131,124 @@ const BASE_METRICS = [
   'METRIC_VIDEO_COMPLETION_RATE'
 ];
 
-// Round one settled the revenue pair: both accepted, singly and together, and
-// they are now in the production metrics array. What it did not settle is why
-// the three below are refused, because its minimal control was itself invalid
-// -- MIN_DIMS omitted FILTER_ADVERTISER_CURRENCY while the base metrics
-// included cost, so the API answered "Advertiser Currency must be included as
-// a dimension" and never got as far as judging the metric. Round two fixes
-// that and asks the question properly.
-const CANDIDATES = [
-  { key: 'IO_GOAL', metric: 'METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL' },
-  { key: 'LOST_BUDGET', metric: 'METRIC_TRUEVIEW_LOST_IS_BUDGET' },
-  { key: 'LOST_RANK', metric: 'METRIC_TRUEVIEW_LOST_IS_RANK' }
-];
+// Round three settled the impression share family and left one loose end.
+//
+//   SETTLED -- METRIC_TRUEVIEW_LOST_IS_BUDGET, METRIC_TRUEVIEW_LOST_IS_RANK
+//   and the sibling METRIC_TRUEVIEW_IMPRESSION_SHARE are all accepted under
+//   report type YOUTUBE at line item, at ad group, and at IO + line item + ad
+//   group. All three are refused under STANDARD at every grain. Adding the
+//   YouTube ad itself breaks them even under YOUTUBE. So they are obtainable,
+//   but only from a YouTube-typed report -- a separate query, table and join,
+//   which is a scope decision rather than a technical question.
+//
+//   OPEN -- METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL was accepted at date +
+//   advertiser + currency + insertion order, but refused when submitted as
+//   part of the real IO pacing report.
+//
+// Round four closes that loose end. I previously described the gap between
+// those two shapes as "FILTER_PARTNER or the ALL_TIME range", and that was
+// careless -- there are three differences, not two:
+//
+//   P  FILTER_PARTNER present in the groupBys
+//   R  ALL_TIME rather than a short window
+//   M  the four impressions/clicks/cost metrics riding alongside
+//
+// With three binary factors, testing them one at a time can mislead if two
+// interact, so all eight combinations are submitted at once, each with a
+// control that carries the same shape without the IO goal metric. Eight plus
+// four controls is still one run of a few seconds, and it names the culprit
+// outright instead of narrowing towards it.
+//
+// What hangs on the answer:
+//
+//   If P alone is responsible, this is nearly free. Partner_Id is written to
+//   dbm_io_spend_daily but never read from it -- the io_spend_daily CTE in
+//   materialize_insertion_orders.sql selects insertion order, date, currency,
+//   revenue and impressions, and nothing else. The partner_id columns in the
+//   three materializations come from dbm_performance, which keeps its own
+//   FILTER_PARTNER. So the groupBy can be dropped from the pacing report
+//   without touching anything downstream.
+//
+//   If R is responsible, it is expensive: the pacing report needs ALL_TIME to
+//   measure a budget segment, so the metric would need its own query.
+//
+//   If M is responsible, the metric cannot share a report with cost metrics
+//   and likewise needs its own query.
 
-// The smallest shape the API accepts. Currency is mandatory whenever a cost or
-// revenue metric is present, and round one proved it is cheaper to include it
-// than to discover its absence as a misleading rejection.
+const IO_GOAL = 'METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL';
+
 const CORE_DIMS = ['FILTER_DATE', 'FILTER_ADVERTISER', 'FILTER_ADVERTISER_CURRENCY'];
 const CORE_IO_DIMS = [...CORE_DIMS, 'FILTER_INSERTION_ORDER'];
 
-// Dimensions suspected of being the blocker, dropped one at a time from the
-// production list. An IO-level metric has no meaning at creative granularity
-// and a TrueView metric has none on non-YouTube inventory, so if any single
-// dimension is responsible it is very likely one of these four.
-const SUSPECT_DIMS = [
-  'FILTER_CREATIVE_ID',
-  'FILTER_DEVICE_TYPE',
-  'FILTER_INVENTORY_SOURCE_NAME',
-  'FILTER_LINE_ITEM'
+// The IO pacing report exactly as createOrGetIoPacingReportQuery builds it.
+// Copied rather than imported so that a change there shows up here as a failing
+// control instead of silently altering what is being tested.
+const IO_PACING_DIMS = [
+  'FILTER_DATE',
+  'FILTER_PARTNER',
+  'FILTER_ADVERTISER',
+  'FILTER_ADVERTISER_CURRENCY',
+  'FILTER_INSERTION_ORDER'
 ];
+const IO_PACING_METRICS = [
+  'METRIC_IMPRESSIONS',
+  'METRIC_CLICKS',
+  'METRIC_MEDIA_COST_ADVERTISER',
+  'METRIC_MEDIA_COST_USD'
+];
+
+// FILTER_PARTNER is only ever a groupBy here. It stays in the filters on every
+// shape, as it does in production, so the factor under test is the breakdown
+// and not the scoping.
+const FACTORS = {
+  P: [
+    { key: 'P1', label: 'with partner', dims: IO_PACING_DIMS },
+    { key: 'P0', label: 'no partner', dims: CORE_IO_DIMS }
+  ],
+  R: [
+    { key: 'RA', label: 'ALL_TIME', range: 'ALL_TIME' },
+    { key: 'R7', label: 'LAST_7_DAYS', range: 'LAST_7_DAYS' }
+  ],
+  M: [
+    { key: 'M1', label: 'with cost metrics', metrics: IO_PACING_METRICS },
+    { key: 'M0', label: 'metric alone', metrics: [] }
+  ]
+};
 
 const VARIANTS = [];
 
-// Controls. Each proves a family's dimension set is valid on its own, so that a
-// failure in that family is attributable to the metric rather than the shape.
-// Round one had no control for its minimal family and the whole family was
-// wasted; that is the mistake being corrected here.
-VARIANTS.push({ key: 'C_FULL', label: 'base 17, production dims', dims: FULL_DIMS, metrics: BASE_METRICS });
-VARIANTS.push({ key: 'C_CORE', label: 'impressions only, core dims', dims: CORE_DIMS, metrics: ['METRIC_IMPRESSIONS'] });
-VARIANTS.push({ key: 'C_CORE_IO', label: 'impressions only, core + IO', dims: CORE_IO_DIMS, metrics: ['METRIC_IMPRESSIONS'] });
-VARIANTS.push({ key: 'C_YT', label: 'impressions only, core dims, YOUTUBE', dims: CORE_DIMS, metrics: ['METRIC_IMPRESSIONS'], type: 'YOUTUBE' });
+// The deployed pacing report, unmodified. If this is ever refused the script is
+// out of date with createOrGetIoPacingReportQuery and nothing else here means
+// anything.
+VARIANTS.push({
+  key: 'C_DEPLOYED', label: 'IO pacing report exactly as deployed',
+  dims: IO_PACING_DIMS, metrics: IO_PACING_METRICS,
+  range: 'ALL_TIME', frequency: 'ONE_TIME'
+});
 
-// Each candidate entirely alone, with no base metrics to muddy the result.
-// Four shapes per metric, answering in order: is it valid in STANDARD at all;
-// does it need insertion order present; is it a YouTube-only metric; does it
-// need both.
-for (const c of CANDIDATES) {
-  VARIANTS.push({ key: `STD_${c.key}`, label: `${c.metric} alone, core dims`, family: 'STD', candidate: c.key, dims: CORE_DIMS, metrics: [c.metric] });
-  VARIANTS.push({ key: `STD_IO_${c.key}`, label: `${c.metric} alone, core + IO`, family: 'STD_IO', candidate: c.key, dims: CORE_IO_DIMS, metrics: [c.metric] });
-  VARIANTS.push({ key: `YT_${c.key}`, label: `${c.metric} alone, YOUTUBE`, family: 'YT', candidate: c.key, dims: CORE_DIMS, metrics: [c.metric], type: 'YOUTUBE' });
-  VARIANTS.push({ key: `YT_IO_${c.key}`, label: `${c.metric} alone, YOUTUBE + IO`, family: 'YT_IO', candidate: c.key, dims: CORE_IO_DIMS, metrics: [c.metric], type: 'YOUTUBE' });
-}
+for (const p of FACTORS.P) {
+  for (const r of FACTORS.R) {
+    for (const m of FACTORS.M) {
+      const cell = `${p.key}_${r.key}_${m.key}`;
+      const label = `${p.label}, ${r.label}, ${m.label}`;
 
-// Drop-one sweep. If a candidate passes with exactly one dimension removed, we
-// know the cost of having it: that dimension, in a second query. Only useful
-// for candidates that turn out to be valid in STANDARD somewhere.
-for (const c of CANDIDATES) {
-  for (const d of SUSPECT_DIMS) {
-    VARIANTS.push({
-      key: `DROP_${d.replace('FILTER_', '')}_${c.key}`,
-      label: `base + ${c.metric}, without ${d}`,
-      family: 'DROP', candidate: c.key, dropped: d,
-      dims: FULL_DIMS.filter(x => x !== d),
-      metrics: [...BASE_METRICS, c.metric]
-    });
+      // M0 carries only the IO goal metric, so a control without it would be a
+      // report with no metrics at all. Those cells are controlled by the M1
+      // control at the same P and R.
+      if (m.metrics.length) {
+        VARIANTS.push({
+          key: `C_${cell}`, label: `control: ${label}, no IO goal`,
+          dims: p.dims, metrics: m.metrics, range: r.range, frequency: 'ONE_TIME'
+        });
+      }
+
+      VARIANTS.push({
+        key: `T_${cell}`, label: `${label}, + IO goal`,
+        cell, p: p.key, r: r.key, m: m.key,
+        dims: p.dims, metrics: [...m.metrics, IO_GOAL],
+        range: r.range, frequency: 'ONE_TIME'
+      });
+    }
   }
 }
 
@@ -219,7 +277,7 @@ async function main() {
     const body = {
       metadata: {
         title: `ZZ_DGPULSE_MPROBE_${stamp}_${i}`,
-        dataRange: { range: 'LAST_7_DAYS' },
+        dataRange: { range: v.range || 'LAST_7_DAYS' },
         format: 'CSV'
       },
       params: {
@@ -228,7 +286,7 @@ async function main() {
         metrics: v.metrics,
         filters: [{ type: 'FILTER_PARTNER', value: String(PARTNER_ID) }]
       },
-      schedule: { frequency: 'ONE_TIME' }
+      schedule: { frequency: v.frequency || 'ONE_TIME' }
     };
     try {
       const res = await client.dbm.queries.create({ requestBody: body });
@@ -272,7 +330,7 @@ async function main() {
     console.log('===== RESULTS =====');
     for (const r of results) {
       const verdict = r.ok ? 'ACCEPTED' : r.inconclusive ? 'ERROR' : 'REJECTED';
-      console.log(`${verdict.padEnd(10)} ${r.v.key.padEnd(18)} ${r.v.label}`);
+      console.log(`${verdict.padEnd(10)} ${r.v.key.padEnd(22)} ${r.v.label}`);
       if (!r.ok) console.log(`           ${r.status ? `[${r.status}] ` : ''}${r.error}`);
     }
 
@@ -285,82 +343,95 @@ async function main() {
 
     console.log('\n===== VERDICT =====');
 
-    // Every control is checked, not just the first. Round one interpreted a
-    // whole family against a control that had itself been rejected, and the
-    // resulting "unavailable" verdict was wrong. A family whose control failed
-    // is reported as unusable rather than quietly read as evidence.
-    const CONTROLS = {
-      C_FULL: ['DROP'],
-      C_CORE: ['STD'],
-      C_CORE_IO: ['STD_IO'],
-      C_YT: ['YT', 'YT_IO']
-    };
-    const deadFamilies = new Set();
-    for (const [key, families] of Object.entries(CONTROLS)) {
-      const r = by(key);
-      if (!r || !r.ok) {
-        families.forEach(f => deadFamilies.add(f));
-        console.log(`Control ${key} was rejected -- ${families.join(', ')} results are not interpretable.`);
-        if (r && !r.ok) console.log(`  ${r.error}`);
+    const okKey = k => { const r = by(k); return !!(r && r.ok); };
+
+    if (!okKey('C_DEPLOYED')) {
+      const c = by('C_DEPLOYED');
+      console.log('C_DEPLOYED was rejected, so the IO pacing shape in this script no longer');
+      console.log('matches createOrGetIoPacingReportQuery. Reconcile IO_PACING_DIMS and');
+      console.log('IO_PACING_METRICS before reading anything below.');
+      if (c && c.error) console.log(`  ${c.error}`);
+      return;
+    }
+
+    // Each cell is usable only if its own control passed. An M0 cell carries
+    // the IO goal metric alone, so it borrows the M1 control at the same P and
+    // R -- a report with no metrics at all is not a thing that can be tested.
+    const cells = [];
+    for (const p of FACTORS.P) {
+      for (const r of FACTORS.R) {
+        for (const m of FACTORS.M) {
+          const cell = `${p.key}_${r.key}_${m.key}`;
+          const controlKey = `C_${p.key}_${r.key}_M1`;
+          cells.push({
+            cell, p: p.key, r: r.key, m: m.key,
+            label: `${p.label}, ${r.label}, ${m.label}`,
+            controlOk: okKey(controlKey),
+            ok: okKey(`T_${cell}`)
+          });
+        }
       }
     }
-    if (deadFamilies.size) console.log('');
 
-    const usableIn = (c, family) => {
-      if (deadFamilies.has(family)) return false;
-      const prefix = family === 'STD' ? 'STD_' : family === 'STD_IO' ? 'STD_IO_' :
-                     family === 'YT' ? 'YT_' : 'YT_IO_';
-      const r = by(`${prefix}${c.key}`);
-      return !!(r && r.ok);
-    };
+    console.log('METRIC_PERCENTAGE_FROM_CURRENT_IO_GOAL, by cell:\n');
+    for (const c of cells) {
+      const state = !c.controlOk ? 'untestable' : c.ok ? 'ACCEPTED' : 'rejected';
+      console.log(`  ${state.padEnd(11)} ${c.label}`);
+    }
 
-    for (const c of CANDIDATES) {
-      console.log(c.metric);
-      const std = usableIn(c, 'STD');
-      const stdIo = usableIn(c, 'STD_IO');
-      const yt = usableIn(c, 'YT');
-      const ytIo = usableIn(c, 'YT_IO');
+    const testable = cells.filter(c => c.controlOk);
+    const passing = testable.filter(c => c.ok);
+    const untestable = cells.length - testable.length;
+    if (untestable) {
+      console.log(`\n${untestable} cell(s) had a rejected control and prove nothing either way.`);
+    }
 
-      const drops = deadFamilies.has('DROP') ? [] :
-        SUSPECT_DIMS.filter(d => {
-          const r = by(`DROP_${d.replace('FILTER_', '')}_${c.key}`);
-          return r && r.ok;
-        });
+    console.log('');
+    if (!passing.length) {
+      console.log('No combination works. The metric cannot be had at insertion order grain');
+      console.log('from any variation of the pacing report, which contradicts the earlier');
+      console.log('acceptance at date + advertiser + currency + insertion order. Something');
+      console.log('outside these three factors is involved -- re-run the accepted shape');
+      console.log('verbatim before going further.');
+      return;
+    }
 
-      if (drops.length) {
-        console.log(`  Blocked by a single dimension. Removing any one of these makes the`);
-        console.log(`  production report accept it: ${drops.join(', ')}.`);
-        console.log(`  Do not remove it from the main report -- other materializations read`);
-        console.log(`  those columns. Take the metric from a second query that omits it.`);
-      } else if (std || stdIo) {
-        console.log(`  Valid in STANDARD on a narrower shape (${[std && 'core', stdIo && 'core+IO'].filter(Boolean).join(', ')}),`);
-        console.log(`  but no single dimension removal rescues the production report, so more`);
-        console.log(`  than one of our dimensions conflicts. Needs its own query at that`);
-        console.log(`  narrower grain, joined on date + advertiser${stdIo ? ' + insertion order' : ''}.`);
-      } else if (yt || ytIo) {
-        console.log(`  YOUTUBE-only (${[yt && 'core', ytIo && 'core+IO'].filter(Boolean).join(', ')}). Not available from a STANDARD`);
-        console.log(`  report at any grain. This is the same shape the audience report needed.`);
-      } else {
-        console.log(`  Rejected in every shape tried: STANDARD and YOUTUBE, with and without`);
-        console.log(`  insertion order, and with each suspect dimension removed. Treat as`);
-        console.log(`  genuinely unavailable and drop the column rather than shipping a zero.`);
+    // A factor is responsible if every passing cell holds one value of it while
+    // some testable cell with the other value fails. Reported per factor rather
+    // than as a winning combination, because the fix differs by factor.
+    const blame = [];
+    for (const [name, levels] of Object.entries(FACTORS)) {
+      const key = name === 'P' ? 'p' : name === 'R' ? 'r' : 'm';
+      const passingLevels = new Set(passing.map(c => c[key]));
+      if (passingLevels.size === 1) {
+        const required = [...passingLevels][0];
+        const failedWithOther = testable.some(c => c[key] !== required && !c.ok);
+        if (failedWithOther) {
+          blame.push({ name, required, label: levels.find(l => l.key === required).label });
+        }
       }
-      console.log('');
     }
 
-    const anyRecoverable = CANDIDATES.some(c =>
-      usableIn(c, 'STD') || usableIn(c, 'STD_IO') || usableIn(c, 'YT') || usableIn(c, 'YT_IO') ||
-      SUSPECT_DIMS.some(d => {
-        const r = by(`DROP_${d.replace('FILTER_', '')}_${c.key}`);
-        return r && r.ok;
-      }));
-
-    if (!anyRecoverable && !deadFamilies.size) {
-      console.log('None of the three is obtainable. The honest options are to drop');
-      console.log('io_goal_pacing_pct, lost_is_budget and lost_is_rank from the three');
-      console.log('performance materializations, or to leave them NULL and remove them');
-      console.log('from the dashboard. They must not go back to being zeros.');
+    if (!blame.length) {
+      console.log('No single factor explains the pattern; the blockers interact. Read the');
+      console.log('cell table above and pick a passing combination directly.');
+    } else {
+      console.log(`Responsible factor(s): ${blame.map(b => `${b.name} (must be "${b.label}")`).join(', ')}.`);
     }
+    console.log('');
+
+    // Settled on 2026-09-21. The factorial was clean: M was the sole blocking
+    // factor -- all four M0 cells accepted, all four M1 cells rejected, with P
+    // and R irrelevant. The metric therefore refuses to share a report with the
+    // cost metrics, so serving it would mean a third query, sync step and table
+    // for one column. It was dropped from the codebase instead. This branch is
+    // kept only so the harness still prints a conclusion if the API behaviour
+    // changes and someone re-runs it.
+    console.log('For the record: this metric was dropped from DGPulse rather than');
+    console.log('served, because it will not share a report with the cost metrics and');
+    console.log('was not worth a third query, sync step and table. If the cells above');
+    console.log('now show a passing M1 combination, that constraint has lifted and the');
+    console.log('decision is worth revisiting.');
   } finally {
     console.log(`\nDeleting ${created.length} probe quer${created.length === 1 ? 'y' : 'ies'}...`);
     await cleanup();

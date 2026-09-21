@@ -51,10 +51,7 @@ SELECT * FROM UNNEST([
     360.0 AS post_view_conversions,
     31000.0 AS post_click_revenue,
     12600.0 AS post_view_revenue,
-    0.0341 AS post_click_conv_rate,
-    96.5 AS io_goal_pacing_pct,
-    2.1 AS lost_is_budget,
-    4.3 AS lost_is_rank
+    0.0341 AS post_click_conv_rate
   ),
   STRUCT(
     DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS date,
@@ -100,10 +97,7 @@ SELECT * FROM UNNEST([
     130.0 AS post_view_conversions,
     11100.0 AS post_click_revenue,
     5200.0 AS post_view_revenue,
-    0.0294 AS post_click_conv_rate,
-    78.2 AS io_goal_pacing_pct,
-    14.8 AS lost_is_budget,
-    8.2 AS lost_is_rank
+    0.0294 AS post_click_conv_rate
   ),
   STRUCT(
     DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS date,
@@ -149,10 +143,7 @@ SELECT * FROM UNNEST([
     45.0 AS post_view_conversions,
     3750.0 AS post_click_revenue,
     1800.0 AS post_view_revenue,
-    0.0263 AS post_click_conv_rate,
-    88.0 AS io_goal_pacing_pct,
-    5.4 AS lost_is_budget,
-    6.1 AS lost_is_rank
+    0.0263 AS post_click_conv_rate
   )
 ]);
 
@@ -218,10 +209,7 @@ SELECT * FROM UNNEST([
     210.0 AS post_view_conversions,
     21500.0 AS post_click_revenue,
     7800.0 AS post_view_revenue,
-    0.0366 AS post_click_conv_rate,
-    98.2 AS io_goal_pacing_pct,
-    1.5 AS lost_is_budget,
-    3.8 AS lost_is_rank
+    0.0366 AS post_click_conv_rate
   ),
   STRUCT(
     DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS date,
@@ -282,10 +270,7 @@ SELECT * FROM UNNEST([
     150.0 AS post_view_conversions,
     9500.0 AS post_click_revenue,
     4800.0 AS post_view_revenue,
-    0.0300 AS post_click_conv_rate,
-    94.8 AS io_goal_pacing_pct,
-    2.7 AS lost_is_budget,
-    4.8 AS lost_is_rank
+    0.0300 AS post_click_conv_rate
   ),
   STRUCT(
     DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS date,
@@ -346,10 +331,7 @@ SELECT * FROM UNNEST([
     130.0 AS post_view_conversions,
     11100.0 AS post_click_revenue,
     5200.0 AS post_view_revenue,
-    0.0294 AS post_click_conv_rate,
-    78.2 AS io_goal_pacing_pct,
-    14.8 AS lost_is_budget,
-    8.2 AS lost_is_rank
+    0.0294 AS post_click_conv_rate
   ),
   STRUCT(
     DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) AS date,
@@ -410,10 +392,7 @@ SELECT * FROM UNNEST([
     45.0 AS post_view_conversions,
     3750.0 AS post_click_revenue,
     1800.0 AS post_view_revenue,
-    0.0263 AS post_click_conv_rate,
-    88.0 AS io_goal_pacing_pct,
-    5.4 AS lost_is_budget,
-    6.1 AS lost_is_rank
+    0.0263 AS post_click_conv_rate
   )
 ]);
 
@@ -483,10 +462,7 @@ SELECT * FROM UNNEST([
     360.0 AS post_view_conversions,
     31000.0 AS post_click_revenue,
     12600.0 AS post_view_revenue,
-    0.0341 AS post_click_conv_rate,
-    96.5 AS io_goal_pacing_pct,
-    2.1 AS lost_is_budget,
-    4.3 AS lost_is_rank
+    0.0341 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -551,10 +527,7 @@ SELECT * FROM UNNEST([
     130.0 AS post_view_conversions,
     11100.0 AS post_click_revenue,
     5200.0 AS post_view_revenue,
-    0.0294 AS post_click_conv_rate,
-    78.2 AS io_goal_pacing_pct,
-    14.8 AS lost_is_budget,
-    8.2 AS lost_is_rank
+    0.0294 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -619,10 +592,7 @@ SELECT * FROM UNNEST([
     45.0 AS post_view_conversions,
     3750.0 AS post_click_revenue,
     1800.0 AS post_view_revenue,
-    0.0263 AS post_click_conv_rate,
-    88.0 AS io_goal_pacing_pct,
-    5.4 AS lost_is_budget,
-    6.1 AS lost_is_rank
+    0.0263 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -687,10 +657,7 @@ SELECT * FROM UNNEST([
     250.0 AS post_view_conversions,
     22000.0 AS post_click_revenue,
     8000.0 AS post_view_revenue,
-    0.0333 AS post_click_conv_rate,
-    100.0 AS io_goal_pacing_pct,
-    0.0 AS lost_is_budget,
-    1.2 AS lost_is_rank
+    0.0333 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -755,10 +722,7 @@ SELECT * FROM UNNEST([
     0.0 AS post_view_conversions,
     0.0 AS post_click_revenue,
     0.0 AS post_view_revenue,
-    0.0 AS post_click_conv_rate,
-    0.0 AS io_goal_pacing_pct,
-    0.0 AS lost_is_budget,
-    0.0 AS lost_is_rank
+    0.0 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -823,10 +787,7 @@ SELECT * FROM UNNEST([
     25.0 AS post_view_conversions,
     1800.0 AS post_click_revenue,
     900.0 AS post_view_revenue,
-    0.0222 AS post_click_conv_rate,
-    0.0 AS io_goal_pacing_pct,
-    1.2 AS lost_is_budget,
-    2.4 AS lost_is_rank
+    0.0222 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -891,10 +852,7 @@ SELECT * FROM UNNEST([
     0.0 AS post_view_conversions,
     0.0 AS post_click_revenue,
     0.0 AS post_view_revenue,
-    0.0 AS post_click_conv_rate,
-    0.0 AS io_goal_pacing_pct,
-    0.0 AS lost_is_budget,
-    0.0 AS lost_is_rank
+    0.0 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -959,10 +917,7 @@ SELECT * FROM UNNEST([
     0.0 AS post_view_conversions,
     0.0 AS post_click_revenue,
     0.0 AS post_view_revenue,
-    0.0 AS post_click_conv_rate,
-    0.0 AS io_goal_pacing_pct,
-    0.0 AS lost_is_budget,
-    0.0 AS lost_is_rank
+    0.0 AS post_click_conv_rate
   ),
   STRUCT(
     CURRENT_DATE() AS date,
@@ -1027,10 +982,7 @@ SELECT * FROM UNNEST([
     0.0 AS post_view_conversions,
     0.0 AS post_click_revenue,
     0.0 AS post_view_revenue,
-    0.0 AS post_click_conv_rate,
-    0.0 AS io_goal_pacing_pct,
-    0.0 AS lost_is_budget,
-    0.0 AS lost_is_rank
+    0.0 AS post_click_conv_rate
   )
 ]);
 

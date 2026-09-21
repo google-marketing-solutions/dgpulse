@@ -126,10 +126,7 @@ io_stats AS (
     SUM(COALESCE(Post_Click_Conversions, 0)) AS post_click_conversions,
     SUM(COALESCE(Post_View_Conversions, 0)) AS post_view_conversions,
     SUM(COALESCE(CM_Post_Click_Revenue, 0)) AS post_click_revenue,
-    SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue,
-    AVG(Percentage_From_Current_IO_Goal) AS io_goal_pacing_pct,
-    AVG(TrueView_Lost_IS_Budget) AS lost_is_budget,
-    AVG(TrueView_Lost_IS_Rank) AS lost_is_rank
+    SUM(COALESCE(CM_Post_View_Revenue, 0)) AS post_view_revenue
   FROM deduped_dbm
   GROUP BY 1, 2
 ),
@@ -396,12 +393,7 @@ SELECT
   COALESCE(s.post_view_conversions, 0) AS post_view_conversions,
   COALESCE(s.post_click_revenue, 0) AS post_click_revenue,
   COALESCE(s.post_view_revenue, 0) AS post_view_revenue,
-  SAFE_DIVIDE(COALESCE(s.post_click_conversions, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS post_click_conv_rate,
-
-  -- Headroom & Pacing
-  s.io_goal_pacing_pct,
-  s.lost_is_budget,
-  s.lost_is_rank
+  SAFE_DIVIDE(COALESCE(s.post_click_conversions, 0), NULLIF(COALESCE(s.clicks, 0), 0)) AS post_click_conv_rate
 FROM latest_ios io
 LEFT JOIN pacing_basis pb
   ON io.insertion_order_id = pb.insertion_order_id
