@@ -84,11 +84,33 @@ Before deploying, ensure you have:
    > | **External**, publishing status *In production* | Does not expire |
    > | **External**, publishing status *Testing* | **Expires after 7 days** |
    >
-   > If you are deploying inside your own Workspace organization, choose
-   > **Internal** and there is nothing further to do. If you must use **External**,
-   > go to the OAuth consent screen and click **PUBLISH APP** to move it out of
-   > Testing before you generate the refresh token in step 1. Leaving it in
-   > Testing is fine only for short-lived evaluation.
+   > **Choosing Internal:** "Internal" means internal to *the organization that
+   > owns the GCP project*, not to any Workspace organization you happen to
+   > belong to. The account you authorize with in step 1 must be a member of
+   > that same organization, and it must have DV360 access to your partner. If
+   > it is not a member, authorization fails immediately with
+   > `This client is restricted to users within its organization.` Check the
+   > owning organization before choosing:
+   >
+   > ```bash
+   > gcloud projects get-ancestors <YOUR_PROJECT_ID>
+   > ```
+   >
+   > **Choosing Publish instead:** if Internal does not apply, go to the OAuth
+   > consent screen and click **PUBLISH APP** to move out of Testing before you
+   > generate the refresh token in step 1. If the button is greyed out, the
+   > reason is shown beneath it — usually an incomplete **Branding** page,
+   > which is a form to fill in rather than a restriction.
+   >
+   > Publishing stops the 7-day expiry even if the app is never verified.
+   > Because this tool requests sensitive scopes, an unverified published app
+   > still shows an "Google hasn't verified this app" interstitial at
+   > authorization (click **Advanced** to continue) and is capped at 100 users.
+   > Neither affects the daily sync once a token exists.
+   >
+   > Leaving the app in *Testing* is fine only for short-lived evaluation, where
+   > a sync that stops after a week is acceptable.
+
    * Navigate to **APIs & Services** ➔ **Credentials**:
      * Click **+ CREATE CREDENTIALS** ➔ **OAuth client ID**.
      * Select **Web application** as the application type.
