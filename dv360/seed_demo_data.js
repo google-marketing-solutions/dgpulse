@@ -40,6 +40,12 @@ async function main() {
   const projectId = await resolveProjectId(process.argv[3]);
   const bigquery = new BigQuery({ projectId });
 
+  // Match install.sh, which creates the real dataset with
+  // `bq mk --dataset --location=${REGION}`. A demo dataset in the US
+  // multi-region cannot be joined against a regional production dataset, which
+  // makes schema comparison between the two impossible.
+  const requestedLocation = process.env.LOCATION || process.env.REGION || 'us-central1';
+
   console.log(`=================================================================`);
   console.log(`🚀 Seeding DV360 DGPulse Demo Dataset`);
   console.log(`Project: ${projectId}`);
@@ -49,12 +55,23 @@ async function main() {
   // Ensure dataset exists
   const dataset = bigquery.dataset(datasetId);
   const [exists] = await dataset.exists();
+  let location = requestedLocation;
   if (!exists) {
-    console.log(`Creating dataset ${datasetId} in region US...`);
-    await bigquery.createDataset(datasetId, { location: 'US' });
+    console.log(`Creating dataset ${datasetId} in location ${location}...`);
+    await bigquery.createDataset(datasetId, { location });
     console.log(`Dataset ${datasetId} created.`);
   } else {
-    console.log(`Dataset ${datasetId} already exists.`);
+    // Never assume: an existing dataset's location cannot be changed, so read
+    // it back and submit the query jobs there.
+    const [metadata] = await dataset.getMetadata();
+    location = metadata.location || requestedLocation;
+    console.log(`Dataset ${datasetId} already exists (location: ${location}).`);
+    if (location !== requestedLocation) {
+      console.log(
+        `⚠️  Existing location ${location} differs from the expected ${requestedLocation}. ` +
+        `A dataset's location is immutable -- drop and re-run to change it.`
+      );
+    }
   }
 
   const sqlPath = path.join(__dirname, 'generate_demo_data.sql');
@@ -85,7 +102,7 @@ async function main() {
     process.stdout.write(`Seeding [${i + 1}/${statements.length}] ${tableName}... `);
 
     try {
-      const [job] = await bigquery.createQueryJob({ query: stmt });
+      const [job] = await bigquery.createQueryJob({ query: stmt, location });
       await job.getQueryResults();
       console.log('✅ OK');
     } catch (err) {
