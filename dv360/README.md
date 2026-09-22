@@ -136,7 +136,7 @@ The script automatically:
 
 ## Looker Studio Linking API & Data Source Aliases
 
-The [Looker Studio dashboard template](https://datastudio.google.com/c/reporting/d9e9b92c-74b8-4248-b57d-f9bd2a59be2f) connects via the Google Data Studio Linking API. 
+The [Looker Studio dashboard template](https://lookerstudio.google.com/reporting/8052b105-d00c-4cb8-bc32-864fe4fe827f) connects via the Looker Studio Linking API. 
 
 Each data source has a pre-configured alias that automatically binds to your project's BigQuery tables:
 
@@ -144,12 +144,27 @@ Each data source has a pre-configured alias that automatically binds to your pro
 | :--- | :--- | :--- |
 | **DV360 Campaign Performance** | `campaign_performance` | `final_campaign_performance` |
 | **DV360 Line Items Performance** | `line_items_performance` | `final_line_items_performance` |
-| **DV360 Insertion Orders Performance** | `insertion_orders_performance` | `final_insertion_orders_performance` |
+| **DV360 IO Pacing (Current)** | `io_pacing_current` | `final_io_pacing_current` |
 | **DV360 Asset Performance** | `assets_performance` | `final_assets_performance` |
 | **DV360 Creative Variety** | `creative_variety` | `final_creative_variety` |
 | **DV360 Audiences Performance** | `audiences_performance` | `final_audiences_performance` |
 | **DV360 Floodlight Activities Audit** | `floodlight_audit` | `final_floodlight_activities_audit` |
 | **DV360 Floodlight Pre-Flight Audit** | `floodlight_preflight_audit` | `final_cls_preflight_audit` |
+
+> [!IMPORTANT]
+> The pacing pages read from the `final_io_pacing_current` **view**, not from
+> `final_insertion_orders_performance`. The base table carries one row per
+> insertion order *per date*, so pacing figures — which are IO-level constants —
+> would be multiplied by the number of date rows in view, and the multiplier
+> would shift whenever the date filter changed. The view selects the newest row
+> per IO, which makes scorecards safe to sum.
+>
+> The alias names above are Linking API identifiers, **not** data source display
+> names. They are a distinct property, and a copied report does not inherit
+> them. After copying this template, confirm the aliases still match by opening
+> the generated link against a dataset the template is *not* already bound to:
+> if the data does not change, the `ds.*` parameters were silently ignored.
+
 
 ---
 
