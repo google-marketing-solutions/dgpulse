@@ -68,18 +68,20 @@ async function main() {
     .replace(/__DATASET_ID__/g, datasetId)
     .replace(/__PARTNER_ID__/g, 'partner_9901');
 
-  // Split into individual CREATE OR REPLACE statements
+  // Split into individual CREATE OR REPLACE statements. Views are included as
+  // well as tables: final_io_pacing_current is a view, and it backs six charts.
+  // Statements run in file order, so a view always follows the table it reads.
   const statements = sqlContent
     .split(/;\s*$/m)
     .map(s => s.trim())
-    .filter(s => s.length > 0 && s.toUpperCase().includes('CREATE OR REPLACE TABLE'));
+    .filter(s => s.length > 0 && /CREATE OR REPLACE (TABLE|VIEW)/i.test(s));
 
-  console.log(`Found ${statements.length} table creation statements in generate_demo_data.sql.\n`);
+  console.log(`Found ${statements.length} table/view creation statements in generate_demo_data.sql.\n`);
 
   for (let i = 0; i < statements.length; i++) {
     const stmt = statements[i];
-    const match = stmt.match(/CREATE OR REPLACE TABLE\s+`?([a-zA-Z0-9_.-]+)`?/i);
-    const tableName = match ? match[1].split('.').pop() : `Table ${i + 1}`;
+    const match = stmt.match(/CREATE OR REPLACE (?:TABLE|VIEW)\s+`?([a-zA-Z0-9_.-]+)`?/i);
+    const tableName = match ? match[1].split('.').pop() : `Object ${i + 1}`;
     process.stdout.write(`Seeding [${i + 1}/${statements.length}] ${tableName}... `);
 
     try {
@@ -96,7 +98,7 @@ async function main() {
   const demoLookerUrl = `https://lookerstudio.google.com/reporting/create?c.reportId=${templateId}` +
     `&ds.campaign_performance.connector=bigQuery&ds.campaign_performance.projectId=${projectId}&ds.campaign_performance.datasetId=${datasetId}&ds.campaign_performance.type=TABLE&ds.campaign_performance.tableId=final_campaign_performance&ds.campaign_performance.refreshFields=false` +
     `&ds.line_items_performance.connector=bigQuery&ds.line_items_performance.projectId=${projectId}&ds.line_items_performance.datasetId=${datasetId}&ds.line_items_performance.type=TABLE&ds.line_items_performance.tableId=final_line_items_performance&ds.line_items_performance.refreshFields=false` +
-    `&ds.insertion_orders_performance.connector=bigQuery&ds.insertion_orders_performance.projectId=${projectId}&ds.insertion_orders_performance.datasetId=${datasetId}&ds.insertion_orders_performance.type=TABLE&ds.insertion_orders_performance.tableId=final_insertion_orders_performance&ds.insertion_orders_performance.refreshFields=false` +
+    `&ds.io_pacing_current.connector=bigQuery&ds.io_pacing_current.projectId=${projectId}&ds.io_pacing_current.datasetId=${datasetId}&ds.io_pacing_current.type=TABLE&ds.io_pacing_current.tableId=final_io_pacing_current&ds.io_pacing_current.refreshFields=false` +
     `&ds.assets_performance.connector=bigQuery&ds.assets_performance.projectId=${projectId}&ds.assets_performance.datasetId=${datasetId}&ds.assets_performance.type=TABLE&ds.assets_performance.tableId=final_assets_performance&ds.assets_performance.refreshFields=false` +
     `&ds.creative_variety.connector=bigQuery&ds.creative_variety.projectId=${projectId}&ds.creative_variety.datasetId=${datasetId}&ds.creative_variety.type=TABLE&ds.creative_variety.tableId=final_creative_variety&ds.creative_variety.refreshFields=false` +
     `&ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${projectId}&ds.audiences_performance.datasetId=${datasetId}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false` +

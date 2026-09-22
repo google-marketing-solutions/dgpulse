@@ -1713,3 +1713,14 @@ SELECT * FROM UNNEST([
     'https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide' AS steps_to_fix_url
   )
 ]);
+
+-- 9. IO PACING - CURRENT (final_io_pacing_current)
+-- Mirrors the production view in materialize_insertion_orders.sql exactly: one
+-- row per insertion order, the most recent one. Six dashboard charts read from
+-- this view rather than from the base table, so the demo dataset has to expose
+-- it too. Defined as SELECT * over the demo IO table so its column list can
+-- never drift from the base table's.
+CREATE OR REPLACE VIEW `__PROJECT_ID__.__DATASET_ID__.final_io_pacing_current` AS
+SELECT *
+FROM `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_performance`
+QUALIFY ROW_NUMBER() OVER (PARTITION BY insertion_order_id ORDER BY date DESC) = 1;
