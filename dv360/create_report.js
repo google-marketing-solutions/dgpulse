@@ -429,15 +429,26 @@ function mapCsvRowToBq(r) {
 
 /**
  * Ensures DBM performance query exists and triggers a run.
+ *
+ * @param {string=} partnerIdOverride
+ * @param {!Array<string>=} insertionOrderIds Demand Gen insertion orders to
+ *     scope the report to. Accepted pre-resolved rather than looked up here so
+ *     that the setup path can share one lookup with the audience query. Falls
+ *     back to reading them itself when called directly.
  */
-async function setupDbmReport(partnerIdOverride) {
+async function setupDbmReport(partnerIdOverride, insertionOrderIds) {
   const partnerId = partnerIdOverride || PARTNER_ID;
   if (!partnerId) {
     throw new Error('PARTNER_ID is required.');
   }
 
   const client = await initializeClient(partnerId);
-  const { queryId, isNew } = await client.createOrGetPerformanceReportQuery(partnerId);
+  const ioIds = insertionOrderIds !== undefined
+    ? insertionOrderIds
+    : await fetchDemandGenInsertionOrderIds(
+        process.env.DATASET_ID || `dv360_dgpulse_${partnerId}`);
+  const { queryId, isNew } =
+      await client.createOrGetPerformanceReportQuery(partnerId, ioIds);
 
   if (isNew) {
     console.log(`Triggering initial run for new DBM query ${queryId}...`);
@@ -461,7 +472,9 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
   if (!partnerId) throw new Error('PARTNER_ID is required.');
 
   const client = await initializeClient(partnerId);
-  const { queryId } = await client.createOrGetPerformanceReportQuery(partnerId);
+  const insertionOrderIds = await fetchDemandGenInsertionOrderIds(targetDatasetId);
+  const { queryId } =
+      await client.createOrGetPerformanceReportQuery(partnerId, insertionOrderIds);
 
   let downloadUrl = await client.getLatestReportDownloadUrl(queryId);
   if (!downloadUrl) {
@@ -488,7 +501,29 @@ async function syncDbmPerformanceReport(partnerIdOverride, datasetIdOverride) {
     throw new Error(`Failed to download report: ${response.statusText}`);
   }
 
-  const csvText = await response.text();
+  // The whole CSV is materialised as one JavaScript string, which V8 caps at
+  // 0x1fffffe8 characters (~512 MiB). Exceeding it throws "Cannot create a
+  // string longer than 0x1fffffe8 characters", which names neither this
+  // function nor the report and sent one investigation looking for a memory
+  // leak. Scoping the query to the Demand Gen insertion orders is what keeps
+  // the file under the ceiling; this catch exists for the case where even the
+  // scoped pull is too large, and says what to do about it.
+  let csvText;
+  try {
+    csvText = await response.text();
+  } catch (err) {
+    if (/string longer than/i.test(err.message)) {
+      throw new Error(
+        'Performance report CSV is too large to read into memory ' +
+        `(${err.message}). The query is scoped to ${insertionOrderIds.length} ` +
+        'Demand Gen insertion order(s); a scope of 0 means the entity sync has ' +
+        'not populated line_items yet, and the next sync will scope it ' +
+        'correctly. If the scope is already correct, the report has outgrown ' +
+        'the single-string ceiling and the download has to be streamed rather ' +
+        'than buffered -- raising the function memory will not help.');
+    }
+    throw err;
+  }
   const parsedRows = parseCsv(csvText);
   console.log(`Parsed ${parsedRows.length} rows from DBM CSV.`);
 
@@ -589,10 +624,10 @@ function mapAudienceCsvRowToBq(r) {
 /**
  * Reads the partner's Demand Gen insertion orders from the synced entity table.
  *
- * The audience report is scoped to these. Everything DGPulse surfaces is Demand
- * Gen -- every materialize_*.sql filters on it -- so anything else pulled here
- * is discarded downstream anyway. For the reference partner that is 52 of 122
- * insertion orders.
+ * Both the audience and the performance reports are scoped to these. Everything
+ * DGPulse surfaces is Demand Gen -- every materialize_*.sql filters on it -- so
+ * anything else pulled here is discarded downstream anyway. For the reference
+ * partner that is 52 of 122 insertion orders.
  *
  * Returns an empty array rather than throwing when the table is missing or
  * empty, which is the expected state on a fresh install: line_items is
@@ -617,17 +652,18 @@ async function fetchDemandGenInsertionOrderIds(targetDatasetId) {
     if (ids.length === 0) {
       console.warn(
         `No Demand Gen insertion orders found in ${targetDatasetId}.line_items. ` +
-        'The audience report will be scoped to the whole partner, which is ' +
-        'much slower; it will be rescoped automatically once the entity sync ' +
-        'has run.');
+        'The audience and performance reports will be scoped to the whole ' +
+        'partner, which is much slower and on a large partner produces a CSV ' +
+        'too big to download; both are rescoped automatically once the entity ' +
+        'sync has run.');
     } else {
-      console.log(`Scoping audience report to ${ids.length} Demand Gen insertion order(s).`);
+      console.log(`Scoping audience and performance reports to ${ids.length} Demand Gen insertion order(s).`);
     }
     return ids;
   } catch (err) {
     console.warn(
       `Could not read Demand Gen insertion orders from ${targetDatasetId}.line_items ` +
-      `(${err.message}). Falling back to partner-wide audience scope.`);
+      `(${err.message}). Falling back to partner-wide report scope.`);
     return [];
   }
 }
@@ -793,18 +829,26 @@ if (require.main === module) {
   if (action === 'setup') {
     // allSettled, not all: a failure in one report definition must not hide
     // whether the other two were created successfully.
-    // The audience query is scoped to the Demand Gen insertion orders, so setup
-    // has to resolve them here as well; otherwise it would create a
-    // partner-wide query that the first sync then has to tear down and rebuild.
-    const audienceDatasetId = process.env.DATASET_ID ||
+    // The audience and performance queries are both scoped to the Demand Gen
+    // insertion orders, so setup has to resolve them here as well; otherwise it
+    // would create partner-wide queries that the first sync then has to tear
+    // down and rebuild.
+    const reportDatasetId = process.env.DATASET_ID ||
         (partnerIdArg ? `dv360_dgpulse_${partnerIdArg}` : DATASET_ID);
+    // Resolved once and awaited by both jobs. Looking it up per job would run
+    // the same BigQuery query twice and log the scope twice, and the two
+    // queries could disagree if the entity sync landed between them.
+    const ioIdsPromise = fetchDemandGenInsertionOrderIds(reportDatasetId);
     const setupJobs = [
-      { name: 'performance', promise: setupDbmReport(partnerIdArg) },
+      {
+        name: 'performance',
+        promise: ioIdsPromise.then(ioIds => setupDbmReport(partnerIdArg, ioIds))
+      },
       {
         name: 'audience',
         promise: Promise.all([
           initializeClient(partnerIdArg),
-          fetchDemandGenInsertionOrderIds(audienceDatasetId)
+          ioIdsPromise
         ]).then(([c, ioIds]) => c.createOrGetAudienceReportQuery(partnerIdArg, ioIds))
       },
       { name: 'IO pacing', promise: initializeClient(partnerIdArg).then(c => c.createOrGetIoPacingReportQuery(partnerIdArg)) }

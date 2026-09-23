@@ -355,11 +355,15 @@ class DV360Client {
   }
 
   /**
-   * Creates or retrieves an existing daily DBM report query for a partner.
+   * Creates or retrieves an existing daily DBM report query for a partner,
+   * scoped to that partner's Demand Gen insertion orders.
    * @param {string} partnerId
+   * @param {!Array<string>=} insertionOrderIds Demand Gen insertion orders to
+   *     scope the report to. Omitted or empty degrades to partner scope -- see
+   *     the comment on the filters below.
    * @returns {Promise<{queryId: string, isNew: boolean}>}
    */
-  async createOrGetPerformanceReportQuery(partnerId) {
+  async createOrGetPerformanceReportQuery(partnerId, insertionOrderIds) {
     const reportTitle = `DV360 DGPulse Performance Report - Partner ${partnerId}`;
     const dataRange = 'LAST_90_DAYS';
 
@@ -449,6 +453,36 @@ class DV360Client {
       // are recorded in probe_performance_metrics.js.
     ];
 
+    // Repeated filter pairs of the same type are OR'd together by Bid Manager,
+    // so this scopes the report to the partner's Demand Gen insertion orders.
+    //
+    // Scoping is not an optimisation here, it is what makes the report
+    // downloadable at all. syncDbmPerformanceReport reads the CSV with
+    // response.text(), and a partner-wide pull for Volvo (617397359) exceeded
+    // V8's hard 0x1fffffe8-character ceiling on a single string, failing with
+    // "Cannot create a string longer than 0x1fffffe8 characters". That is an
+    // engine limit, not a heap limit: --max-old-space-size cannot raise it.
+    //
+    // It costs nothing in data. Every performance materialization already
+    // discards non-Demand-Gen rows downstream, and the deduped_dbm filter they
+    // share keeps a row when its insertion order is in this same list, so
+    // scoping the pull to these insertion orders removes only rows that were
+    // going to be thrown away. Note this is an IO-level filter, so the
+    // non-Demand-Gen line items inside a Demand Gen insertion order are still
+    // returned -- which is exactly what deduped_dbm's first OR branch keeps.
+    //
+    // An empty list degrades to partner scope rather than failing, because the
+    // entity sync that populates line_items has not run yet on a fresh install.
+    // That is the bootstrap path: the first pass creates a partner-wide query,
+    // and the reuse check below supersedes it on the next pass once the
+    // insertion orders are known.
+    const ioIds = (insertionOrderIds || []).map(String).filter(Boolean);
+    const filters = [{ type: 'FILTER_PARTNER', value: String(partnerId) }];
+    for (const ioId of ioIds) {
+      filters.push({ type: 'FILTER_INSERTION_ORDER', value: ioId });
+    }
+    const filterKeys = filters.map(f => `${f.type}:${f.value}`);
+
     // Held back and deleted only once the replacement exists. The previous
     // order deleted first, which meant a rejected queries.create left the
     // partner with no performance report at all -- that is the main dashboard,
@@ -468,10 +502,20 @@ class DV360Client {
           const params = found.params || {};
           const foundRange = (found.metadata && found.metadata.dataRange &&
                               found.metadata.dataRange.range) || null;
+          // Filters are part of the compared shape, exactly as they are for
+          // the audience query. Without this the partner-wide query created on
+          // the bootstrap pass would be reused forever -- which is precisely
+          // how Volvo ended up re-downloading an oversized partner-wide CSV on
+          // its second pass. It also means a Demand Gen insertion order created
+          // after the query is picked up rather than excluded silently.
+          // Recreations when the IO set changes are expected, not a symptom.
+          const foundFilterKeys =
+            (params.filters || []).map(f => `${f.type}:${f.value}`);
           const mismatch =
             foundRange !== dataRange ? `data range is ${foundRange}, expected ${dataRange}` :
             !sameStringSet(params.groupBys, groupBys) ? `groupBys differ (found ${(params.groupBys || []).length}, expected ${groupBys.length})` :
             !sameStringSet(params.metrics, metrics) ? `metrics differ (found ${(params.metrics || []).length}, expected ${metrics.length})` :
+            !sameStringSet(foundFilterKeys, filterKeys) ? `filters differ (found ${foundFilterKeys.length}, expected ${filterKeys.length})` :
             null;
 
           if (!mismatch) {
@@ -512,9 +556,7 @@ class DV360Client {
         type: 'STANDARD',
         groupBys: groupBys,
         metrics: metrics,
-        filters: [
-          { type: 'FILTER_PARTNER', value: String(partnerId) }
-        ]
+        filters: filters
       },
       schedule: {
         frequency: 'DAILY',
@@ -523,7 +565,14 @@ class DV360Client {
       }
     };
 
-    console.log(`Creating new DBM query for partner ${partnerId}...`);
+    console.log(
+      `Creating new DBM query for partner ${partnerId}, ` +
+      (ioIds.length > 0
+        ? `scoped to ${ioIds.length} Demand Gen insertion order(s)...`
+        : 'scoped to the whole partner (no Demand Gen insertion orders ' +
+          'supplied). This pull can exceed the maximum downloadable CSV size ' +
+          'on a large partner; it will be rescoped once the entity sync has ' +
+          'run...'));
     const res = await this.executeWithBackoff(() =>
       this.dbm.queries.create({ requestBody: queryObj })
     );
