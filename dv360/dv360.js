@@ -439,7 +439,7 @@ class DV360Client {
     //
     // Scoping is not an optimisation here, it is what makes the report
     // downloadable at all. syncDbmPerformanceReport reads the CSV with
-    // response.text(), and a partner-wide pull for Volvo (617397359) exceeded
+    // response.text(), and a partner-wide pull for a large partner exceeded
     // V8's hard 0x1fffffe8-character ceiling on a single string, failing with
     // "Cannot create a string longer than 0x1fffffe8 characters". That is an
     // engine limit, not a heap limit: --max-old-space-size cannot raise it.
@@ -486,7 +486,7 @@ class DV360Client {
           // Filters are part of the compared shape, exactly as they are for
           // the audience query. Without this the partner-wide query created on
           // the bootstrap pass would be reused forever -- which is precisely
-          // how Volvo ended up re-downloading an oversized partner-wide CSV on
+          // how the partner under test ended up re-downloading an oversized partner-wide CSV on
           // its second pass. It also means a Demand Gen insertion order created
           // after the query is picked up rather than excluded silently.
           // Recreations when the IO set changes are expected, not a symptom.
@@ -591,7 +591,7 @@ class DV360Client {
    * completion, and return a CSV containing nothing at all -- the worst
    * possible failure mode, because it looks like a working pipeline.
    *
-   * Measured on partner 6631618296 over 7 days, scoped to its 52 Demand Gen
+   * Measured on a production partner over 7 days, scoped to its 52 Demand Gen
    * insertion orders: the audience list shape returned 0 rows in every
    * combination tried, while the identical request with the audience
    * dimensions removed returned 795. The shape below returns 1871 rows in 21s.

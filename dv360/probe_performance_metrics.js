@@ -25,7 +25,7 @@
  *   when they differ in three.
  *
  * Cumulative findings, all from queries.create validation against partner
- * 6631618296. Kept here because each round's conclusion is the next round's
+ * the partner under test. Kept here because each round's conclusion is the next round's
  * premise, and because these are expensive answers worth not re-deriving:
  *
  *   ACCEPTED by the performance report, now in production --

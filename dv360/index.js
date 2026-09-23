@@ -90,7 +90,7 @@ exports.fetchAdvertisers = async (req, res) => {
         // its own fan-out -- by the time this function returns, most workers
         // have not finished. Reporting the last run's result is the only check
         // available from here, and it is worth having: a shortfall was
-        // previously invisible. Partner 617397359 ran with 12 of 46 advertisers
+        // previously invisible. One partner ran with 12 of 46 advertisers
         // covered and reported nothing wrong, while every readiness column for
         // the missing 34 quietly read NO / NEEDS_ACTION.
         try {
@@ -122,7 +122,7 @@ exports.fetchAdvertisers = async (req, res) => {
         // The worker runs at maxInstanceRequestConcurrency 1, so every message
         // in flight needs its own Cloud Run instance. Publishing every
         // advertiser at once asked Cloud Run for 46 simultaneous cold starts on
-        // partner 617397359; it refused most of them with "The request was
+        // a large partner; it refused most of them with "The request was
         // aborted because there was no available instance", and because the
         // trigger had no retry policy, 34 of 46 advertisers were dropped
         // silently. Their advertiser_settings rows

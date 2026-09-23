@@ -291,13 +291,27 @@ gcloud run services add-iam-policy-binding ${FUNCTION_NAME} \
 #
 # --retry is not optional. Without it the trigger defaults to
 # RETRY_POLICY_DO_NOT_RETRY, and a Pub/Sub delivery that Cloud Run rejects is
-# discarded permanently with no error surfaced anywhere. On partner 617397359
+# discarded permanently with no error surfaced anywhere. On a large partner
 # (46 advertisers) that silently lost 34 of them: the publisher fanned out all
 # 46 messages inside 1.5s, the worker runs at concurrency 1 so each needs its
 # own instance, and Cloud Run aborted the overflow with "The request was
 # aborted because there was no available instance". The batching in index.js
 # stops the herd forming; this makes the remaining failures recoverable rather
 # than fatal.
+#
+# --max-instances bounds DV360 API concurrency. The worker runs at concurrency
+# 1, so instance count is request concurrency. Measured in testing, a single
+# worker sustains roughly 120 DV360 requests/minute, and the "All requests per
+# minute" quota is 1,500 per project and is NOT adjustable upward (the console
+# caps the edit field at 1,500). Left at the Cloud Run default, a large partner
+# fanned out to ~1,685 rpm and pinned the quota at 100% for an hour; because
+# --retry has no dead-letter topic, every rejection was redelivered and the
+# stall became self-sustaining. 8 instances is ~960 rpm, leaving headroom for
+# the orchestrator's own sync.
+#
+# Do not raise this without re-measuring. Setting it too LOW is also harmful:
+# at 4, Cloud Run rejected most deliveries with "no available instance" and the
+# run crawled on retry backoff.
 echo "Deploying Cloud Function: ${PROCESS_FUNCTION_NAME}..."
 gcloud functions deploy ${PROCESS_FUNCTION_NAME} \
   --gen2 \
@@ -309,6 +323,7 @@ gcloud functions deploy ${PROCESS_FUNCTION_NAME} \
   --retry \
   --cpu=1 \
   --memory=1Gi \
+  --max-instances=8 \
   --timeout=540s \
   --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID},YOUTUBE_API_KEY=${YOUTUBE_API_KEY},PARTNER_ID=${PARTNER_ID}
 
@@ -339,7 +354,7 @@ gcloud scheduler jobs run ${JOB_NAME} --location=${REGION} || echo "Warning: Cou
 # notices when one is dropped: advertiser_settings
 # simply lack that account, and every readiness column COALESCEs to
 # NO / NEEDS_ACTION as though it had been checked and failed. Partner
-# 617397359 installed with 12 of 46 advertisers covered and still printed a
+# One partner installed with 12 of 46 advertisers covered and still printed a
 # success banner.
 #
 # Waiting here also fixes a second problem. line_items is populated by these
