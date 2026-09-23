@@ -104,7 +104,7 @@ exports.fetchAdvertisers = async (req, res) => {
                 console.warn(
                     'ADVERTISER COVERAGE SHORTFALL: the previous run wrote settings for ' +
                     `${covered} of ${advertisers.length} advertisers. advertiser_settings ` +
-                    'and floodlight_activities come from the per-advertiser workers, so ' +
+                    'come from the per-advertiser workers, so ' +
                     'the missing accounts render as NO / NEEDS_ACTION / NOT_CONFIGURED ' +
                     'rather than as blanks. Check the worker logs for "no available ' +
                     'instance" aborts.');
@@ -125,7 +125,7 @@ exports.fetchAdvertisers = async (req, res) => {
         // partner 617397359; it refused most of them with "The request was
         // aborted because there was no available instance", and because the
         // trigger had no retry policy, 34 of 46 advertisers were dropped
-        // silently. Their advertiser_settings and floodlight_activities rows
+        // silently. Their advertiser_settings rows
         // simply never appeared, and every readiness column downstream
         // COALESCEd to NO / NEEDS_ACTION as though the data had been checked.
         //

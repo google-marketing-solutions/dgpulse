@@ -476,15 +476,6 @@ exports.processAdvertiser = async (event, context) => {
                 console.warn(`Warning fetching floodlight group ${cmFloodlightConfigId}:`, grpErr.message);
             }
 
-            // Null when the group could not be read. Previously defaulted to 30,
-            // which the audit table then displayed as though it were measured and
-            // which forced the passing STANDARD_WINDOW verdict.
-            const clickDays = (group && group.lookbackWindow && group.lookbackWindow.clickDays != null) ? Number(group.lookbackWindow.clickDays) : null;
-            const impressionDays = (group && group.lookbackWindow && group.lookbackWindow.impressionDays != null) ? Number(group.lookbackWindow.impressionDays) : null;
-
-            // 2. Fetch Floodlight Activities for the audit scan
-            const activities = await client.getFloodlightActivities(cmFloodlightConfigId, partnerId);
-
             // 3. Evaluate Google Tag Gateway (GTG / First-Party Mode) Readiness
             if (webTagType === 'WEB_TAG_TYPE_DYNAMIC') {
                 gtgStatus = 'READY';
@@ -492,81 +483,6 @@ exports.processAdvertiser = async (event, context) => {
                 gtgStatus = 'NEEDS_TAG_UPGRADE';
             } else {
                 gtgStatus = 'NOT_CONFIGURED';
-            }
-
-            // 4. Stream Floodlight Activities for Audit Scan Table
-            const todayStr = new Date().toISOString().split('T')[0];
-            const activityRows = activities.map(act => {
-                const actIdStr = String(act.floodlightActivityId);
-
-                // The DV360 v4 FloodlightActivity resource exposes only:
-                //   name, floodlightActivityId, floodlightGroupId, displayName,
-                //   servingStatus, advertiserIds, sslRequired, remarketingConfigs
-                // It carries no per-activity tag format and no Enhanced
-                // Conversions flag. The previous code read
-                // `activityTypeConfig.webActivityConfig.format`,
-                // `webActivityConfig.format`, `format` and three
-                // `enhancedConversionsEnabled` paths -- none of which exist, so
-                // they were permanently undefined. It also promoted an activity
-                // to WEB_TAG_TYPE_DYNAMIC when its display name merely contained
-                // "google analytics" or "ga4". Tag type is now taken solely from
-                // the Floodlight group, which is a real, fetched value.
-                const effectiveWebTagType = webTagType;
-
-                // clickDays/impressionDays are null when the Floodlight group
-                // could not be read. Report that honestly instead of asserting
-                // the passing STANDARD_WINDOW off a fabricated 30/30.
-                let attrStatus;
-                if (clickDays === null || impressionDays === null) {
-                    attrStatus = 'UNKNOWN_WINDOW';
-                } else if (clickDays === 0 || impressionDays === 0) {
-                    attrStatus = 'ZERO_DAY_WINDOW_WARNING';
-                } else if (clickDays > 30 || impressionDays > 30) {
-                    attrStatus = 'EXTENDED_LOOKBACK';
-                } else {
-                    attrStatus = 'STANDARD_WINDOW';
-                }
-
-                // Google REST JSON omits false booleans, so an activity with SSL
-                // disabled arrives with the key absent. Testing `!== false` made
-                // the non-compliant branch unreachable and every activity passed.
-                const sslCompliant = Boolean(act.sslRequired);
-                const remarketingActive = act.remarketingConfigs ? act.remarketingConfigs.some(r => r.remarketingEnabled) : false;
-
-                // YouTube Enabled Check per activity. Derived solely from line
-                // items that actually reference this activity for conversion
-                // counting -- the previous `|| (floodlightOptEnabled &&
-                // isDynamicTag)` arm marked activities as enabled on a guess and
-                // inflated the CLS pre-flight pass count.
-                const isYtEnabled = youtubeTrackedActivityIds.has(actIdStr);
-
-                return {
-                    floodlightActivityId: actIdStr,
-                    advertiserId: String(advertiserId),
-                    partnerId: String(partnerId || ''),
-                    floodlightGroupId: String(cmFloodlightConfigId),
-                    activityName: act.displayName || actIdStr,
-                    servingStatus: act.servingStatus || 'UNKNOWN',
-                    webTagType: effectiveWebTagType,
-                    clickLookbackDays: clickDays,
-                    impressionLookbackDays: impressionDays,
-                    attributionLookbackStatus: attrStatus,
-                    sslRequired: sslCompliant ? 'YES' : 'NO',
-                    sslComplianceStatus: sslCompliant ? 'SSL_COMPLIANT' : 'NON_SSL_COMPLIANT_WARNING',
-                    remarketingEnabled: remarketingActive ? 'YES' : 'NO',
-                    youtube_enabled: isYtEnabled ? 'YES' : 'NO',
-                    auditDate: todayStr
-                };
-            });
-
-            if (activityRows.length > 0) {
-                try {
-                    await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.floodlight_activities\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
-                    await bigquery.dataset(targetDatasetId).table('floodlight_activities').insert(activityRows);
-                    console.log(`Successfully inserted ${activityRows.length} floodlight activities for ${advertiserId} into BigQuery.`);
-                } catch (actErr) {
-                    console.warn(`Warning inserting floodlight_activities into BigQuery for ${advertiserId}:`, actErr.message);
-                }
             }
         }
 

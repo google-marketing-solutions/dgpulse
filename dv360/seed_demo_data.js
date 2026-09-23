@@ -118,9 +118,7 @@ async function main() {
     `&ds.io_pacing_current.connector=bigQuery&ds.io_pacing_current.projectId=${projectId}&ds.io_pacing_current.datasetId=${datasetId}&ds.io_pacing_current.type=TABLE&ds.io_pacing_current.tableId=final_io_pacing_current&ds.io_pacing_current.refreshFields=false` +
     `&ds.assets_performance.connector=bigQuery&ds.assets_performance.projectId=${projectId}&ds.assets_performance.datasetId=${datasetId}&ds.assets_performance.type=TABLE&ds.assets_performance.tableId=final_assets_performance&ds.assets_performance.refreshFields=false` +
     `&ds.creative_variety.connector=bigQuery&ds.creative_variety.projectId=${projectId}&ds.creative_variety.datasetId=${datasetId}&ds.creative_variety.type=TABLE&ds.creative_variety.tableId=final_creative_variety&ds.creative_variety.refreshFields=false` +
-    `&ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${projectId}&ds.audiences_performance.datasetId=${datasetId}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false` +
-    `&ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${projectId}&ds.floodlight_audit.datasetId=${datasetId}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false` +
-    `&ds.floodlight_preflight_audit.connector=bigQuery&ds.floodlight_preflight_audit.projectId=${projectId}&ds.floodlight_preflight_audit.datasetId=${datasetId}&ds.floodlight_preflight_audit.type=TABLE&ds.floodlight_preflight_audit.tableId=final_cls_preflight_audit&ds.floodlight_preflight_audit.refreshFields=false`;
+    `&ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${projectId}&ds.audiences_performance.datasetId=${datasetId}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false`;
 
   console.log(`\n=================================================================`);
   console.log(`🎉 Demo Data Generation Complete!`);

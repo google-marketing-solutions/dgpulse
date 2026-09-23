@@ -33,7 +33,6 @@ A serverless monitoring and performance analytics pipeline for **Display & Video
                                   |  - advertisers & settings          |
                                   |  - campaigns & line_items          |
                                   |  - insertion_orders & creatives    |
-                                  |  - floodlight_activities           |
                                   |  - dbm_performance                |
                                   +-----------------+------------------+
                                                     |
@@ -44,7 +43,6 @@ A serverless monitoring and performance analytics pipeline for **Display & Video
                                   |  - final_line_items_performance    |
                                   |  - final_insertion_orders_perf     |
                                   |  - final_assets_performance        |
-                                  |  - final_floodlight_activities     |
                                   +-----------------+------------------+
                                                     |
                                                     v
@@ -170,8 +168,7 @@ Each data source has a pre-configured alias that automatically binds to your pro
 | **DV360 Asset Performance** | `assets_performance` | `final_assets_performance` |
 | **DV360 Creative Variety** | `creative_variety` | `final_creative_variety` |
 | **DV360 Audiences Performance** | `audiences_performance` | `final_audiences_performance` |
-| **DV360 Floodlight Activities Audit** | `floodlight_audit` | `final_floodlight_activities_audit` |
-| **DV360 Floodlight Pre-Flight Audit** | `floodlight_preflight_audit` | `final_cls_preflight_audit` |
+
 
 > [!IMPORTANT]
 > The pacing pages read from the `final_io_pacing_current` **view**, not from
@@ -200,7 +197,7 @@ gcloud scheduler jobs run "dv360-dgpulse-daily-sync-${PARTNER_ID}" --location=us
 ### Re-run Materialization Queries Manually
 ```bash
 DATASET_ID="${DATASET_ID:-dv360_dgpulse_${PARTNER_ID}}"
-for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql materialize_floodlight_activities.sql; do
+for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql; do
   bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/$(gcloud config get-value project)/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")"
 done
 ```
@@ -267,7 +264,7 @@ match the code.
 
 ## Demo Dataset & Walkthroughs
 
-To generate a synthetic demo dataset showcasing all dashboard scenarios (all 9 pacing alerts, healthy vs. legacy floodlight activities, conversion lift readiness, and creative varieties) without requiring active live campaigns:
+To generate a synthetic demo dataset showcasing all dashboard scenarios (all 9 pacing alerts and creative varieties) without requiring active live campaigns:
 
 ```bash
 # Populate synthetic demo tables in dataset dv360_dgpulse_demo:

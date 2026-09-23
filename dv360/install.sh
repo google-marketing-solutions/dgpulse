@@ -256,12 +256,6 @@ echo "Creating BigQuery table: ${DATASET_ID}.video_aspect_ratio..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.video_aspect_ratio \
   video_id:STRING,aspect_ratio:FLOAT,updated_at:TIMESTAMP || echo "Table video_aspect_ratio already exists."
 
-echo "Creating BigQuery table: ${DATASET_ID}.floodlight_activities..."
-# ec_enabled was removed: no per-activity Enhanced Conversions flag exists on the
-# DV360 v4 FloodlightActivity resource, so it was always 'NO'.
-bq mk --table ${PROJECT_ID}:${DATASET_ID}.floodlight_activities \
-  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,youtube_enabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
-bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS youtube_enabled STRING;" 2>/dev/null || true
 
 
 # 5. Deploy as a Cloud Run Function
@@ -342,7 +336,7 @@ gcloud scheduler jobs run ${JOB_NAME} --location=${REGION} || echo "Warning: Cou
 #
 # This used to be a flat "sleep 30", which was both too short and unverified.
 # The workers are asynchronous and fire-and-forget, so nothing downstream
-# notices when one is dropped: advertiser_settings and floodlight_activities
+# notices when one is dropped: advertiser_settings
 # simply lack that account, and every readiness column COALESCEs to
 # NO / NEEDS_ACTION as though it had been checked and failed. Partner
 # 617397359 installed with 12 of 46 advertisers covered and still printed a
@@ -383,8 +377,8 @@ if [ "${COVERAGE_OK}" != "yes" ]; then
   echo "############################################################"
   echo "WARNING: advertiser coverage is INCOMPLETE (${COVERED_ADV}/${TOTAL_ADV})."
   echo ""
-  echo "  advertiser_settings and floodlight_activities are written by the"
-  echo "  per-advertiser workers. Accounts they missed do NOT render as blanks"
+  echo "  advertiser_settings is written by the"
+  echo "  per-advertiser workers. Accounts skipped do NOT render as blanks"
   echo "  -- they render as NO / NEEDS_ACTION / NOT_CONFIGURED, which are wrong"
   echo "  answers rather than absent ones."
   echo ""
@@ -415,9 +409,7 @@ LOOKER_LINK="https://lookerstudio.google.com/reporting/create?c.reportId=8052b10
 &ds.io_pacing_current.connector=bigQuery&ds.io_pacing_current.projectId=${PROJECT_ID}&ds.io_pacing_current.datasetId=${DATASET_ID}&ds.io_pacing_current.type=TABLE&ds.io_pacing_current.tableId=final_io_pacing_current&ds.io_pacing_current.refreshFields=false\
 &ds.assets_performance.connector=bigQuery&ds.assets_performance.projectId=${PROJECT_ID}&ds.assets_performance.datasetId=${DATASET_ID}&ds.assets_performance.type=TABLE&ds.assets_performance.tableId=final_assets_performance&ds.assets_performance.refreshFields=false\
 &ds.creative_variety.connector=bigQuery&ds.creative_variety.projectId=${PROJECT_ID}&ds.creative_variety.datasetId=${DATASET_ID}&ds.creative_variety.type=TABLE&ds.creative_variety.tableId=final_creative_variety&ds.creative_variety.refreshFields=false\
-&ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${PROJECT_ID}&ds.audiences_performance.datasetId=${DATASET_ID}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false\
-&ds.floodlight_audit.connector=bigQuery&ds.floodlight_audit.projectId=${PROJECT_ID}&ds.floodlight_audit.datasetId=${DATASET_ID}&ds.floodlight_audit.type=TABLE&ds.floodlight_audit.tableId=final_floodlight_activities_audit&ds.floodlight_audit.refreshFields=false\
-&ds.floodlight_preflight_audit.connector=bigQuery&ds.floodlight_preflight_audit.projectId=${PROJECT_ID}&ds.floodlight_preflight_audit.datasetId=${DATASET_ID}&ds.floodlight_preflight_audit.type=TABLE&ds.floodlight_preflight_audit.tableId=final_cls_preflight_audit&ds.floodlight_preflight_audit.refreshFields=false"
+&ds.audiences_performance.connector=bigQuery&ds.audiences_performance.projectId=${PROJECT_ID}&ds.audiences_performance.datasetId=${DATASET_ID}&ds.audiences_performance.type=TABLE&ds.audiences_performance.tableId=final_audiences_performance&ds.audiences_performance.refreshFields=false"
 
 echo "------------------------------------------------"
 echo "🎉 Installation & Deployment Complete!"
@@ -427,7 +419,7 @@ echo ""
 echo "================================================================="
 echo "📊 One-Click Looker Studio Dashboard Connection:"
 echo "Click the link below to automatically clone the report template and"
-echo "connect all 8 BigQuery tables for Partner ${PARTNER_ID} (Dataset: ${DATASET_ID}):"
+echo "connect all 6 BigQuery tables for Partner ${PARTNER_ID} (Dataset: ${DATASET_ID}):"
 echo ""
 echo "${LOOKER_LINK}"
 echo "================================================================="

@@ -24,10 +24,6 @@ async function ensureTableSchema() {
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_performance\` ADD COLUMN IF NOT EXISTS Revenue_USD FLOAT64, ADD COLUMN IF NOT EXISTS Line_Item STRING, ADD COLUMN IF NOT EXISTS Line_Item_Id INT64;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertisers\` ADD COLUMN IF NOT EXISTS currencyCode STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING, ADD COLUMN IF NOT EXISTS dda_status STRING;`,
-    // ec_enabled is deliberately absent: the DV360 v4 FloodlightActivity
-    // resource exposes no Enhanced Conversions flag, so the column was always
-    // 'NO'. Existing installs keep it; nothing writes or reads it.
-    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS youtube_enabled STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.creatives\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
     `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS lineItemId STRING, ADD COLUMN IF NOT EXISTS insertionOrderId STRING, ADD COLUMN IF NOT EXISTS campaignId STRING, ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64, ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;`,
     `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.video_aspect_ratio\` (
@@ -174,8 +170,7 @@ async function setupScheduledQueries() {
     'materialize_insertion_orders.sql',
     'materialize_assets.sql',
     'materialize_audiences.sql',
-    'materialize_creative_variety.sql',
-    'materialize_floodlight_activities.sql'
+    'materialize_creative_variety.sql'
   ];
 
   // List existing transfer configs for the project across locations
@@ -231,8 +226,7 @@ async function setupScheduledQueries() {
     //   Destination dataset 'dv360_dgpulse_<partner>'.
     //
     // That silently killed the daily runs of materialize_insertion_orders
-    // (table + final_io_pacing_current view) and
-    // materialize_floodlight_activities (audit table + cls preflight table)
+    // (table + final_io_pacing_current view)
     // on every install. The immediate materialization pass below always
     // succeeded, so the tables looked populated at install time and then
     // quietly went stale -- including the IO pacing view behind the main

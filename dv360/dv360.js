@@ -315,37 +315,6 @@ class DV360Client {
   }
 
   /**
-   * Fetches all Floodlight activities under a Floodlight group.
-   * Used to check for Enhanced Conversions and web tag implementations.
-   * @param {string} floodlightGroupId
-   * @param {string} partnerId
-   * @returns {Promise<Object[]>}
-   */
-  async getFloodlightActivities(floodlightGroupId, partnerId) {
-    let activities = [];
-    let nextPageToken = null;
-    try {
-      do {
-        const response = await this.executeWithBackoff(() =>
-          this.dv360.floodlightGroups.floodlightActivities.list({
-            floodlightGroupId: floodlightGroupId,
-            partnerId: partnerId,
-            pageToken: nextPageToken,
-            pageSize: 100
-          })
-        );
-        if (response.data.floodlightActivities) {
-          activities = activities.concat(response.data.floodlightActivities);
-        }
-        nextPageToken = response.data.nextPageToken;
-      } while (nextPageToken);
-    } catch (e) {
-      console.warn(`Warning fetching floodlight activities for group ${floodlightGroupId}:`, e.message);
-    }
-    return activities;
-  }
-
-  /**
    * Fetches Floodlight group configuration including webTagType and lookback windows.
    * @param {string} floodlightGroupId
    * @param {string} partnerId
