@@ -279,6 +279,116 @@ exports.processAdvertiser = async (event, context) => {
             console.log(`Successfully inserted ${segmentRows.length} IO budget segments into BigQuery.`);
         }
 
+        // 2c. Advertiser Details, Data Manager Audiences & Floodlight Config
+        //
+        // Deliberately ahead of creatives, Demand Gen ad groups and the
+        // YouTube aspect-ratio pass. Those three dominate the execution --
+        // 194s of a 197s run were spent there -- and anything sequenced
+        // after them is one slow API call away from being cut off by the
+        // Cloud Run request timeout, which kills the container without
+        // running a catch block. advertiser_settings feeds every signal in
+        // the dashboard and costs two API calls, so it goes first. Every
+        // value it reads is already resolved by the end of step 2b;
+        // hasDdaOrSmartBidding in particular is filled by the line item
+        // loop above, so do not move this any earlier.
+        console.log(`Fetching advertiser settings & audiences for ${advertiserId}...`);
+        let advDetails = null;
+        try {
+            advDetails = await client.getAdvertiser(advertiserId);
+        } catch (e) {
+            console.warn(`Could not get advertiser details for ${advertiserId}:`, e.message);
+        }
+
+        const audiences = await client.getFirstPartyAndPartnerAudiences(advertiserId);
+
+        // Valid DV360 v4 enums:
+        //   audienceType   CUSTOMER_MATCH_CONTACT_INFO, CUSTOMER_MATCH_DEVICE_ID,
+        //                  CUSTOMER_MATCH_USER_ID, ACTIVITY_BASED, FREQUENCY_CAP,
+        //                  TAG_BASED, YOUTUBE_USERS, THIRD_PARTY, COMMERCE,
+        //                  LINEAR, AGENCY
+        //   audienceSource DISPLAY_VIDEO_360, CAMPAIGN_MANAGER, AD_MANAGER,
+        //                  SEARCH_ADS_360, YOUTUBE, ADS_DATA_HUB
+        // The previous filters used AUDIENCE_SOURCE_CUSTOMER_MATCH,
+        // AUDIENCE_SOURCE_THIRD_PARTY and AUDIENCE_SOURCE_GOOGLE_ANALYTICS,
+        // none of which exist in v4.
+        const hasCrmAudience = audiences.some(aud =>
+            aud.audienceType === 'CUSTOMER_MATCH_CONTACT_INFO' ||
+            aud.audienceType === 'CUSTOMER_MATCH_DEVICE_ID' ||
+            aud.audienceType === 'CUSTOMER_MATCH_USER_ID' ||
+            aud.audienceType === 'THIRD_PARTY'
+        );
+
+        // v4 has no Google Analytics audience source, so GA-linked audiences can
+        // only be identified by name. This is a heuristic, not an API guarantee.
+        const hasGaAudience = audiences.some(aud =>
+            aud.audienceSource === 'ADS_DATA_HUB' ||
+            (aud.displayName && aud.displayName.toLowerCase().includes('google analytics')) ||
+            (aud.displayName && aud.displayName.toLowerCase().includes('ga4')) ||
+            (aud.displayName && aud.displayName.toLowerCase().includes('analytics'))
+        );
+        console.log(`Advertiser ${advertiserId}: ${audiences.length} audience list(s) found (CRM=${hasCrmAudience ? 'YES' : 'NO'}, GA=${hasGaAudience ? 'YES' : 'NO'}).`);
+
+        let floodlightOptEnabled = false;
+        let cmFloodlightConfigId = null;
+        if (advDetails && advDetails.adServerConfig && advDetails.adServerConfig.cmHybridConfig) {
+            cmFloodlightConfigId = advDetails.adServerConfig.cmHybridConfig.cmFloodlightConfigId;
+            floodlightOptEnabled = Boolean(advDetails.adServerConfig.cmHybridConfig.cmFloodlightLinkingAuthorized);
+        }
+
+        let webTagType = 'WEB_TAG_TYPE_NONE';
+        let gtgStatus = 'NOT_CONFIGURED';
+
+        if (cmFloodlightConfigId) {
+            const partnerId = (data && data.partnerId) || (advDetails && advDetails.partnerId);
+            
+            // 1. Fetch Floodlight Group to inspect webTagType and lookback window
+            let group = null;
+            try {
+                group = await client.getFloodlightGroup(cmFloodlightConfigId, partnerId);
+                if (group && group.webTagType) {
+                    webTagType = group.webTagType;
+                }
+            } catch (grpErr) {
+                console.warn(`Warning fetching floodlight group ${cmFloodlightConfigId}:`, grpErr.message);
+            }
+
+            // 3. Evaluate Google Tag Gateway (GTG / First-Party Mode) Readiness
+            if (webTagType === 'WEB_TAG_TYPE_DYNAMIC') {
+                gtgStatus = 'READY';
+            } else if (webTagType === 'WEB_TAG_TYPE_IMAGE') {
+                gtgStatus = 'NEEDS_TAG_UPGRADE';
+            } else {
+                gtgStatus = 'NOT_CONFIGURED';
+            }
+        }
+
+        const settingsRow = {
+            advertiserId: String(advertiserId),
+            displayName: (advDetails && advDetails.displayName) || String(advertiserId),
+            partnerId: (advDetails && advDetails.partnerId) || String(data.partnerId || ''),
+            currency_code: (advDetails && advDetails.generalConfig && advDetails.generalConfig.currencyCode) || '',
+            has_crm_audience: hasCrmAudience ? 'YES' : 'NO',
+            has_ga_audience: hasGaAudience ? 'YES' : 'NO',
+            floodlight_optimization_enabled: floodlightOptEnabled ? 'YES' : 'NO',
+            // NOTE: auto_tagging_enabled and ec_enabled were removed here.
+            // Neither Enhanced Conversions nor auto-tagging is exposed anywhere
+            // in the DV360 v4 or CM360 v5 APIs, so the former was a hardcoded
+            // 'YES' and the latter read field paths that never resolve. Both
+            // reported a constant value for every advertiser. Do not reinstate
+            // them without a verified source.
+            gtg_status: gtgStatus,
+            web_tag_type: webTagType,
+            dda_status: hasDdaOrSmartBidding ? 'ACTIVE' : 'NOT_CONFIGURED'
+        };
+
+        try {
+            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.advertiser_settings\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
+            await bigquery.dataset(targetDatasetId).table('advertiser_settings').insert([settingsRow]);
+            console.log(`Successfully inserted advertiser_settings for ${advertiserId} into BigQuery.`);
+        } catch (settErr) {
+            console.warn(`Warning inserting advertiser_settings into BigQuery for ${advertiserId}:`, settErr.message);
+        }
+
         // 3. Creatives
         console.log(`Fetching creatives for advertiser ${advertiserId}...`);
         const creatives = await client.listAllCreatives(advertiserId);
@@ -412,105 +522,6 @@ exports.processAdvertiser = async (event, context) => {
                 }
                 console.log(`Successfully inserted ${adRows.length} ad group ads into BigQuery.`);
             }
-        }
-
-        // 4. Advertiser Details, Data Manager Audiences & Floodlight Configuration
-        console.log(`Fetching advertiser settings & audiences for ${advertiserId}...`);
-        let advDetails = null;
-        try {
-            advDetails = await client.getAdvertiser(advertiserId);
-        } catch (e) {
-            console.warn(`Could not get advertiser details for ${advertiserId}:`, e.message);
-        }
-
-        const audiences = await client.getFirstPartyAndPartnerAudiences(advertiserId);
-
-        // Valid DV360 v4 enums:
-        //   audienceType   CUSTOMER_MATCH_CONTACT_INFO, CUSTOMER_MATCH_DEVICE_ID,
-        //                  CUSTOMER_MATCH_USER_ID, ACTIVITY_BASED, FREQUENCY_CAP,
-        //                  TAG_BASED, YOUTUBE_USERS, THIRD_PARTY, COMMERCE,
-        //                  LINEAR, AGENCY
-        //   audienceSource DISPLAY_VIDEO_360, CAMPAIGN_MANAGER, AD_MANAGER,
-        //                  SEARCH_ADS_360, YOUTUBE, ADS_DATA_HUB
-        // The previous filters used AUDIENCE_SOURCE_CUSTOMER_MATCH,
-        // AUDIENCE_SOURCE_THIRD_PARTY and AUDIENCE_SOURCE_GOOGLE_ANALYTICS,
-        // none of which exist in v4.
-        const hasCrmAudience = audiences.some(aud =>
-            aud.audienceType === 'CUSTOMER_MATCH_CONTACT_INFO' ||
-            aud.audienceType === 'CUSTOMER_MATCH_DEVICE_ID' ||
-            aud.audienceType === 'CUSTOMER_MATCH_USER_ID' ||
-            aud.audienceType === 'THIRD_PARTY'
-        );
-
-        // v4 has no Google Analytics audience source, so GA-linked audiences can
-        // only be identified by name. This is a heuristic, not an API guarantee.
-        const hasGaAudience = audiences.some(aud =>
-            aud.audienceSource === 'ADS_DATA_HUB' ||
-            (aud.displayName && aud.displayName.toLowerCase().includes('google analytics')) ||
-            (aud.displayName && aud.displayName.toLowerCase().includes('ga4')) ||
-            (aud.displayName && aud.displayName.toLowerCase().includes('analytics'))
-        );
-        console.log(`Advertiser ${advertiserId}: ${audiences.length} audience list(s) found (CRM=${hasCrmAudience ? 'YES' : 'NO'}, GA=${hasGaAudience ? 'YES' : 'NO'}).`);
-
-        let floodlightOptEnabled = false;
-        let cmFloodlightConfigId = null;
-        if (advDetails && advDetails.adServerConfig && advDetails.adServerConfig.cmHybridConfig) {
-            cmFloodlightConfigId = advDetails.adServerConfig.cmHybridConfig.cmFloodlightConfigId;
-            floodlightOptEnabled = Boolean(advDetails.adServerConfig.cmHybridConfig.cmFloodlightLinkingAuthorized);
-        }
-
-        let webTagType = 'WEB_TAG_TYPE_NONE';
-        let gtgStatus = 'NOT_CONFIGURED';
-
-        if (cmFloodlightConfigId) {
-            const partnerId = (data && data.partnerId) || (advDetails && advDetails.partnerId);
-            
-            // 1. Fetch Floodlight Group to inspect webTagType and lookback window
-            let group = null;
-            try {
-                group = await client.getFloodlightGroup(cmFloodlightConfigId, partnerId);
-                if (group && group.webTagType) {
-                    webTagType = group.webTagType;
-                }
-            } catch (grpErr) {
-                console.warn(`Warning fetching floodlight group ${cmFloodlightConfigId}:`, grpErr.message);
-            }
-
-            // 3. Evaluate Google Tag Gateway (GTG / First-Party Mode) Readiness
-            if (webTagType === 'WEB_TAG_TYPE_DYNAMIC') {
-                gtgStatus = 'READY';
-            } else if (webTagType === 'WEB_TAG_TYPE_IMAGE') {
-                gtgStatus = 'NEEDS_TAG_UPGRADE';
-            } else {
-                gtgStatus = 'NOT_CONFIGURED';
-            }
-        }
-
-        const settingsRow = {
-            advertiserId: String(advertiserId),
-            displayName: (advDetails && advDetails.displayName) || String(advertiserId),
-            partnerId: (advDetails && advDetails.partnerId) || String(data.partnerId || ''),
-            currency_code: (advDetails && advDetails.generalConfig && advDetails.generalConfig.currencyCode) || '',
-            has_crm_audience: hasCrmAudience ? 'YES' : 'NO',
-            has_ga_audience: hasGaAudience ? 'YES' : 'NO',
-            floodlight_optimization_enabled: floodlightOptEnabled ? 'YES' : 'NO',
-            // NOTE: auto_tagging_enabled and ec_enabled were removed here.
-            // Neither Enhanced Conversions nor auto-tagging is exposed anywhere
-            // in the DV360 v4 or CM360 v5 APIs, so the former was a hardcoded
-            // 'YES' and the latter read field paths that never resolve. Both
-            // reported a constant value for every advertiser. Do not reinstate
-            // them without a verified source.
-            gtg_status: gtgStatus,
-            web_tag_type: webTagType,
-            dda_status: hasDdaOrSmartBidding ? 'ACTIVE' : 'NOT_CONFIGURED'
-        };
-
-        try {
-            await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.advertiser_settings\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
-            await bigquery.dataset(targetDatasetId).table('advertiser_settings').insert([settingsRow]);
-            console.log(`Successfully inserted advertiser_settings for ${advertiserId} into BigQuery.`);
-        } catch (settErr) {
-            console.warn(`Warning inserting advertiser_settings into BigQuery for ${advertiserId}:`, settErr.message);
         }
 
     } catch (error) {

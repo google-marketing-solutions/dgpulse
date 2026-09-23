@@ -24,6 +24,33 @@ function sameStringSet(a, b) {
   return right.every(x => seen.has(x));
 }
 
+/**
+ * Rejects if `promise` has not settled within `ms` milliseconds.
+ *
+ * The googleapis client applies no request deadline of its own. A list call
+ * that never responds stays open indefinitely, and the only thing that
+ * eventually ends it is the Cloud Run request timeout -- which terminates the
+ * container without unwinding the stack, so no catch block runs and nothing is
+ * logged. Every write queued after the hung call is lost with no error
+ * anywhere. Racing against an explicit deadline converts that silent death
+ * into an ordinary rejection that the caller can log and step over.
+ *
+ * @param {!Promise<T>} promise
+ * @param {number} ms
+ * @param {string} label Included in the rejection so the caller knows which
+ *     request stalled.
+ * @returns {!Promise<T>}
+ * @template T
+ */
+function withDeadline(promise, ms, label) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} exceeded its ${ms}ms deadline`)), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
 class DV360Client {
   /**
    * @param {string} clientId
@@ -267,8 +294,12 @@ class DV360Client {
    * @returns {Promise<Object>} Advertiser object
    */
   async getAdvertiser(advertiserId) {
-    const response = await this.executeWithBackoff(() =>
-      this.dv360.advertisers.get({ advertiserId: advertiserId })
+    const response = await withDeadline(
+      this.executeWithBackoff(() =>
+        this.dv360.advertisers.get({ advertiserId: advertiserId })
+      ),
+      30000,
+      `advertisers.get for advertiser ${advertiserId}`
     );
     return response.data;
   }
@@ -281,10 +312,25 @@ class DV360Client {
    * renamed to `firstPartyAndPartnerAudiences` in v4. Calling the old name
    * against the v4 client yields `undefined`, which previously surfaced as
    * "advertiser has no audiences" for every advertiser rather than as an error.
+   *
+   * The loop is bounded three ways, because an unbounded one was observed to
+   * stall for over 300s and take the whole execution down with the Cloud Run
+   * request timeout before any advertiser_settings row could be written:
+   *   - a per-page deadline, so one unresponsive request cannot hang forever;
+   *   - an overall deadline, so a long tail of slow pages cannot either;
+   *   - a repeated page token check, which ends the loop if the API hands back
+   *     a cursor it has already issued.
+   * All three exits return the audiences gathered so far and say so in the log.
+   * A partial result is not distinguishable from a complete one in the returned
+   * value, so treat a truncation warning as "this advertiser's audience signals
+   * are unverified" rather than as a clean NO.
+   *
    * @param {string} advertiserId
+   * @param {number=} deadlineMs Overall budget for the whole pagination loop.
    * @returns {Promise<Object[]>}
    */
-  async getFirstPartyAndPartnerAudiences(advertiserId) {
+  async getFirstPartyAndPartnerAudiences(advertiserId, deadlineMs = 60000) {
+    const MAX_PAGES = 200;
     let audiences = [];
     let nextPageToken = null;
     if (!this.dv360.firstPartyAndPartnerAudiences) {
@@ -294,25 +340,69 @@ class DV360Client {
         'signals cannot be evaluated.'
       );
     }
+    const startedAt = Date.now();
+    const seenTokens = new Set();
+    let pages = 0;
     try {
       do {
-        const response = await this.executeWithBackoff(() =>
-          this.dv360.firstPartyAndPartnerAudiences.list({
-            advertiserId: advertiserId,
-            pageToken: nextPageToken,
-            pageSize: 100
-          })
+        const elapsed = Date.now() - startedAt;
+        if (elapsed > deadlineMs) {
+          console.warn(
+            `Audience fetch for advertiser ${advertiserId} hit its ` +
+            `${deadlineMs}ms budget after ${pages} page(s); continuing with ` +
+            `${audiences.length} audience(s). CRM/GA signals for this ` +
+            `advertiser are incomplete.`);
+          break;
+        }
+        if (pages >= MAX_PAGES) {
+          console.warn(
+            `Audience fetch for advertiser ${advertiserId} reached the ` +
+            `${MAX_PAGES}-page cap with ${audiences.length} audience(s). ` +
+            `CRM/GA signals for this advertiser are incomplete.`);
+          break;
+        }
+
+        const response = await withDeadline(
+          this.executeWithBackoff(() =>
+            this.dv360.firstPartyAndPartnerAudiences.list({
+              advertiserId: advertiserId,
+              pageToken: nextPageToken,
+              pageSize: 100
+            })
+          ),
+          Math.min(30000, deadlineMs - elapsed),
+          `firstPartyAndPartnerAudiences.list page ${pages + 1} for ` +
+          `advertiser ${advertiserId}`
         );
+        pages++;
+
         if (response.data.firstPartyAndPartnerAudiences) {
           audiences = audiences.concat(response.data.firstPartyAndPartnerAudiences);
         }
         nextPageToken = response.data.nextPageToken;
+
+        if (nextPageToken && seenTokens.has(nextPageToken)) {
+          console.warn(
+            `Audience pagination for advertiser ${advertiserId} returned a ` +
+            `page token it had already issued; stopping at ${pages} page(s) ` +
+            `and ${audiences.length} audience(s) rather than looping.`);
+          break;
+        }
+        if (nextPageToken) {
+          seenTokens.add(nextPageToken);
+        }
       } while (nextPageToken);
+      console.log(
+        `Audience fetch for advertiser ${advertiserId} read ${pages} page(s) ` +
+        `in ${Date.now() - startedAt}ms.`);
     } catch (e) {
-      console.warn(`Warning fetching audiences for advertiser ${advertiserId}:`, e.message);
+      console.warn(
+        `Warning fetching audiences for advertiser ${advertiserId} after ` +
+        `${pages} page(s) and ${Date.now() - startedAt}ms:`, e.message);
     }
     return audiences;
   }
+
 
   /**
    * Fetches Floodlight group configuration including webTagType and lookback windows.
