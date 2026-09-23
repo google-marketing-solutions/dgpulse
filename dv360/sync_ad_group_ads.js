@@ -240,7 +240,15 @@ async function sync() {
           advertiserId: String(advId),
           entityStatus: li.entityStatus || '',
           displayName: li.displayName || '',
-          lineItemType: li.lineItemType || ''
+          lineItemType: li.lineItemType || '',
+          // Must mirror process_advertiser.js: this writer deletes and
+          // reinserts the advertiser's rows, so omitting the column here would
+          // blank out the value written during the advertiser sync.
+          conversion_tracking_enabled: (
+            li.conversionCounting &&
+            Array.isArray(li.conversionCounting.floodlightActivityConfigs) &&
+            li.conversionCounting.floodlightActivityConfigs.length > 0
+          ) ? 'YES' : 'NO'
         }));
 
         try {

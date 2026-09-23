@@ -62,10 +62,19 @@ classified_ads AS (
       WHEN ad_type = 'DEMAND_GEN_VIDEO_AD' AND aspect_ratio IS NOT NULL AND aspect_ratio = 1.0 THEN 1 
       ELSE 0 
     END AS square_videos,
+    -- aspect_ratio IS NULL means the YouTube lookup never resolved (missing API
+    -- key, private or deleted video). It previously fell through to horizontal,
+    -- which inflated the horizontal count and supplied the horizontal leg of an
+    -- asset_coverage_status PASS off a value that was never measured. Unresolved
+    -- videos now sit in their own bucket and count towards no best-practice leg.
     CASE 
-      WHEN ad_type = 'DEMAND_GEN_VIDEO_AD' AND (aspect_ratio IS NULL OR aspect_ratio > 1.0) THEN 1 
+      WHEN ad_type = 'DEMAND_GEN_VIDEO_AD' AND aspect_ratio IS NOT NULL AND aspect_ratio > 1.0 THEN 1 
       ELSE 0 
     END AS horizontal_videos,
+    CASE 
+      WHEN ad_type = 'DEMAND_GEN_VIDEO_AD' AND aspect_ratio IS NULL THEN 1 
+      ELSE 0 
+    END AS unknown_ratio_videos,
     -- Image aspect ratios
     COALESCE(horizontal_images_count, 0) AS horizontal_images,
     COALESCE(portrait_images_count, 0) AS vertical_images,
@@ -120,8 +129,10 @@ SELECT
   COALESCE(adv.partnerId, '__PARTNER_ID__') AS partner_id,
 
   -- Holistic IO-Level Image + Video Flag (Evaluated across all ads in the IO)
+  -- unknown_ratio_videos is included here deliberately: the video exists and is
+  -- serving, only its aspect ratio is unresolved.
   CASE 
-    WHEN (SUM(ca.horizontal_videos + ca.vertical_videos + ca.square_videos) OVER(PARTITION BY io.insertion_order_id) > 0)
+    WHEN (SUM(ca.horizontal_videos + ca.vertical_videos + ca.square_videos + ca.unknown_ratio_videos) OVER(PARTITION BY io.insertion_order_id) > 0)
      AND (SUM(ca.horizontal_images + ca.vertical_images + ca.square_images) OVER(PARTITION BY io.insertion_order_id) > 0) THEN 'YES'
     ELSE 'NO'
   END AS image_and_video,
@@ -130,6 +141,7 @@ SELECT
   ca.vertical_videos,
   ca.horizontal_videos,
   ca.square_videos,
+  ca.unknown_ratio_videos,
 
   -- Aspect Ratio Image Counts
   ca.horizontal_images,
@@ -140,7 +152,15 @@ SELECT
   ca.headlines,
   ca.descriptions,
 
-  'NO' AS product_feed,
+  -- Evaluated at IO level, matching image_and_video above: does this insertion
+  -- order run at least one product-feed ad? Previously the literal 'NO', which
+  -- made the column meaningless. DEMAND_GEN_PRODUCT_AD is written by
+  -- process_advertiser.js and sync_ad_group_ads.js into ad_group_ads.adType.
+  CASE 
+    WHEN SUM(CASE WHEN ca.ad_type = 'DEMAND_GEN_PRODUCT_AD' THEN 1 ELSE 0 END)
+           OVER(PARTITION BY io.insertion_order_id) > 0 THEN 'YES'
+    ELSE 'NO'
+  END AS product_feed,
 
   -- Holistic Best Practice Rule: 3 vertical, 3 square, 3 horizontal images OR 1 vertical, 1 square, 1 horizontal video OR 1 vertical video (Shorts)
   CASE 

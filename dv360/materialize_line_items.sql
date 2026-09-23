@@ -58,8 +58,6 @@ latest_settings AS (
     MAX(NULLIF(has_crm_audience, '')) AS has_crm_audience,
     MAX(NULLIF(has_ga_audience, '')) AS has_ga_audience,
     MAX(NULLIF(floodlight_optimization_enabled, '')) AS floodlight_optimization_enabled,
-    MAX(NULLIF(auto_tagging_enabled, '')) AS auto_tagging_enabled,
-    MAX(NULLIF(ec_enabled, '')) AS ec_enabled,
     MAX(NULLIF(gtg_status, '')) AS gtg_status,
     MAX(NULLIF(web_tag_type, '')) AS web_tag_type,
     MAX(NULLIF(currency_code, '')) AS currency_code
@@ -104,7 +102,8 @@ latest_line_items AS (
     MAX(NULLIF(lineItemType, '')) AS lineItemType,
     MAX(NULLIF(entityStatus, '')) AS entityStatus,
     MAX(NULLIF(campaignId, '')) AS campaignId,
-    MAX(NULLIF(advertiserId, '')) AS advertiserId
+    MAX(NULLIF(advertiserId, '')) AS advertiserId,
+    MAX(NULLIF(conversion_tracking_enabled, '')) AS conversion_tracking_enabled
   FROM `__PROJECT_ID__.__DATASET_ID__.line_items`
   WHERE lineItemType LIKE '%DEMAND_GEN%'
   GROUP BY lineItemId
@@ -127,17 +126,24 @@ SELECT
     WHEN COALESCE(sett.has_crm_audience, 'NO') = 'YES' OR COALESCE(sett.has_ga_audience, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS data_strength_status,
-  COALESCE(sett.ec_enabled, 'NO') AS ec_enabled,
   COALESCE(sett.floodlight_optimization_enabled, 'NO') AS floodlight_optimization_enabled,
-  COALESCE(sett.auto_tagging_enabled, 'NO') AS auto_tagging_enabled,
+  COALESCE(li.conversion_tracking_enabled, 'NO') AS conversion_tracking_enabled,
   CASE 
     WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
     WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
     ELSE '⚪ NOT_CONFIGURED'
   END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
+  -- Activation now gates on two real, independently-sourced signals:
+  --   1. CM360 Floodlight linking authorized (advertiser level)
+  --   2. This line item has Floodlight activities attached for conversion
+  --      counting (line item level)
+  -- It previously gated on ec_enabled AND floodlight_optimization_enabled;
+  -- ec_enabled could never be YES, so every line item failed regardless of
+  -- configuration. auto_tagging_enabled was a hardcoded 'YES' and never a gate.
   CASE 
-    WHEN COALESCE(sett.ec_enabled, 'NO') = 'YES' AND COALESCE(sett.floodlight_optimization_enabled, 'NO') = 'YES' THEN 'PASSED'
+    WHEN COALESCE(sett.floodlight_optimization_enabled, 'NO') = 'YES'
+     AND COALESCE(li.conversion_tracking_enabled, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS activation_data_strength_status,
   li.entityStatus AS entity_status,

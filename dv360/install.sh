@@ -201,8 +201,12 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.advertisers \
 bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertisers\` ADD COLUMN IF NOT EXISTS currencyCode STRING;" 2>/dev/null || true
 
 echo "Creating BigQuery table: ${DATASET_ID}.advertiser_settings..."
+# auto_tagging_enabled and ec_enabled were removed: neither Enhanced Conversions
+# nor auto-tagging is exposed by the DV360 v4 or CM360 v5 APIs, so both were
+# constant for every advertiser. Existing installs keep the (now unwritten)
+# columns; nothing reads them.
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.advertiser_settings \
-  advertiserId:STRING,displayName:STRING,partnerId:STRING,currency_code:STRING,has_crm_audience:STRING,has_ga_audience:STRING,floodlight_optimization_enabled:STRING,auto_tagging_enabled:STRING,ec_enabled:STRING,gtg_status:STRING,web_tag_type:STRING,dda_status:STRING || echo "Table advertiser_settings already exists."
+  advertiserId:STRING,displayName:STRING,partnerId:STRING,currency_code:STRING,has_crm_audience:STRING,has_ga_audience:STRING,floodlight_optimization_enabled:STRING,gtg_status:STRING,web_tag_type:STRING,dda_status:STRING || echo "Table advertiser_settings already exists."
 bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING, ADD COLUMN IF NOT EXISTS dda_status STRING;" 2>/dev/null || true
 
 echo "Creating BigQuery table: ${DATASET_ID}.${TABLE_ID}..."
@@ -236,8 +240,8 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.dbm_io_spend_daily \
 
 echo "Creating BigQuery table: ${DATASET_ID}.line_items..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.line_items \
-  lineItemId:STRING,insertionOrderId:STRING,campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,lineItemType:STRING || echo "Table line_items already exists."
-bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.line_items\` ADD COLUMN IF NOT EXISTS insertionOrderId STRING;" 2>/dev/null || true
+  lineItemId:STRING,insertionOrderId:STRING,campaignId:STRING,advertiserId:STRING,entityStatus:STRING,displayName:STRING,lineItemType:STRING,conversion_tracking_enabled:STRING || echo "Table line_items already exists."
+bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.line_items\` ADD COLUMN IF NOT EXISTS insertionOrderId STRING, ADD COLUMN IF NOT EXISTS conversion_tracking_enabled STRING;" 2>/dev/null || true
 
 echo "Creating BigQuery table: ${DATASET_ID}.creatives..."
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.creatives \
@@ -253,9 +257,11 @@ bq mk --table ${PROJECT_ID}:${DATASET_ID}.video_aspect_ratio \
   video_id:STRING,aspect_ratio:FLOAT,updated_at:TIMESTAMP || echo "Table video_aspect_ratio already exists."
 
 echo "Creating BigQuery table: ${DATASET_ID}.floodlight_activities..."
+# ec_enabled was removed: no per-activity Enhanced Conversions flag exists on the
+# DV360 v4 FloodlightActivity resource, so it was always 'NO'.
 bq mk --table ${PROJECT_ID}:${DATASET_ID}.floodlight_activities \
-  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,ec_enabled:STRING,youtube_enabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
-bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS ec_enabled STRING, ADD COLUMN IF NOT EXISTS youtube_enabled STRING;" 2>/dev/null || true
+  floodlightActivityId:STRING,advertiserId:STRING,partnerId:STRING,floodlightGroupId:STRING,activityName:STRING,servingStatus:STRING,webTagType:STRING,clickLookbackDays:INTEGER,impressionLookbackDays:INTEGER,attributionLookbackStatus:STRING,sslRequired:STRING,sslComplianceStatus:STRING,remarketingEnabled:STRING,youtube_enabled:STRING,auditDate:DATE || echo "Table floodlight_activities already exists."
+bq query --use_legacy_sql=false "ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.floodlight_activities\` ADD COLUMN IF NOT EXISTS youtube_enabled STRING;" 2>/dev/null || true
 
 
 # 5. Deploy as a Cloud Run Function

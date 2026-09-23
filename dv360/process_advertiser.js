@@ -160,7 +160,17 @@ exports.processAdvertiser = async (event, context) => {
             advertiserId: String(li.advertiserId || ''),
             entityStatus: li.entityStatus || '',
             displayName: li.displayName || '',
-            lineItemType: li.lineItemType || ''
+            lineItemType: li.lineItemType || '',
+            // Whether this line item has any Floodlight activity attached for
+            // conversion counting. Unlike the advertiser-level settings, this
+            // genuinely varies per line item, so it is a meaningful check in a
+            // line-item-level table. Sourced from LineItem.conversionCounting,
+            // a real DV360 v4 field.
+            conversion_tracking_enabled: (
+                li.conversionCounting &&
+                Array.isArray(li.conversionCounting.floodlightActivityConfigs) &&
+                li.conversionCounting.floodlightActivityConfigs.length > 0
+            ) ? 'YES' : 'NO'
         }));
         if (lineItemRows.length > 0) {
             await bigquery.query({ query: `DELETE FROM \`${targetDatasetId}.line_items\` WHERE advertiserId = '${advertiserId}'` }).catch(() => {});
@@ -413,19 +423,34 @@ exports.processAdvertiser = async (event, context) => {
             console.warn(`Could not get advertiser details for ${advertiserId}:`, e.message);
         }
 
-        const audiences = await client.getFirstAndThirdPartyAudiences(advertiserId);
-        const hasCrmAudience = audiences.some(aud => 
+        const audiences = await client.getFirstPartyAndPartnerAudiences(advertiserId);
+
+        // Valid DV360 v4 enums:
+        //   audienceType   CUSTOMER_MATCH_CONTACT_INFO, CUSTOMER_MATCH_DEVICE_ID,
+        //                  CUSTOMER_MATCH_USER_ID, ACTIVITY_BASED, FREQUENCY_CAP,
+        //                  TAG_BASED, YOUTUBE_USERS, THIRD_PARTY, COMMERCE,
+        //                  LINEAR, AGENCY
+        //   audienceSource DISPLAY_VIDEO_360, CAMPAIGN_MANAGER, AD_MANAGER,
+        //                  SEARCH_ADS_360, YOUTUBE, ADS_DATA_HUB
+        // The previous filters used AUDIENCE_SOURCE_CUSTOMER_MATCH,
+        // AUDIENCE_SOURCE_THIRD_PARTY and AUDIENCE_SOURCE_GOOGLE_ANALYTICS,
+        // none of which exist in v4.
+        const hasCrmAudience = audiences.some(aud =>
             aud.audienceType === 'CUSTOMER_MATCH_CONTACT_INFO' ||
             aud.audienceType === 'CUSTOMER_MATCH_DEVICE_ID' ||
             aud.audienceType === 'CUSTOMER_MATCH_USER_ID' ||
-            aud.audienceSource === 'AUDIENCE_SOURCE_CUSTOMER_MATCH' ||
-            aud.audienceSource === 'AUDIENCE_SOURCE_THIRD_PARTY'
+            aud.audienceType === 'THIRD_PARTY'
         );
-        const hasGaAudience = audiences.some(aud => 
-            aud.audienceSource === 'AUDIENCE_SOURCE_GOOGLE_ANALYTICS' ||
+
+        // v4 has no Google Analytics audience source, so GA-linked audiences can
+        // only be identified by name. This is a heuristic, not an API guarantee.
+        const hasGaAudience = audiences.some(aud =>
+            aud.audienceSource === 'ADS_DATA_HUB' ||
             (aud.displayName && aud.displayName.toLowerCase().includes('google analytics')) ||
-            (aud.displayName && aud.displayName.toLowerCase().includes('ga4'))
+            (aud.displayName && aud.displayName.toLowerCase().includes('ga4')) ||
+            (aud.displayName && aud.displayName.toLowerCase().includes('analytics'))
         );
+        console.log(`Advertiser ${advertiserId}: ${audiences.length} audience list(s) found (CRM=${hasCrmAudience ? 'YES' : 'NO'}, GA=${hasGaAudience ? 'YES' : 'NO'}).`);
 
         let floodlightOptEnabled = false;
         let cmFloodlightConfigId = null;
@@ -434,7 +459,6 @@ exports.processAdvertiser = async (event, context) => {
             floodlightOptEnabled = Boolean(advDetails.adServerConfig.cmHybridConfig.cmFloodlightLinkingAuthorized);
         }
 
-        let ecEnabled = false;
         let webTagType = 'WEB_TAG_TYPE_NONE';
         let gtgStatus = 'NOT_CONFIGURED';
 
@@ -452,18 +476,14 @@ exports.processAdvertiser = async (event, context) => {
                 console.warn(`Warning fetching floodlight group ${cmFloodlightConfigId}:`, grpErr.message);
             }
 
-            const clickDays = (group && group.lookbackWindow && group.lookbackWindow.clickDays != null) ? Number(group.lookbackWindow.clickDays) : 30;
-            const impressionDays = (group && group.lookbackWindow && group.lookbackWindow.impressionDays != null) ? Number(group.lookbackWindow.impressionDays) : 30;
+            // Null when the group could not be read. Previously defaulted to 30,
+            // which the audit table then displayed as though it were measured and
+            // which forced the passing STANDARD_WINDOW verdict.
+            const clickDays = (group && group.lookbackWindow && group.lookbackWindow.clickDays != null) ? Number(group.lookbackWindow.clickDays) : null;
+            const impressionDays = (group && group.lookbackWindow && group.lookbackWindow.impressionDays != null) ? Number(group.lookbackWindow.impressionDays) : null;
 
-            // 2. Fetch Floodlight Activities to check for Enhanced Conversions & Audit
+            // 2. Fetch Floodlight Activities for the audit scan
             const activities = await client.getFloodlightActivities(cmFloodlightConfigId, partnerId);
-            ecEnabled = activities.some(act => 
-                Boolean(
-                    (act.floodlightActivityConfig && act.floodlightActivityConfig.enhancedConversionsEnabled) ||
-                    act.enhancedConversionsEnabled ||
-                    (act.webActivityConfig && act.webActivityConfig.enhancedConversionsEnabled)
-                )
-            );
 
             // 3. Evaluate Google Tag Gateway (GTG / First-Party Mode) Readiness
             if (webTagType === 'WEB_TAG_TYPE_DYNAMIC') {
@@ -478,54 +498,47 @@ exports.processAdvertiser = async (event, context) => {
             const todayStr = new Date().toISOString().split('T')[0];
             const activityRows = activities.map(act => {
                 const actIdStr = String(act.floodlightActivityId);
-                const isGa = Boolean(act.displayName && (
-                    act.displayName.toLowerCase().includes('google analytics') ||
-                    act.displayName.toLowerCase().includes('ga4')
-                ));
-                const hasActEc = Boolean(
-                    (act.floodlightActivityConfig && act.floodlightActivityConfig.enhancedConversionsEnabled) ||
-                    act.enhancedConversionsEnabled ||
-                    (act.webActivityConfig && act.webActivityConfig.enhancedConversionsEnabled)
-                );
 
-                const actFormat = (
-                    (act.activityTypeConfig && act.activityTypeConfig.webActivityConfig && act.activityTypeConfig.webActivityConfig.format) ||
-                    (act.webActivityConfig && act.webActivityConfig.format) ||
-                    act.format ||
-                    ''
-                );
+                // The DV360 v4 FloodlightActivity resource exposes only:
+                //   name, floodlightActivityId, floodlightGroupId, displayName,
+                //   servingStatus, advertiserIds, sslRequired, remarketingConfigs
+                // It carries no per-activity tag format and no Enhanced
+                // Conversions flag. The previous code read
+                // `activityTypeConfig.webActivityConfig.format`,
+                // `webActivityConfig.format`, `format` and three
+                // `enhancedConversionsEnabled` paths -- none of which exist, so
+                // they were permanently undefined. It also promoted an activity
+                // to WEB_TAG_TYPE_DYNAMIC when its display name merely contained
+                // "google analytics" or "ga4". Tag type is now taken solely from
+                // the Floodlight group, which is a real, fetched value.
+                const effectiveWebTagType = webTagType;
 
-                let effectiveWebTagType = webTagType;
-                if (
-                    actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_GLOBAL_SITE_TAG' ||
-                    actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_IFRAME_TAG' ||
-                    webTagType === 'WEB_TAG_TYPE_DYNAMIC' ||
-                    isGa ||
-                    hasActEc
-                ) {
-                    effectiveWebTagType = 'WEB_TAG_TYPE_DYNAMIC';
-                } else if (actFormat === 'FLOODLIGHT_ACTIVITY_FORMAT_IMAGE_TAG' || webTagType === 'WEB_TAG_TYPE_IMAGE') {
-                    effectiveWebTagType = 'WEB_TAG_TYPE_IMAGE';
-                }
-
-                const isDynamicTag = (effectiveWebTagType === 'WEB_TAG_TYPE_DYNAMIC');
-
-                let attrStatus = 'STANDARD_WINDOW';
-                if (clickDays === 0 || impressionDays === 0) {
+                // clickDays/impressionDays are null when the Floodlight group
+                // could not be read. Report that honestly instead of asserting
+                // the passing STANDARD_WINDOW off a fabricated 30/30.
+                let attrStatus;
+                if (clickDays === null || impressionDays === null) {
+                    attrStatus = 'UNKNOWN_WINDOW';
+                } else if (clickDays === 0 || impressionDays === 0) {
                     attrStatus = 'ZERO_DAY_WINDOW_WARNING';
                 } else if (clickDays > 30 || impressionDays > 30) {
                     attrStatus = 'EXTENDED_LOOKBACK';
+                } else {
+                    attrStatus = 'STANDARD_WINDOW';
                 }
 
-                const sslCompliant = act.sslRequired !== false;
+                // Google REST JSON omits false booleans, so an activity with SSL
+                // disabled arrives with the key absent. Testing `!== false` made
+                // the non-compliant branch unreachable and every activity passed.
+                const sslCompliant = Boolean(act.sslRequired);
                 const remarketingActive = act.remarketingConfigs ? act.remarketingConfigs.some(r => r.remarketingEnabled) : false;
 
-                // YouTube Enabled Check per activity
-                const isYtTracked = youtubeTrackedActivityIds.has(actIdStr);
-                const isYtEnabled = isYtTracked || (floodlightOptEnabled && isDynamicTag);
-
-                // Enhanced Conversions Check per activity
-                const isActEcEnabled = hasActEc || (ecEnabled && isDynamicTag);
+                // YouTube Enabled Check per activity. Derived solely from line
+                // items that actually reference this activity for conversion
+                // counting -- the previous `|| (floodlightOptEnabled &&
+                // isDynamicTag)` arm marked activities as enabled on a guess and
+                // inflated the CLS pre-flight pass count.
+                const isYtEnabled = youtubeTrackedActivityIds.has(actIdStr);
 
                 return {
                     floodlightActivityId: actIdStr,
@@ -538,10 +551,9 @@ exports.processAdvertiser = async (event, context) => {
                     clickLookbackDays: clickDays,
                     impressionLookbackDays: impressionDays,
                     attributionLookbackStatus: attrStatus,
-                    sslRequired: act.sslRequired ? 'YES' : 'NO',
+                    sslRequired: sslCompliant ? 'YES' : 'NO',
                     sslComplianceStatus: sslCompliant ? 'SSL_COMPLIANT' : 'NON_SSL_COMPLIANT_WARNING',
                     remarketingEnabled: remarketingActive ? 'YES' : 'NO',
-                    ec_enabled: isActEcEnabled ? 'YES' : 'NO',
                     youtube_enabled: isYtEnabled ? 'YES' : 'NO',
                     auditDate: todayStr
                 };
@@ -566,8 +578,12 @@ exports.processAdvertiser = async (event, context) => {
             has_crm_audience: hasCrmAudience ? 'YES' : 'NO',
             has_ga_audience: hasGaAudience ? 'YES' : 'NO',
             floodlight_optimization_enabled: floodlightOptEnabled ? 'YES' : 'NO',
-            auto_tagging_enabled: 'YES',
-            ec_enabled: ecEnabled ? 'YES' : 'NO',
+            // NOTE: auto_tagging_enabled and ec_enabled were removed here.
+            // Neither Enhanced Conversions nor auto-tagging is exposed anywhere
+            // in the DV360 v4 or CM360 v5 APIs, so the former was a hardcoded
+            // 'YES' and the latter read field paths that never resolve. Both
+            // reported a constant value for every advertiser. Do not reinstate
+            // them without a verified source.
             gtg_status: gtgStatus,
             web_tag_type: webTagType,
             dda_status: hasDdaOrSmartBidding ? 'ACTIVE' : 'NOT_CONFIGURED'

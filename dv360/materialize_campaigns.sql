@@ -62,9 +62,11 @@ latest_settings AS (
     MAX(NULLIF(has_crm_audience, '')) AS has_crm_audience,
     MAX(NULLIF(has_ga_audience, '')) AS has_ga_audience,
     MAX(NULLIF(floodlight_optimization_enabled, '')) AS floodlight_optimization_enabled,
-    MAX(NULLIF(auto_tagging_enabled, '')) AS auto_tagging_enabled,
-    MAX(NULLIF(ec_enabled, '')) AS ec_enabled,
+    -- auto_tagging_enabled and ec_enabled were removed from advertiser_settings:
+    -- neither is exposed by the DV360 v4 or CM360 v5 APIs, so both reported a
+    -- constant value for every advertiser. Neither was referenced below.
     MAX(NULLIF(gtg_status, '')) AS gtg_status,
+
     MAX(NULLIF(web_tag_type, '')) AS web_tag_type,
     MAX(NULLIF(currency_code, '')) AS currency_code
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`

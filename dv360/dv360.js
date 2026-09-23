@@ -274,25 +274,37 @@ class DV360Client {
   }
 
   /**
-   * Fetches all 1st and 3rd party audience lists for a given advertiser.
+   * Fetches all first-party and partner audience lists for a given advertiser.
    * Used to check for active CRM / 1PD and Google Analytics linked audiences.
+   *
+   * NOTE: this resource was named `firstAndThirdPartyAudiences` in v2/v3 and was
+   * renamed to `firstPartyAndPartnerAudiences` in v4. Calling the old name
+   * against the v4 client yields `undefined`, which previously surfaced as
+   * "advertiser has no audiences" for every advertiser rather than as an error.
    * @param {string} advertiserId
    * @returns {Promise<Object[]>}
    */
-  async getFirstAndThirdPartyAudiences(advertiserId) {
+  async getFirstPartyAndPartnerAudiences(advertiserId) {
     let audiences = [];
     let nextPageToken = null;
+    if (!this.dv360.firstPartyAndPartnerAudiences) {
+      throw new Error(
+        'DV360 client exposes no firstPartyAndPartnerAudiences resource. The ' +
+        'googleapis version or the pinned API version is wrong -- audience ' +
+        'signals cannot be evaluated.'
+      );
+    }
     try {
       do {
         const response = await this.executeWithBackoff(() =>
-          this.dv360.firstAndThirdPartyAudiences.list({
+          this.dv360.firstPartyAndPartnerAudiences.list({
             advertiserId: advertiserId,
             pageToken: nextPageToken,
             pageSize: 100
           })
         );
-        if (response.data.firstAndThirdPartyAudiences) {
-          audiences = audiences.concat(response.data.firstAndThirdPartyAudiences);
+        if (response.data.firstPartyAndPartnerAudiences) {
+          audiences = audiences.concat(response.data.firstPartyAndPartnerAudiences);
         }
         nextPageToken = response.data.nextPageToken;
       } while (nextPageToken);

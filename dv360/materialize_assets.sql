@@ -34,15 +34,20 @@ unpacked_assets AS (
     ad.resolved_io_id AS insertion_order_id,
     ad.resolved_campaign_id AS campaign_id,
     ad.advertiserId AS advertiser_id,
+    -- A NULL aspect_ratio means the YouTube lookup never resolved (missing API
+    -- key, private or deleted video). It previously fell through to
+    -- 'HORIZONTAL VIDEO' / '16:9', presenting an unmeasured value as measured.
     CASE 
-      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio < 1.0 THEN 'VERTICAL VIDEO'
-      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio = 1.0 THEN 'SQUARE VIDEO'
+      WHEN ad.aspect_ratio IS NULL THEN 'UNKNOWN ASPECT RATIO VIDEO'
+      WHEN ad.aspect_ratio < 1.0 THEN 'VERTICAL VIDEO'
+      WHEN ad.aspect_ratio = 1.0 THEN 'SQUARE VIDEO'
       ELSE 'HORIZONTAL VIDEO'
     END AS asset_type,
     'VIDEO' AS asset_variant,
     CASE 
-      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio < 1.0 THEN '9:16'
-      WHEN ad.aspect_ratio IS NOT NULL AND ad.aspect_ratio = 1.0 THEN '1:1'
+      WHEN ad.aspect_ratio IS NULL THEN CAST(NULL AS STRING)
+      WHEN ad.aspect_ratio < 1.0 THEN '9:16'
+      WHEN ad.aspect_ratio = 1.0 THEN '1:1'
       ELSE '16:9'
     END AS creative_dimensions,
     CASE 
@@ -191,7 +196,10 @@ SELECT
   COALESCE(sett.advertiser_name, adv.displayName, a.advertiser_id) AS account_name,
   COALESCE(a.campaign_id, 'N/A') AS campaign_id,
   COALESCE(cmp.displayName, a.campaign_id, 'N/A') AS campaign_name,
-  COALESCE(NULLIF(adv.currency_code, ''), 'USD') AS currency_code,
+  -- No 'USD' default. The cost figures below are in the advertiser's own
+  -- currency; defaulting the label to USD relabelled EUR/GBP/SEK spend as
+  -- dollars whenever advertisers.currencyCode was missing. NULL means unknown.
+  NULLIF(adv.currency_code, '') AS currency_code,
   COALESCE(adv.partnerId, '__PARTNER_ID__') AS partner_id,
 
   -- Attributed Line Item Performance Metrics

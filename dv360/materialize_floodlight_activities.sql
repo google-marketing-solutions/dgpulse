@@ -31,7 +31,6 @@ latest_activities AS (
     ANY_VALUE(sslRequired) AS sslRequired,
     ANY_VALUE(sslComplianceStatus) AS sslComplianceStatus,
     ANY_VALUE(remarketingEnabled) AS remarketingEnabled,
-    ANY_VALUE(ec_enabled) AS ec_enabled,
     ANY_VALUE(youtube_enabled) AS youtube_enabled,
     MAX(auditDate) AS auditDate
   FROM `__PROJECT_ID__.__DATASET_ID__.floodlight_activities`
@@ -66,7 +65,6 @@ latest_settings AS (
     advertiserId,
     ANY_VALUE(gtg_status) AS gtg_status,
     ANY_VALUE(floodlight_optimization_enabled) AS floodlight_optimization_enabled,
-    ANY_VALUE(ec_enabled) AS ec_enabled,
     ANY_VALUE(dda_status) AS dda_status,
     ANY_VALUE(web_tag_type) AS web_tag_type
   FROM `__PROJECT_ID__.__DATASET_ID__.advertiser_settings`
@@ -89,7 +87,9 @@ SELECT
   fa.sslRequired AS ssl_required,
   fa.sslComplianceStatus AS ssl_compliance_status,
   fa.remarketingEnabled AS remarketing_enabled,
-  COALESCE(fa.ec_enabled, 'NO') AS ec_enabled,
+  -- ec_enabled / cls_ec_status removed: no Enhanced Conversions flag exists on
+  -- the DV360 v4 FloodlightActivity resource, so both were constant 'NO' /
+  -- '❌ Not Enabled' for every activity ever audited.
   COALESCE(fa.youtube_enabled, 'NO') AS youtube_enabled,
   CASE 
     WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
@@ -108,10 +108,6 @@ SELECT
     WHEN fa.webTagType = 'WEB_TAG_TYPE_DYNAMIC' THEN '✅ Dynamic Tag' 
     ELSE '❌ Image Tag' 
   END AS cls_dynamic_tag_status,
-  CASE 
-    WHEN COALESCE(fa.ec_enabled, 'NO') = 'YES' THEN '✅ Active' 
-    ELSE '❌ Not Enabled' 
-  END AS cls_ec_status,
   CASE 
     WHEN COALESCE(sett.dda_status, 'NOT_CONFIGURED') = 'ACTIVE' THEN '✅ DDA Active' 
     ELSE '🟡 Last Interaction' 
@@ -161,7 +157,6 @@ adv_base AS (
     COUNT(fa.activity_id) AS total_activities,
     COUNTIF(fa.youtube_enabled = 'YES') AS yt_passing_activities,
     COUNTIF(fa.cls_dynamic_tag_status = '✅ Dynamic Tag') AS dynamic_passing_activities,
-    COUNTIF(fa.ec_enabled = 'YES') AS ec_passing_activities,
     CASE 
       WHEN sett.dda_status = 'ACTIVE' THEN '✅ DDA Active'
       ELSE '🟡 Last Interaction'
@@ -245,6 +240,12 @@ SELECT
   END AS steps_to_fix_url
 FROM adv_base
 
+-- CLS check #3, "Enhanced Conversions", was removed here. The DV360 v4
+-- FloodlightActivity resource carries no Enhanced Conversions flag (and neither
+-- does CM360 v5), so ec_enabled was always 'NO' and the check reported
+-- "0 of N activities with EC" for every advertiser regardless of their real
+-- configuration. Do not reinstate it without a verified API source. The
+-- remaining checks are renumbered 1-4.
 UNION ALL
 
 SELECT 
@@ -253,41 +254,6 @@ SELECT
   partner_id,
   CURRENT_DATE() AS audit_date,
   3 AS check_order,
-  'Enhanced Conversions' AS required_check,
-  CASE 
-    WHEN total_activities = 0 THEN '❌ Action Required'
-    WHEN ec_passing_activities = total_activities THEN '✅ Pass'
-    WHEN ec_passing_activities > 0 THEN '🟡 Partial'
-    ELSE '❌ Action Required'
-  END AS status,
-  CASE 
-    WHEN total_activities = 0 THEN 'FAIL'
-    WHEN ec_passing_activities = total_activities THEN 'PASS'
-    WHEN ec_passing_activities > 0 THEN 'WARN'
-    ELSE 'FAIL'
-  END AS status_code,
-  CASE
-    WHEN total_activities = 0 THEN 'No serving Floodlight activities'
-    ELSE CONCAT(CAST(ec_passing_activities AS STRING), ' of ', CAST(total_activities AS STRING), ' activities with EC')
-  END AS details,
-  CASE 
-    WHEN ec_passing_activities = total_activities AND total_activities > 0 THEN NULL
-    ELSE 'Enable Enhanced Conversions for Floodlight at advertiser & activity levels' 
-  END AS steps_to_fix,
-  CASE 
-    WHEN ec_passing_activities = total_activities AND total_activities > 0 THEN NULL 
-    ELSE 'https://support.google.com/campaignmanager/answer/14217426' 
-  END AS steps_to_fix_url
-FROM adv_base
-
-UNION ALL
-
-SELECT 
-  advertiser_id,
-  account_name,
-  partner_id,
-  CURRENT_DATE() AS audit_date,
-  4 AS check_order,
   'Data Driven Attribution (DDA)' AS required_check,
   CASE 
     WHEN dda_status = '✅ DDA Active' THEN '✅ Pass'
@@ -318,7 +284,7 @@ SELECT
   account_name,
   partner_id,
   CURRENT_DATE() AS audit_date,
-  5 AS check_order,
+  4 AS check_order,
   'Google Tag Gateway (GTG) Readiness' AS required_check,
   CASE 
     WHEN gtg_status = '🟢 Ready' THEN '🟢 Ready'
