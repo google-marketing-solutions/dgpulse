@@ -288,6 +288,16 @@ gcloud run services add-iam-policy-binding ${FUNCTION_NAME} \
   --role="roles/run.invoker" > /dev/null 2>&1 || true
 
 # 6b. Deploy Cloud Function for processing advertisers
+#
+# --retry is not optional. Without it the trigger defaults to
+# RETRY_POLICY_DO_NOT_RETRY, and a Pub/Sub delivery that Cloud Run rejects is
+# discarded permanently with no error surfaced anywhere. On partner 617397359
+# (46 advertisers) that silently lost 34 of them: the publisher fanned out all
+# 46 messages inside 1.5s, the worker runs at concurrency 1 so each needs its
+# own instance, and Cloud Run aborted the overflow with "The request was
+# aborted because there was no available instance". The batching in index.js
+# stops the herd forming; this makes the remaining failures recoverable rather
+# than fatal.
 echo "Deploying Cloud Function: ${PROCESS_FUNCTION_NAME}..."
 gcloud functions deploy ${PROCESS_FUNCTION_NAME} \
   --gen2 \
@@ -296,6 +306,7 @@ gcloud functions deploy ${PROCESS_FUNCTION_NAME} \
   --source=. \
   --entry-point=processAdvertiser \
   --trigger-topic=${TOPIC_NAME} \
+  --retry \
   --cpu=1 \
   --memory=1Gi \
   --timeout=540s \
@@ -321,8 +332,61 @@ fi
 
 echo "Triggering initial DV360 advertiser & entity sync via Cloud Scheduler..."
 gcloud scheduler jobs run ${JOB_NAME} --location=${REGION} || echo "Warning: Could not trigger immediate scheduler run."
-echo "Waiting 30 seconds for Pub/Sub advertiser workers to populate raw tables..."
+# Wait for the per-advertiser workers, and verify they covered everyone.
+#
+# This used to be a flat "sleep 30", which was both too short and unverified.
+# The workers are asynchronous and fire-and-forget, so nothing downstream
+# notices when one is dropped: advertiser_settings and floodlight_activities
+# simply lack that account, and every readiness column COALESCEs to
+# NO / NEEDS_ACTION as though it had been checked and failed. Partner
+# 617397359 installed with 12 of 46 advertisers covered and still printed a
+# success banner.
+#
+# Waiting here also fixes a second problem. line_items is populated by these
+# same workers, and the DBM performance and audience queries below scope
+# themselves to the Demand Gen insertion orders read from it. Moving on too
+# early meant the first sync built partner-wide queries that the second pass
+# then had to tear down and rebuild.
+echo "Waiting for Pub/Sub advertiser workers to populate raw tables..."
 sleep 30
+
+COVERAGE_OK="no"
+COVERED_ADV=0
+TOTAL_ADV=0
+ATTEMPT=1
+while [ "${ATTEMPT}" -le 20 ]; do
+  TOTAL_ADV=$(bq query --quiet --use_legacy_sql=false --format=csv \
+    "SELECT COUNT(DISTINCT CAST(advertiserId AS STRING)) FROM \`${PROJECT_ID}.${DATASET_ID}.advertisers\`" 2>/dev/null | tail -n1)
+  COVERED_ADV=$(bq query --quiet --use_legacy_sql=false --format=csv \
+    "SELECT COUNT(DISTINCT CAST(advertiserId AS STRING)) FROM \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\`" 2>/dev/null | tail -n1)
+  echo "${TOTAL_ADV}" | grep -qE '^[0-9]+$' || TOTAL_ADV=0
+  echo "${COVERED_ADV}" | grep -qE '^[0-9]+$' || COVERED_ADV=0
+
+  if [ "${TOTAL_ADV}" -gt 0 ] && [ "${COVERED_ADV}" -ge "${TOTAL_ADV}" ]; then
+    echo "Advertiser coverage complete: ${COVERED_ADV}/${TOTAL_ADV}."
+    COVERAGE_OK="yes"
+    break
+  fi
+  echo "  Advertiser coverage ${COVERED_ADV}/${TOTAL_ADV}; waiting for workers (attempt ${ATTEMPT}/20)..."
+  sleep 30
+  ATTEMPT=$((ATTEMPT + 1))
+done
+
+if [ "${COVERAGE_OK}" != "yes" ]; then
+  echo ""
+  echo "############################################################"
+  echo "WARNING: advertiser coverage is INCOMPLETE (${COVERED_ADV}/${TOTAL_ADV})."
+  echo ""
+  echo "  advertiser_settings and floodlight_activities are written by the"
+  echo "  per-advertiser workers. Accounts they missed do NOT render as blanks"
+  echo "  -- they render as NO / NEEDS_ACTION / NOT_CONFIGURED, which are wrong"
+  echo "  answers rather than absent ones."
+  echo ""
+  echo "  Inspect:  gcloud functions logs read ${PROCESS_FUNCTION_NAME} --gen2 --region=${REGION}"
+  echo "  Re-run:   gcloud scheduler jobs run ${JOB_NAME} --location=${REGION}"
+  echo "############################################################"
+  echo ""
+fi
 
 echo "Syncing DBM Reports into BigQuery..."
 DATASET_ID="${DATASET_ID}" BUCKET_NAME="${BUCKET_NAME}" REFRESH_TOKEN="${REFRESH_TOKEN}" PARTNER_ID="${PARTNER_ID}" node create_report.js "${PARTNER_ID}" sync || echo "Warning: DBM report generation in progress; data will populate on subsequent sync."

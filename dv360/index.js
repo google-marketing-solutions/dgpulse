@@ -84,11 +84,80 @@ exports.fetchAdvertisers = async (req, res) => {
             }
         }
 
-        console.log(`Publishing ${advertisers.length} advertisers to Pub/Sub topic ${topicName}...`);
-        for (const adv of advertisers) {
-            const data = JSON.stringify({ advertiserId: adv.advertiserId, partnerId, datasetId });
-            const dataBuffer = Buffer.from(data);
-            await pubsub.topic(topicName).publishMessage({ data: dataBuffer });
+        // Coverage of the PREVIOUS run, reported before this one fans out.
+        //
+        // The per-advertiser workers are asynchronous, so a run cannot verify
+        // its own fan-out -- by the time this function returns, most workers
+        // have not finished. Reporting the last run's result is the only check
+        // available from here, and it is worth having: a shortfall was
+        // previously invisible. Partner 617397359 ran with 12 of 46 advertisers
+        // covered and reported nothing wrong, while every readiness column for
+        // the missing 34 quietly read NO / NEEDS_ACTION.
+        try {
+            const [coverageRows] = await bigquery.query({
+                query:
+                    'SELECT COUNT(DISTINCT CAST(advertiserId AS STRING)) AS covered ' +
+                    `FROM \`${datasetId}.advertiser_settings\``
+            });
+            const covered = (coverageRows[0] && Number(coverageRows[0].covered)) || 0;
+            if (covered < advertisers.length) {
+                console.warn(
+                    'ADVERTISER COVERAGE SHORTFALL: the previous run wrote settings for ' +
+                    `${covered} of ${advertisers.length} advertisers. advertiser_settings ` +
+                    'and floodlight_activities come from the per-advertiser workers, so ' +
+                    'the missing accounts render as NO / NEEDS_ACTION / NOT_CONFIGURED ' +
+                    'rather than as blanks. Check the worker logs for "no available ' +
+                    'instance" aborts.');
+            } else {
+                console.log(`Advertiser coverage from the previous run: ${covered}/${advertisers.length}.`);
+            }
+        } catch (coverageErr) {
+            // Expected on the very first run, when the table does not exist yet.
+            console.warn(`Could not read advertiser coverage: ${coverageErr.message}`);
+        }
+
+        // Published in small batches with a pause between them, not in a tight
+        // loop.
+        //
+        // The worker runs at maxInstanceRequestConcurrency 1, so every message
+        // in flight needs its own Cloud Run instance. Publishing every
+        // advertiser at once asked Cloud Run for 46 simultaneous cold starts on
+        // partner 617397359; it refused most of them with "The request was
+        // aborted because there was no available instance", and because the
+        // trigger had no retry policy, 34 of 46 advertisers were dropped
+        // silently. Their advertiser_settings and floodlight_activities rows
+        // simply never appeared, and every readiness column downstream
+        // COALESCEd to NO / NEEDS_ACTION as though the data had been checked.
+        //
+        // Two things now prevent that. This batching stops the herd forming,
+        // and --retry on the trigger (install.sh) makes anything still rejected
+        // redeliverable instead of lost. The batching is the optimisation; the
+        // retry is the guarantee.
+        const PUBLISH_BATCH_SIZE = 5;
+        const PUBLISH_BATCH_PAUSE_MS = 2000;
+        // Spreading is bounded because this runs inside the 540s function
+        // timeout and still has the DBM report syncs to do afterwards. On a
+        // partner large enough to exhaust the budget the pause shrinks and more
+        // deliveries get rejected -- which is precisely the case --retry
+        // covers.
+        const PUBLISH_BUDGET_MS = 120000;
+        const batchCount = Math.ceil(advertisers.length / PUBLISH_BATCH_SIZE);
+        const pauseMs = batchCount > 1
+            ? Math.min(PUBLISH_BATCH_PAUSE_MS, Math.floor(PUBLISH_BUDGET_MS / (batchCount - 1)))
+            : 0;
+
+        console.log(
+            `Publishing ${advertisers.length} advertisers to Pub/Sub topic ${topicName} ` +
+            `in ${batchCount} batch(es) of ${PUBLISH_BATCH_SIZE}, ${pauseMs}ms apart...`);
+        for (let i = 0; i < advertisers.length; i += PUBLISH_BATCH_SIZE) {
+            const batch = advertisers.slice(i, i + PUBLISH_BATCH_SIZE);
+            await Promise.all(batch.map(adv => {
+                const data = JSON.stringify({ advertiserId: adv.advertiserId, partnerId, datasetId });
+                return pubsub.topic(topicName).publishMessage({ data: Buffer.from(data) });
+            }));
+            if (i + PUBLISH_BATCH_SIZE < advertisers.length && pauseMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, pauseMs));
+            }
         }
 
         // Sync and ingest the latest DBM reports into BigQuery.
