@@ -299,34 +299,13 @@ exports.processAdvertiser = async (event, context) => {
             console.warn(`Could not get advertiser details for ${advertiserId}:`, e.message);
         }
 
-        const audiences = await client.getFirstPartyAndPartnerAudiences(advertiserId);
-
-        // Valid DV360 v4 enums:
-        //   audienceType   CUSTOMER_MATCH_CONTACT_INFO, CUSTOMER_MATCH_DEVICE_ID,
-        //                  CUSTOMER_MATCH_USER_ID, ACTIVITY_BASED, FREQUENCY_CAP,
-        //                  TAG_BASED, YOUTUBE_USERS, THIRD_PARTY, COMMERCE,
-        //                  LINEAR, AGENCY
-        //   audienceSource DISPLAY_VIDEO_360, CAMPAIGN_MANAGER, AD_MANAGER,
-        //                  SEARCH_ADS_360, YOUTUBE, ADS_DATA_HUB
-        // The previous filters used AUDIENCE_SOURCE_CUSTOMER_MATCH,
-        // AUDIENCE_SOURCE_THIRD_PARTY and AUDIENCE_SOURCE_GOOGLE_ANALYTICS,
-        // none of which exist in v4.
-        const hasCrmAudience = audiences.some(aud =>
-            aud.audienceType === 'CUSTOMER_MATCH_CONTACT_INFO' ||
-            aud.audienceType === 'CUSTOMER_MATCH_DEVICE_ID' ||
-            aud.audienceType === 'CUSTOMER_MATCH_USER_ID' ||
-            aud.audienceType === 'THIRD_PARTY'
-        );
-
-        // v4 has no Google Analytics audience source, so GA-linked audiences can
-        // only be identified by name. This is a heuristic, not an API guarantee.
-        const hasGaAudience = audiences.some(aud =>
-            aud.audienceSource === 'ADS_DATA_HUB' ||
-            (aud.displayName && aud.displayName.toLowerCase().includes('google analytics')) ||
-            (aud.displayName && aud.displayName.toLowerCase().includes('ga4')) ||
-            (aud.displayName && aud.displayName.toLowerCase().includes('analytics'))
-        );
-        console.log(`Advertiser ${advertiserId}: ${audiences.length} audience list(s) found (CRM=${hasCrmAudience ? 'YES' : 'NO'}, GA=${hasGaAudience ? 'YES' : 'NO'}).`);
+        // Returns booleans, not the audience list: the partner audience pool is
+        // far too large to enumerate per advertiser. getAudienceSignals scores
+        // each page as it arrives and stops as soon as both flags are known,
+        // and logs the counts and whether the scan was complete.
+        const audienceSignals = await client.getAudienceSignals(advertiserId);
+        const hasCrmAudience = audienceSignals.hasCrmAudience;
+        const hasGaAudience = audienceSignals.hasGaAudience;
 
         let floodlightOptEnabled = false;
         let cmFloodlightConfigId = null;

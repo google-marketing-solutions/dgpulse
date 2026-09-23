@@ -305,34 +305,42 @@ class DV360Client {
   }
 
   /**
-   * Fetches all first-party and partner audience lists for a given advertiser.
-   * Used to check for active CRM / 1PD and Google Analytics linked audiences.
+   * Determines whether an advertiser has CRM / 1PD and Google Analytics linked
+   * audiences.
    *
-   * NOTE: this resource was named `firstAndThirdPartyAudiences` in v2/v3 and was
-   * renamed to `firstPartyAndPartnerAudiences` in v4. Calling the old name
-   * against the v4 client yields `undefined`, which previously surfaced as
-   * "advertiser has no audiences" for every advertiser rather than as an error.
+   * Returns the two booleans rather than the audience list, because the list
+   * cannot be enumerated in practice. `firstPartyAndPartnerAudiences` exposes
+   * the partner-level pool, not a per-advertiser one: a single advertiser under
+   * test returned over 125,000 audiences at the maximum page size of 5,000 and
+   * was still paginating when its budget expired. Nothing downstream needs the
+   * audiences themselves, only these two flags, so each page is scored as it
+   * arrives and pagination stops the moment both are known -- in the common
+   * case, on the first page.
    *
-   * The loop is bounded three ways, because an unbounded one was observed to
-   * stall for over 300s and take the whole execution down with the Cloud Run
-   * request timeout before any advertiser_settings row could be written:
-   *   - a per-page deadline, so one unresponsive request cannot hang forever;
-   *   - an overall deadline, so a long tail of slow pages cannot either;
-   *   - a repeated page token check, which ends the loop if the API hands back
-   *     a cursor it has already issued.
-   * All three exits return the audiences gathered so far and say so in the log.
-   * A partial result is not distinguishable from a complete one in the returned
-   * value, so treat a truncation warning as "this advertiser's audience signals
-   * are unverified" rather than as a clean NO.
+   * This resource was named `firstAndThirdPartyAudiences` in v2/v3 and renamed
+   * in v4. Calling the old name against the v4 client yields `undefined`, which
+   * previously surfaced as "advertiser has no audiences" for every advertiser
+   * rather than as an error.
+   *
+   * Pagination is bounded three ways, because an unbounded loop here ran for
+   * over 300s and was killed by the Cloud Run request timeout, which terminates
+   * the container without running a catch block and so lost every subsequent
+   * write silently: an overall deadline, a page cap, and a repeated page token
+   * check.
+   *
+   * `exhaustive` reports whether the scan actually reached the end of the list.
+   * A false signal with `exhaustive: false` means "not found in the portion
+   * scanned", NOT "absent" -- only an exhaustive scan can prove absence. Given
+   * the size of the pool, expect `exhaustive` to be false whenever a signal is
+   * false, and treat such a NO as unverified.
    *
    * @param {string} advertiserId
-   * @param {number=} deadlineMs Overall budget for the whole pagination loop.
-   * @returns {Promise<Object[]>}
+   * @param {number=} deadlineMs Overall budget for the pagination loop.
+   * @returns {Promise<{hasCrmAudience: boolean, hasGaAudience: boolean,
+   *     scanned: number, pages: number, exhaustive: boolean}>}
    */
-  async getFirstPartyAndPartnerAudiences(advertiserId, deadlineMs = 60000) {
-    const MAX_PAGES = 200;
-    let audiences = [];
-    let nextPageToken = null;
+  async getAudienceSignals(advertiserId, deadlineMs = 60000) {
+    const MAX_PAGES = 50;
     if (!this.dv360.firstPartyAndPartnerAudiences) {
       throw new Error(
         'DV360 client exposes no firstPartyAndPartnerAudiences resource. The ' +
@@ -340,25 +348,58 @@ class DV360Client {
         'signals cannot be evaluated.'
       );
     }
+
+    // Valid DV360 v4 enums:
+    //   audienceType   CUSTOMER_MATCH_CONTACT_INFO, CUSTOMER_MATCH_DEVICE_ID,
+    //                  CUSTOMER_MATCH_USER_ID, ACTIVITY_BASED, FREQUENCY_CAP,
+    //                  TAG_BASED, YOUTUBE_USERS, THIRD_PARTY, COMMERCE,
+    //                  LINEAR, AGENCY
+    //   audienceSource DISPLAY_VIDEO_360, CAMPAIGN_MANAGER, AD_MANAGER,
+    //                  SEARCH_ADS_360, YOUTUBE, ADS_DATA_HUB
+    // Earlier revisions filtered on AUDIENCE_SOURCE_CUSTOMER_MATCH,
+    // AUDIENCE_SOURCE_THIRD_PARTY and AUDIENCE_SOURCE_GOOGLE_ANALYTICS, none of
+    // which exist in v4.
+    const isCrm = aud =>
+      aud.audienceType === 'CUSTOMER_MATCH_CONTACT_INFO' ||
+      aud.audienceType === 'CUSTOMER_MATCH_DEVICE_ID' ||
+      aud.audienceType === 'CUSTOMER_MATCH_USER_ID' ||
+      aud.audienceType === 'THIRD_PARTY';
+
+    // v4 exposes no Google Analytics audience source, so GA-linked audiences
+    // can only be identified by name. This is a heuristic, not an API
+    // guarantee.
+    const isGa = aud => {
+      if (aud.audienceSource === 'ADS_DATA_HUB') return true;
+      const name = (aud.displayName || '').toLowerCase();
+      return name.includes('google analytics') ||
+             name.includes('ga4') ||
+             name.includes('analytics');
+    };
+
+    let hasCrmAudience = false;
+    let hasGaAudience = false;
+    let scanned = 0;
+    let pages = 0;
+    let exhaustive = false;
+    let nextPageToken = null;
     const startedAt = Date.now();
     const seenTokens = new Set();
-    let pages = 0;
+
     try {
       do {
         const elapsed = Date.now() - startedAt;
         if (elapsed > deadlineMs) {
           console.warn(
-            `Audience fetch for advertiser ${advertiserId} hit its ` +
-            `${deadlineMs}ms budget after ${pages} page(s); continuing with ` +
-            `${audiences.length} audience(s). CRM/GA signals for this ` +
-            `advertiser are incomplete.`);
+            `Audience scan for advertiser ${advertiserId} hit its ` +
+            `${deadlineMs}ms budget after ${pages} page(s) and ${scanned} ` +
+            `audience(s). Any NO below is unverified.`);
           break;
         }
         if (pages >= MAX_PAGES) {
           console.warn(
-            `Audience fetch for advertiser ${advertiserId} reached the ` +
-            `${MAX_PAGES}-page cap with ${audiences.length} audience(s). ` +
-            `CRM/GA signals for this advertiser are incomplete.`);
+            `Audience scan for advertiser ${advertiserId} reached the ` +
+            `${MAX_PAGES}-page cap at ${scanned} audience(s). Any NO below ` +
+            `is unverified.`);
           break;
         }
 
@@ -367,52 +408,65 @@ class DV360Client {
             this.dv360.firstPartyAndPartnerAudiences.list({
               advertiserId: advertiserId,
               pageToken: nextPageToken,
-              // The documented maximum, and also the API default. This list is
-              // the partner-level audience pool rather than a per-advertiser
-              // one, so it is large: one advertiser under test returned over
-              // 3,500 audiences. At the previous value of 100 that was 36+
-              // sequential pages per advertiser, repeated for every advertiser
-              // in the partner, which is what exhausted the 1,500 req/min
-              // project quota. At 5,000 the same advertiser is one request.
+              // The documented maximum, and also the API default. The previous
+              // value of 100 meant 36+ sequential pages per advertiser against
+              // a pool this size, repeated for every advertiser in the
+              // partner, which is what exhausted the 1,500 req/min quota.
               pageSize: 5000
             })
           ),
           // The whole remaining budget, not a fixed slice. At pageSize 5000 a
           // page carries far more data and legitimately takes longer, and a
-          // per-page cap that trips returns zero audiences rather than a
-          // partial list -- worse than simply spending the budget here.
+          // per-page cap that trips yields nothing at all for that page.
           deadlineMs - elapsed,
           `firstPartyAndPartnerAudiences.list page ${pages + 1} for ` +
           `advertiser ${advertiserId}`
         );
         pages++;
 
-        if (response.data.firstPartyAndPartnerAudiences) {
-          audiences = audiences.concat(response.data.firstPartyAndPartnerAudiences);
+        const page = response.data.firstPartyAndPartnerAudiences || [];
+        scanned += page.length;
+        for (const aud of page) {
+          if (!hasCrmAudience && isCrm(aud)) hasCrmAudience = true;
+          if (!hasGaAudience && isGa(aud)) hasGaAudience = true;
+          if (hasCrmAudience && hasGaAudience) break;
         }
-        nextPageToken = response.data.nextPageToken;
 
-        if (nextPageToken && seenTokens.has(nextPageToken)) {
+        // Both answers are known; no later page can change them.
+        if (hasCrmAudience && hasGaAudience) {
+          break;
+        }
+
+        nextPageToken = response.data.nextPageToken;
+        if (!nextPageToken) {
+          exhaustive = true;
+          break;
+        }
+        if (seenTokens.has(nextPageToken)) {
           console.warn(
             `Audience pagination for advertiser ${advertiserId} returned a ` +
             `page token it had already issued; stopping at ${pages} page(s) ` +
-            `and ${audiences.length} audience(s) rather than looping.`);
+            `rather than looping.`);
           break;
         }
-        if (nextPageToken) {
-          seenTokens.add(nextPageToken);
-        }
+        seenTokens.add(nextPageToken);
       } while (nextPageToken);
+
       console.log(
-        `Audience fetch for advertiser ${advertiserId} read ${pages} page(s) ` +
-        `in ${Date.now() - startedAt}ms.`);
+        `Audience scan for advertiser ${advertiserId}: ${scanned} ` +
+        `audience(s) across ${pages} page(s) in ${Date.now() - startedAt}ms ` +
+        `(CRM=${hasCrmAudience ? 'YES' : 'NO'}, ` +
+        `GA=${hasGaAudience ? 'YES' : 'NO'}, ` +
+        `${exhaustive ? 'complete' : 'partial'}).`);
     } catch (e) {
       console.warn(
-        `Warning fetching audiences for advertiser ${advertiserId} after ` +
+        `Warning scanning audiences for advertiser ${advertiserId} after ` +
         `${pages} page(s) and ${Date.now() - startedAt}ms:`, e.message);
     }
-    return audiences;
+
+    return { hasCrmAudience, hasGaAudience, scanned, pages, exhaustive };
   }
+
 
 
   /**
