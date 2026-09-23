@@ -351,11 +351,11 @@ SELECT
     WHEN SAFE_DIVIDE(
       SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
-    ) < 0.85 THEN '🟡 UNDERPACING'
+    ) < 0.85 THEN '🔴 UNDERPACING'
     WHEN SAFE_DIVIDE(
       SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)),
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
-    ) > 1.15 THEN '🔴 OVERPACING'
+    ) > 1.15 THEN '🟡 OVERPACING'
     ELSE '🟢 ON_TRACK'
   END AS pacing_status,
 
