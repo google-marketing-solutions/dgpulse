@@ -367,10 +367,21 @@ class DV360Client {
             this.dv360.firstPartyAndPartnerAudiences.list({
               advertiserId: advertiserId,
               pageToken: nextPageToken,
-              pageSize: 100
+              // The documented maximum, and also the API default. This list is
+              // the partner-level audience pool rather than a per-advertiser
+              // one, so it is large: one advertiser under test returned over
+              // 3,500 audiences. At the previous value of 100 that was 36+
+              // sequential pages per advertiser, repeated for every advertiser
+              // in the partner, which is what exhausted the 1,500 req/min
+              // project quota. At 5,000 the same advertiser is one request.
+              pageSize: 5000
             })
           ),
-          Math.min(30000, deadlineMs - elapsed),
+          // The whole remaining budget, not a fixed slice. At pageSize 5000 a
+          // page carries far more data and legitimately takes longer, and a
+          // per-page cap that trips returns zero audiences rather than a
+          // partial list -- worse than simply spending the budget here.
+          deadlineMs - elapsed,
           `firstPartyAndPartnerAudiences.list page ${pages + 1} for ` +
           `advertiser ${advertiserId}`
         );
