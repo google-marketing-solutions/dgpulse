@@ -1,0 +1,361 @@
+const fs = require('fs');
+const path = require('path');
+const { google } = require('googleapis');
+const { BigQuery } = require('@google-cloud/bigquery');
+
+let PROJECT_ID = process.env.PROJECT_ID;
+// Accept the partner as a positional argument as well as an env var. Without
+// this, `node setup_scheduled_queries.js <partner>` silently ignored the
+// argument, DATASET_ID below fell back to the legacy unsuffixed dataset, and
+// the run operated on the wrong partner's data.
+let PARTNER_ID = process.env.PARTNER_ID || process.argv[2];
+// Deliberately left null when the partner is unknown: it is resolved in
+// setupScheduledQueries() once PARTNER_ID is. Defaulting to 'dv360_dgpulse'
+// here silently targets an abandoned dataset from an earlier install.
+let DATASET_ID = process.env.DATASET_ID || (PARTNER_ID ? `dv360_dgpulse_${PARTNER_ID}` : null);
+let SERVICE_ACCOUNT = process.env.SERVICE_ACCOUNT;
+const LOCATION = process.env.LOCATION || process.env.REGION || 'US';
+
+async function ensureTableSchema() {
+  console.log('Ensuring all BigQuery table columns exist...');
+  const bigquery = new BigQuery({ projectId: PROJECT_ID });
+  const alterQueries = [
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.line_items\` ADD COLUMN IF NOT EXISTS insertionOrderId STRING, ADD COLUMN IF NOT EXISTS conversion_tracking_enabled STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_performance\` ADD COLUMN IF NOT EXISTS Revenue_USD FLOAT64, ADD COLUMN IF NOT EXISTS Line_Item STRING, ADD COLUMN IF NOT EXISTS Line_Item_Id INT64;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertisers\` ADD COLUMN IF NOT EXISTS currencyCode STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.advertiser_settings\` ADD COLUMN IF NOT EXISTS currency_code STRING, ADD COLUMN IF NOT EXISTS dda_status STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.creatives\` ADD COLUMN IF NOT EXISTS approvalStatus STRING;`,
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.ad_group_ads\` ADD COLUMN IF NOT EXISTS lineItemId STRING, ADD COLUMN IF NOT EXISTS insertionOrderId STRING, ADD COLUMN IF NOT EXISTS campaignId STRING, ADD COLUMN IF NOT EXISTS approvalStatus STRING, ADD COLUMN IF NOT EXISTS video_id STRING, ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64, ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;`,
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.video_aspect_ratio\` (
+      video_id STRING,
+      aspect_ratio FLOAT64,
+      updated_at TIMESTAMP
+    );`,
+    // Sourced from a YOUTUBE-type report, not a STANDARD one, which is why
+    // there is no Partner, Media_Plan, Line_Item, conversion or CM360 revenue
+    // column here: none of those can accompany the audience segment dimension.
+    // See createOrGetAudienceReportQuery in dv360.js for the measurements.
+    //
+    // Audience_Segment holds a taxonomy path, e.g.
+    // "/Business Services/Business Financial Services". There is no segment ID
+    // in this report, so the segment name is the only key available.
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.dbm_audiences_performance\` (
+      Report_Day DATE,
+      Advertiser_Id INT64,
+      Advertiser_Currency STRING,
+      Insertion_Order_Id INT64,
+      Audience_Segment STRING,
+      Audience_Segment_Type STRING,
+      Revenue FLOAT64,
+      Revenue_USD FLOAT64,
+      Impressions INT64,
+      Clicks INT64
+    );`,
+    // Migration for deployments created before the switch to the YouTube
+    // report. CREATE TABLE IF NOT EXISTS will not alter an existing table, so
+    // without this the load job fails on unknown fields.
+    //
+    // The obsolete columns (Audience_List, Audience_List_Id, Media_Plan_Id,
+    // Total_Conversions and the rest) are deliberately left in place rather
+    // than dropped. They are nullable and simply go unwritten, whereas
+    // dropping columns is destructive and buys nothing. The table never held
+    // data in any case -- the query that was meant to fill it never returned a
+    // single row.
+    `ALTER TABLE \`${PROJECT_ID}.${DATASET_ID}.dbm_audiences_performance\`
+       ADD COLUMN IF NOT EXISTS Audience_Segment STRING,
+       ADD COLUMN IF NOT EXISTS Audience_Segment_Type STRING;`,
+    // Full-flight IO spend, sourced from the ALL_TIME DBM pacing report.
+    // Kept separate from dbm_performance because that table is capped at
+    // LAST_90_DAYS and therefore cannot support budget pacing on longer flights.
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.dbm_io_spend_daily\` (
+      Report_Day DATE,
+      Partner_Id INT64,
+      Advertiser_Id INT64,
+      Advertiser_Currency STRING,
+      Insertion_Order STRING,
+      Insertion_Order_Id INT64,
+      Revenue FLOAT64,
+      Revenue_USD FLOAT64,
+      Impressions INT64,
+      Clicks INT64
+    );`,
+    // One row per DV360 budget segment, so pacing can be evaluated against the
+    // segment currently in flight rather than the lifetime roll-up.
+    `CREATE TABLE IF NOT EXISTS \`${PROJECT_ID}.${DATASET_ID}.io_budget_segments\` (
+      insertionOrderId STRING,
+      advertiserId STRING,
+      campaignId STRING,
+      description STRING,
+      budget_amount FLOAT64,
+      start_date DATE,
+      end_date DATE
+    );`
+  ];
+  for (const q of alterQueries) {
+    try {
+      await bigquery.query({ query: q });
+    } catch (e) {
+      // Ignore if table doesn't exist yet or already altered
+    }
+  }
+}
+
+async function setupScheduledQueries() {
+  if (!PROJECT_ID) {
+    try {
+      const { execSync } = require('child_process');
+      PROJECT_ID = execSync('gcloud config get-value project', { encoding: 'utf8' }).trim();
+    } catch (e) {}
+  }
+  if (!PROJECT_ID) {
+    PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT;
+  }
+
+  // Only guess the partner from BigQuery when the caller named a dataset. With
+  // no dataset there is nothing safe to read from: the previous behaviour was
+  // to query the legacy unsuffixed `dv360_dgpulse`, which belongs to an earlier
+  // install and yields a stale partner that then poisons every downstream step.
+  if (!PARTNER_ID && PROJECT_ID && DATASET_ID) {
+    try {
+      const bqTemp = new BigQuery({ projectId: PROJECT_ID });
+      const [rows] = await bqTemp.query({
+        query: `SELECT partnerId FROM \`${PROJECT_ID}.${DATASET_ID}.advertisers\` WHERE partnerId IS NOT NULL AND partnerId != '' LIMIT 1`
+      });
+      if (rows && rows[0] && rows[0].partnerId) {
+        PARTNER_ID = rows[0].partnerId;
+        console.log(`Auto-detected PARTNER_ID from BigQuery: ${PARTNER_ID}`);
+      }
+    } catch (e) {}
+  }
+
+  if (!PARTNER_ID) {
+    try {
+      const { execSync } = require('child_process');
+      const envJson = execSync(
+        'gcloud functions describe dv360-dgpulse --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null',
+        { encoding: 'utf8' }
+      );
+      if (envJson) {
+        const parsed = JSON.parse(envJson);
+        const envVars = (parsed.serviceConfig && parsed.serviceConfig.environmentVariables) || parsed;
+        if (envVars.PARTNER_ID) {
+          PARTNER_ID = envVars.PARTNER_ID;
+          console.log(`Auto-detected PARTNER_ID from Cloud Function env: ${PARTNER_ID}`);
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!PROJECT_ID || !PARTNER_ID) {
+    throw new Error('PROJECT_ID and PARTNER_ID are required. Pass the partner as an argument (node setup_scheduled_queries.js 12345) or set PROJECT_ID=my-project PARTNER_ID=12345.');
+  }
+
+  // Resolve now that the partner is known, so the dataset always matches it.
+  if (!DATASET_ID) DATASET_ID = `dv360_dgpulse_${PARTNER_ID}`;
+  process.env.PARTNER_ID = PARTNER_ID;
+  process.env.DATASET_ID = DATASET_ID;
+
+  console.log(`Setting up scheduled queries for Project: ${PROJECT_ID}, Partner: ${PARTNER_ID}, Dataset: ${DATASET_ID}...`);
+  await ensureTableSchema();
+
+  const auth = new google.auth.GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+  });
+  const client = await auth.getClient();
+  const datatransfer = google.bigquerydatatransfer({ version: 'v1', auth: client });
+
+  const sqlFiles = [
+    'materialize_campaigns.sql',
+    'materialize_line_items.sql',
+    'materialize_insertion_orders.sql',
+    'materialize_assets.sql',
+    'materialize_audiences.sql',
+    'materialize_creative_variety.sql'
+  ];
+
+  // List existing transfer configs for the project across locations
+  const locationsToSearch = [LOCATION, 'US', 'us-central1', 'EU', 'europe-west1'];
+  const uniqueLocations = Array.from(new Set(locationsToSearch));
+
+  let existingConfigs = [];
+  for (const loc of uniqueLocations) {
+    try {
+      const parent = `projects/${PROJECT_ID}/locations/${loc}`;
+      const res = await datatransfer.projects.locations.transferConfigs.list({ parent });
+      if (res.data.transferConfigs) {
+        existingConfigs.push(...res.data.transferConfigs);
+      }
+    } catch (e) {
+      // Location might not be valid or have configs, ignore
+    }
+  }
+
+  try {
+    const res = await datatransfer.projects.transferConfigs.list({ parent: `projects/${PROJECT_ID}` });
+    if (res.data.transferConfigs) {
+      existingConfigs.push(...res.data.transferConfigs);
+    }
+  } catch (e) {}
+
+  for (const sqlFile of sqlFiles) {
+    const viewName = path.basename(sqlFile, '.sql');
+    const displayName = `Materialize DV360 ${viewName} Daily [${PARTNER_ID}]`;
+    const legacyDisplayName = `Materialize DV360 ${viewName} Daily`;
+    const rawSql = fs.readFileSync(sqlFile, 'utf8');
+    const processedSql = rawSql
+      .replace(/__PROJECT_ID__/g, PROJECT_ID)
+      .replace(/__DATASET_ID__/g, DATASET_ID)
+      .replace(/__PARTNER_ID__/g, PARTNER_ID);
+
+    const matchingConfig = existingConfigs.find(c =>
+      c.displayName === displayName ||
+      (c.destinationDatasetId === DATASET_ID && (c.displayName === displayName || c.displayName === legacyDisplayName))
+    );
+
+    // destinationDatasetId is deliberately NOT set.
+    //
+    // Every query here is DDL that names its own fully-qualified target, so a
+    // destination dataset is redundant. Worse, setting it makes BigQuery
+    // enforce a consistency check: it extracts "the dataset specified in the
+    // query" and compares it against the destination. For a lone
+    // CREATE OR REPLACE TABLE the extraction succeeds and the check passes,
+    // which is why five of these scheduled fine. For a multi-statement script
+    // the extraction yields '' and the run dies with:
+    //
+    //   Dataset specified in the query ('') is not consistent with
+    //   Destination dataset 'dv360_dgpulse_<partner>'.
+    //
+    // That silently killed the daily runs of materialize_insertion_orders
+    // (table + final_io_pacing_current view)
+    // on every install. The immediate materialization pass below always
+    // succeeded, so the tables looked populated at install time and then
+    // quietly went stale -- including the IO pacing view behind the main
+    // dashboard page. Do not reinstate this field.
+    const transferConfigBody = {
+      displayName: displayName,
+      dataSourceId: 'scheduled_query',
+      schedule: 'every day 08:00',
+      params: {
+        query: processedSql
+      }
+    };
+
+    if (matchingConfig) {
+      console.log(`Refreshing existing Scheduled Query: ${displayName} (${matchingConfig.name})...`);
+      try {
+        await datatransfer.projects.locations.transferConfigs.delete({ name: matchingConfig.name });
+      } catch (delErr) {
+        console.warn(`Warning removing old config ${matchingConfig.name}:`, delErr.message);
+      }
+    }
+
+    console.log(`Creating fresh Scheduled Query: ${displayName}...`);
+    try {
+      let targetRegion = 'us-central1';
+      try {
+        const [meta] = await bigquery.dataset(DATASET_ID).getMetadata();
+        if (meta && meta.location) targetRegion = meta.location.toLowerCase();
+      } catch (e) {}
+
+      const parent = `projects/${PROJECT_ID}/locations/${targetRegion}`;
+      const createParams = {
+        parent: parent,
+        requestBody: transferConfigBody
+      };
+      if (SERVICE_ACCOUNT) {
+        createParams.serviceAccountName = SERVICE_ACCOUNT;
+      }
+      await datatransfer.projects.locations.transferConfigs.create(createParams);
+      console.log(`Successfully created Scheduled Query: ${displayName}`);
+    } catch (createErr) {
+      console.error(`Error creating Scheduled Query ${displayName}:`, createErr.message);
+    }
+  }
+
+  console.log('All Scheduled Queries refreshed in BigQuery Data Transfer Service.');
+
+  // Sync DBM performance and audience reports into BigQuery before materializing final tables
+  try {
+    const { syncDbmPerformanceReport, syncDbmAudienceReport, syncDbmIoPacingReport } = require('./create_report');
+    console.log(`Syncing DBM performance, audience and IO pacing reports for Partner ${PARTNER_ID}...`);
+    const syncJobs = [
+      { name: 'performance', run: () => syncDbmPerformanceReport(PARTNER_ID, DATASET_ID) },
+      { name: 'audience', run: () => syncDbmAudienceReport(PARTNER_ID, DATASET_ID) },
+      { name: 'IO pacing', run: () => syncDbmIoPacingReport(PARTNER_ID, DATASET_ID) }
+    ];
+    const results = await Promise.allSettled(syncJobs.map(job => job.run()));
+
+    // These results used to be discarded. A rejected sync then left its source
+    // table empty and the downstream materialization happily produced zeroed
+    // metrics with no indication anything had gone wrong.
+    const failed = [];
+    results.forEach((result, i) => {
+      const name = syncJobs[i].name;
+      if (result.status === 'fulfilled') {
+        const value = result.value || {};
+        if (value.success === false) {
+          console.warn(`DBM ${name} report did not complete: ${value.message}`);
+        } else {
+          console.log(`DBM ${name} report synced (${value.count} rows).`);
+        }
+        return;
+      }
+      const err = result.reason || {};
+      const apiMessage =
+        (err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
+        err.message ||
+        String(err);
+      console.error(`DBM ${name} report FAILED: ${apiMessage}`);
+      failed.push(name);
+    });
+
+    if (failed.length > 0) {
+      console.error(
+        `WARNING: ${failed.length} DBM report(s) failed to sync (${failed.join(', ')}). ` +
+        'Tables derived from them will be stale or empty.'
+      );
+    }
+  } catch (dbmErr) {
+    console.warn('Warning syncing DBM reports:', dbmErr.message);
+  }
+
+  // Ingest real Demand Gen Ad Group Ads before materializing creative variety
+  try {
+    const { sync } = require('./sync_ad_group_ads');
+    await sync();
+  } catch (syncErr) {
+    console.warn('Warning syncing ad group ads:', syncErr.message);
+  }
+
+  // Run immediate materialization queries to update BigQuery tables right now
+  console.log('Running immediate materialization queries across all tables...');
+  const bigquery = new BigQuery({ projectId: PROJECT_ID });
+  for (const sqlFile of sqlFiles) {
+    console.log(`Materializing ${sqlFile}...`);
+    const rawSql = fs.readFileSync(sqlFile, 'utf8');
+    const processedSql = rawSql
+      .replace(/__PROJECT_ID__/g, PROJECT_ID)
+      .replace(/__DATASET_ID__/g, DATASET_ID)
+      .replace(/__PARTNER_ID__/g, PARTNER_ID);
+    try {
+      await bigquery.query({ query: processedSql });
+      console.log(`✓ Successfully materialized ${sqlFile}`);
+    } catch (queryErr) {
+      console.error(`✗ Error materializing ${sqlFile}:`, queryErr.message);
+    }
+  }
+}
+
+if (require.main === module) {
+  setupScheduledQueries()
+    .then(() => {
+      console.log('All Scheduled Queries setup and materialization completed successfully.');
+      process.exit(0);
+    })
+    .catch(err => {
+      console.error('Failed to setup scheduled queries:', err);
+      process.exit(1);
+    });
+}
+
+module.exports = { setupScheduledQueries };
