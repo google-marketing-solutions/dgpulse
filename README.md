@@ -1,5 +1,11 @@
 # DemandGen-Pulse
 
+> [!NOTE]
+> **This guide is for Google Ads.** Running Demand Gen through
+> **Display & Video 360 (DV360)**? Use the
+> [DGPulse for DV360 guide](dv360/README.md) instead. It has its own
+> installer, prerequisites and Data Studio template.
+
 In this README, you'll find:
 
 - [Problem Statement](#problem-statement)
@@ -21,7 +27,7 @@ campaigns and assets' performance.
 ## Solution
 
 DG-Pulse is a best practice dashboard that provides a centralized monitoring of
-DemandGen campaigns' performance and the assets uploaded. Built in Looker
+DemandGen campaigns' performance and the assets uploaded. Built in Data
 Studio, It helps clearly identify if the campaigns and assets comply with the
 best practice guidelines and gives actionable insights to enhance asset groups'
 and feed quality.
@@ -31,14 +37,14 @@ advertisers can refresh poorly performing assets.
 
 ## Deliverable (Implementation)
 
-A Looker Studio dashboard based on your Google Ads and You Tube data. After
+A Data Studio dashboard based on your Google Ads and You Tube data. After
 joining [this group](https://groups.google.com/g/dgpulse/),
 [click here](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC)
 to see it in action.
 
 [![DG-Pulse](https://services.google.com/fh/files/misc/dgpulse-animated-preview-2.gif)](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC)
 
-- LookerStudio dashboard based on your Google Ads and You Tube data.
+- Data Studio dashboard based on your Google Ads and You Tube data.
 
 ## Prerequisites
 
@@ -80,7 +86,7 @@ cd dgpulse
 ./install-or-upgrade.sh
 ```
 
-Notice that this will **not** change the Looker Studio template. Only the code.
+Notice that this will **not** change the Data Studio template. Only the code.
 In order to get the latest version of the template, go to this
 [link](https://lookerstudio.google.com/c/u/0/reporting/7ae6081d-c69a-4f29-ad02-f9c1aa16a052/page/i5YsC),
 make a copy of it and point the data sources to your own GCP's BigQuery.
@@ -206,7 +212,7 @@ will not work:
 ### How Do I save and share the Finished Dashboard with teammates?
 
 After clicking the dashboard URL for the first time, you will see the
-LookerStudio dashboard. In order to save and share it you need to follow these
+Data Studio dashboard. In order to save and share it you need to follow these
 steps:
 
 - On the upper right side of the screen, click "Save and Share"
@@ -246,7 +252,7 @@ Query.
 
 ### How do I edit the dashboard?
 
-Please find this Looker Studio
+Please find this Data Studio
 [tutorial](https://support.google.com/looker-studio/answer/9171315?hl=en).
 
 ### What Oauth credential user type should I choose? Internal or external?

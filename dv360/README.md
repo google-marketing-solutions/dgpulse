@@ -1,276 +1,306 @@
-# DV360 Pulse
+# DemandGen-Pulse for DV360
 
-A serverless monitoring and performance analytics pipeline for **Display & Video 360 (DV360)**. It automates daily DBM reporting queries, extracts rich advertiser and creative metadata via the DV360 API v4, and materializes analytics tables into BigQuery for direct visualization in Looker Studio.
+> [!NOTE]
+> **This guide is for Display & Video 360 (DV360).** Running Demand Gen through
+> **Google Ads**? Use the [main DGPulse guide](../README.md) instead.
 
----
+In this README, you'll find:
 
-## Architecture Overview
+- [Problem Statement](#problem-statement)
+- [Solution](#solution)
+- [Deliverable (Implementation)](#deliverable-implementation)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Architecture](#architecture)
+- [Troubleshooting / Q&A](#troubleshooting)
+- [Disclaimer](#disclaimer)
 
-```
-                                  +------------------------------------+
-                                  |        Cloud Scheduler             |
-                                  | (Daily 6:00 AM Metadata Sync)      |
-                                  +-----------------+------------------+
-                                                    |
-                                                    v
-                                  +------------------------------------+
-                                  |   Cloud Function (fetchAdvertisers)|
-                                  +-----------------+------------------+
-                                                    |
-                                                    v
-                                  +------------------------------------+
-                                  |   Pub/Sub (dv360-advertiser-topic) |
-                                  +-----------------+------------------+
-                                                    |
-                                                    v
-                                  +------------------------------------+
-                                  |Cloud Function (processAdvertiser)  |
-                                  +-----------------+------------------+
-                                                    |
-                                                    v
-                                  +------------------------------------+
-                                  |      BigQuery Base Tables          |
-                                  |  - advertisers & settings          |
-                                  |  - campaigns & line_items          |
-                                  |  - insertion_orders & creatives    |
-                                  |  - dbm_performance                |
-                                  +-----------------+------------------+
-                                                    |
-                                                    v
-                                  +------------------------------------+
-                                  |    BigQuery Materialized Views     |
-                                  |  - final_campaign_performance      |
-                                  |  - final_line_items_performance    |
-                                  |  - final_insertion_orders_perf     |
-                                  |  - final_assets_performance        |
-                                  +-----------------+------------------+
-                                                    |
-                                                    v
-                                  +------------------------------------+
-                                  |   Looker Studio Template           |
-                                  |  (Connected via Linking API)       |
-                                  +-----------------+------------------+
-```
+## Problem Statement
 
----
+Reporting on Demand Gen campaigns bought through Display & Video 360 is
+cumbersome. Advertisers and agencies need a simple way to see an overview of
+their DV360 partners and advertisers, check that campaigns follow Demand Gen
+best practices, and get a clear picture of budget pacing and asset
+performance.
 
-## Requirements & Prerequisites
+## Solution
 
-Before deploying, ensure you have:
+DGPulse for DV360 is a best practice dashboard that gives you one place to
+monitor Demand Gen campaigns running in DV360. Built in Data Studio, it
+shows whether campaigns, line items and assets follow Demand Gen best
+practices, and gives actionable insights across:
 
-1. **Google Cloud Project**: A GCP project with billing enabled.
-2. **DV360 Partner Access**: Your DV360 Partner ID.
-3. **OAuth 2.0 Credentials & Consent Screen Setup**:
-   * In the Google Cloud Console, navigate to **APIs & Services** ➔ **OAuth consent screen**:
-     * Select **Internal** (if deploying within your Google Workspace organization) or **External** (if using standard Gmail accounts).
-     * Enter an App name (e.g., `DGPulse DV360`) and your developer contact email.
-     * Click **Add or Remove Scopes** and add:
-       * `https://www.googleapis.com/auth/display-video`
-       * `https://www.googleapis.com/auth/doubleclickbidmanager`
-     * *(If using External user type)*: On the **Test users** screen, add your email address so you are permitted to authorize during testing.
+- **Foundation:** first-party data signals (CRM / Customer Match and Google
+  Analytics audiences) and Google Tag Gateway readiness.
+- **Activation:** Floodlight optimization and conversion tracking on every
+  Demand Gen line item.
+- **Budget pacing:** insertion order pacing against the active budget segment,
+  with alerts for underpacing, overpacing and exhausted budgets.
+- **Creative variety:** video and image aspect ratio coverage (9:16, 1:1, 16:9,
+  4:5), headlines, descriptions and product feeds.
+- **Asset and audience performance:** delivery and efficiency per asset and per
+  audience segment, with deep links back into DV360 and YouTube.
 
-   > ⚠️ **This choice decides whether your daily sync keeps running unattended.**
-   >
-   > Google expires refresh tokens after **7 days** for any app whose publishing
-   > status is **Testing**. When that happens the deployed Cloud Function starts
-   > failing every night with `invalid_grant`, and no data reaches BigQuery until
-   > someone manually generates and redeploys a new token.
-   >
-   > | Setup | Refresh token lifetime |
-   > |---|---|
-   > | **Internal** user type (Workspace org) | Does not expire — **recommended** |
-   > | **External**, publishing status *In production* | Does not expire |
-   > | **External**, publishing status *Testing* | **Expires after 7 days** |
-   >
-   > **Choosing Internal:** "Internal" means internal to *the organization that
-   > owns the GCP project*, not to any Workspace organization you happen to
-   > belong to. The account you authorize with in step 1 must be a member of
-   > that same organization, and it must have DV360 access to your partner. If
-   > it is not a member, authorization fails immediately with
-   > `This client is restricted to users within its organization.` Check the
-   > owning organization before choosing:
-   >
-   > ```bash
-   > gcloud projects get-ancestors <YOUR_PROJECT_ID>
-   > ```
-   >
-   > **Choosing Publish instead:** if Internal does not apply, go to the OAuth
-   > consent screen and click **PUBLISH APP** to move out of Testing before you
-   > generate the refresh token in step 1. If the button is greyed out, the
-   > reason is shown beneath it — usually an incomplete **Branding** page,
-   > which is a form to fill in rather than a restriction.
-   >
-   > Publishing stops the 7-day expiry even if the app is never verified.
-   > Because this tool requests sensitive scopes, an unverified published app
-   > still shows an "Google hasn't verified this app" interstitial at
-   > authorization (click **Advanced** to continue) and is capped at 100 users.
-   > Neither affects the daily sync once a token exists.
-   >
-   > Leaving the app in *Testing* is fine only for short-lived evaluation, where
-   > a sync that stops after a week is acceptable.
+## Deliverable (Implementation)
 
-   * Navigate to **APIs & Services** ➔ **Credentials**:
-     * Click **+ CREATE CREDENTIALS** ➔ **OAuth client ID**.
-     * Select **Web application** as the application type.
-     * Under **Authorized redirect URIs**, click **+ ADD URI** and enter: `http://localhost:3000`
-     * Click **CREATE**, then download the client secret JSON file.
-     * Rename the downloaded file to `client_secret.json` and place it inside the `dv360/` directory.
+A Data Studio dashboard based on your DV360 and YouTube data. After joining
+[this group](https://groups.google.com/g/dgpulse-dv360-template-readers),
+[click here](https://lookerstudio.google.com/reporting/8052b105-d00c-4cb8-bc32-864fe4fe827f)
+to see it in action.
 
----
+[![DGPulse for DV360](images/dgpulse-dv360-preview.gif)](https://lookerstudio.google.com/reporting/8052b105-d00c-4cb8-bc32-864fe4fe827f)
 
-## Step-by-Step Deployment (From Scratch)
+- Data Studio dashboard based on your DV360 and YouTube data.
 
-### 1. Authenticate & Obtain Refresh Token
-On your local machine (where port 3000 can receive the redirect):
-```bash
-npm install
-node auth.js
-```
-* Click the URL printed in the terminal, log in with your Google account that has DV360 access, and authorize.
-* Copy the printed `refresh_token`.
+## Prerequisites
 
-### 2. Run the Automated Installer
-In Google Cloud Shell:
-```bash
-export PARTNER_ID="<YOUR_DV360_PARTNER_ID>"
-export REFRESH_TOKEN="<PASTE_YOUR_REFRESH_TOKEN>"
+1. Join [this group](https://groups.google.com/g/dgpulse-dv360-template-readers)
+   to get access to the Data Studio template.
 
-chmod +x install.sh
-./install.sh
-```
+1. Have **DV360 access** to the partner you want to report on. Read-only user
+   access is enough.
 
-The script automatically:
-* Enables all necessary GCP APIs (`displayvideo`, `doubleclickbidmanager`, `run`, `cloudfunctions`, `bigquerydatatransfer`, `cloudscheduler`).
-* Creates the Cloud Storage bucket and uploads `client_secret.json`.
-* Creates the recurring partner-level DBM query via `create_report.js`.
-* Sets up an isolated BigQuery dataset (`dv360_dgpulse_${PARTNER_ID}`) and all base schema tables.
-* Deploys namespaced extraction and worker Cloud Functions (`dv360-dgpulse-${PARTNER_ID}`, `dv360-dgpulse-process-advertiser-${PARTNER_ID}`).
-* Configures Cloud Scheduler for daily execution at 6:00 AM (`dv360-dgpulse-daily-sync-${PARTNER_ID}`).
-* Deploys daily BigQuery scheduled queries for all 8 materialized analytics views scoped to the partner.
-* **Prints the One-Click Looker Studio Linking API URL** connected directly to the partner's dataset.
+   > No developer token is needed. DV360 uses standard Google OAuth, which you
+   > set up in step 4.
+
+1. Create a new Google Cloud Project on the
+   [Google Cloud Console](https://console.cloud.google.com/), **make sure it is
+   connected to a billing account**, and that you have **Owner** access.
+
+1. Set up OAuth credentials in that project:
+
+   a. Go to **APIs & Services > OAuth consent screen**. Choose **Internal** if
+   your account belongs to the same Google Workspace organization as the
+   project, otherwise choose **External**. Add these two scopes:
+
+   - `https://www.googleapis.com/auth/display-video`
+   - `https://www.googleapis.com/auth/doubleclickbidmanager`
+
+   b. **If you chose External, click PUBLISH APP.** Apps left in *Testing*
+   status have their refresh tokens expire after 7 days, and the daily sync
+   stops working. See [Why does my daily sync stop after 7 days?](#why-does-my-daily-sync-stop-after-7-days)
+
+   c. Go to **APIs & Services > Credentials > + CREATE CREDENTIALS > OAuth
+   client ID**. Choose **Web application**, add `http://localhost:3000` under
+   **Authorized redirect URIs**, and click **CREATE**.
+
+   d. Download the JSON file and rename it to `client_secret.json`. You will
+   upload it during installation.
+
+## Installation
+
+To do your first installation, click on the blue button to open the code in
+Google Cloud Shell, then follow the steps below:
+
+[![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://console.cloud.google.com/?cloudshell=true&cloudshell_git_repo=https://github.com/google-marketing-solutions/dgpulse&cloudshell_workspace=dv360)
+
+1. **Upload `client_secret.json`.** In Cloud Shell, click the **⋮ (More)** menu
+   > **Upload**, select your `client_secret.json`, then move it into the
+   `dv360` folder:
+
+   ```
+   cd ~/cloudshell_open/dgpulse/dv360 && mv ~/client_secret.json .
+   ```
+
+1. **Generate your refresh token.** Run:
+
+   ```
+   npm install && node auth.js
+   ```
+
+   Open the printed link, sign in with the account that has DV360 access, and
+   approve. Your browser will then try to open a `localhost` page that fails
+   to load. **This is expected.** Copy the full URL from the address bar,
+   paste it back into Cloud Shell and press Enter. Copy the `refresh_token`
+   that is printed.
+
+1. **Run the installer.** Replace the two values and run:
+
+   ```
+   export PARTNER_ID="<YOUR_DV360_PARTNER_ID>"
+   export REFRESH_TOKEN="<PASTE_YOUR_REFRESH_TOKEN>"
+   chmod +x install.sh && ./install.sh
+   ```
+
+   Installation takes several minutes: the first data sync runs as part of it.
+
+1. **Open your dashboard.** At the end, the installer prints a
+   **Data Studio link**. Open it in your browser. It creates a copy of the
+   template already connected to your data.
+
+1. **Save it.** In the upper right corner of the screen, click
+   **Save and Share**. Until you do, the report is only a preview and is lost
+   when you close the tab.
 
 > [!TIP]
-> **Multi-Partner Support**: Multiple DV360 partners can be deployed in the same GCP project without collisions. Every partner has isolated datasets, Cloud Functions, Pub/Sub topics, and scheduled queries keyed by `${PARTNER_ID}`.
+> **Multiple partners?** Run the installer once per partner, in the same
+> project. Each partner gets its own dataset, functions and schedule, so they
+> never collide.
 
----
+### Upgrade
 
-## Looker Studio Linking API & Data Source Aliases
+If you have already installed it before, in order to upgrade to the latest
+version of the code, execute (copy to the Google Cloud Shell and press enter)
+the following commands:
 
-The [Looker Studio dashboard template](https://lookerstudio.google.com/reporting/8052b105-d00c-4cb8-bc32-864fe4fe827f) connects via the Looker Studio Linking API. 
+```
+cd ~/cloudshell_open/dgpulse && git pull
+```
 
-Each data source has a pre-configured alias that automatically binds to your project's BigQuery tables:
+```
+cd dv360 && ./install.sh
+```
 
-| Looker Data Source Name | Alias Name | Target BigQuery Table |
+The installer reuses your existing refresh token, so you only need to confirm
+the Partner ID.
+
+Notice that this will **not** change the Data Studio template. Only the code.
+In order to get the latest version of the template, open the link the
+installer prints at the end and click **Save and Share** again.
+
+## Architecture
+
+### What Google Cloud components are deployed automatically
+
+```
+  Cloud Scheduler (daily, 6:00 AM)
+            │
+            ▼
+  Cloud Function: dv360-dgpulse-<PARTNER_ID>
+  (lists advertisers, pulls DBM reports)
+            │
+            ▼
+  Pub/Sub: dv360-dgpulse-topic-<PARTNER_ID>  (one message per advertiser)
+            │
+            ▼
+  Cloud Function: dv360-dgpulse-process-advertiser-<PARTNER_ID>
+  (campaigns, IOs, line items, ads, audiences, Floodlight settings)
+            │
+            ▼
+  BigQuery dataset: dv360_dgpulse_<PARTNER_ID>
+  (raw tables, rebuilt daily into 6 dashboard tables by scheduled queries)
+            │
+            ▼
+  Data Studio dashboard
+```
+
+The installer also creates a Cloud Storage bucket for the OAuth client file and
+a YouTube Data API key used to read video aspect ratios.
+
+### What happens daily post installation
+
+1. At 6:00 AM, Cloud Scheduler triggers the sync for your partner.
+2. Advertiser metadata is pulled from the DV360 API (v4) and performance data
+   from the Bid Manager API, and both are written to BigQuery.
+3. BigQuery scheduled queries rebuild the 6 tables the dashboard reads:
+
+| Data Studio data source | Linking API alias | BigQuery table |
 | :--- | :--- | :--- |
-| **DV360 Campaign Performance** | `campaign_performance` | `final_campaign_performance` |
-| **DV360 Line Items Performance** | `line_items_performance` | `final_line_items_performance` |
-| **DV360 IO Pacing (Current)** | `io_pacing_current` | `final_io_pacing_current` |
-| **DV360 Asset Performance** | `assets_performance` | `final_assets_performance` |
-| **DV360 Creative Variety** | `creative_variety` | `final_creative_variety` |
-| **DV360 Audiences Performance** | `audiences_performance` | `final_audiences_performance` |
+| DV360 Campaign Performance | `campaign_performance` | `final_campaign_performance` |
+| DV360 Line Items Performance | `line_items_performance` | `final_line_items_performance` |
+| DV360 IO Pacing (Current) | `io_pacing_current` | `final_io_pacing_current` |
+| DV360 Asset Performance | `assets_performance` | `final_assets_performance` |
+| DV360 Creative Variety | `creative_variety` | `final_creative_variety` |
+| DV360 Audiences Performance | `audiences_performance` | `final_audiences_performance` |
 
+## Troubleshooting
 
-> [!IMPORTANT]
-> The pacing pages read from the `final_io_pacing_current` **view**, not from
-> `final_insertion_orders_performance`. The base table carries one row per
-> insertion order *per date*, so pacing figures — which are IO-level constants —
-> would be multiplied by the number of date rows in view, and the multiplier
-> would shift whenever the date filter changed. The view selects the newest row
-> per IO, which makes scorecards safe to sum.
->
-> The alias names above are Linking API identifiers, **not** data source display
-> names. They are a distinct property, and a copied report does not inherit
-> them. After copying this template, confirm the aliases still match by opening
-> the generated link against a dataset the template is *not* already bound to:
-> if the data does not change, the `ds.*` parameters were silently ignored.
+### How do I trigger a sync right now?
 
-
----
-
-## Manual Sync & Maintenance Commands
-
-### Trigger Sync Immediately
-```bash
+```
 gcloud scheduler jobs run "dv360-dgpulse-daily-sync-${PARTNER_ID}" --location=us-central1
 ```
 
-### Re-run Materialization Queries Manually
-```bash
+### How do I rebuild the dashboard tables manually?
+
+```
 DATASET_ID="${DATASET_ID:-dv360_dgpulse_${PARTNER_ID}}"
 for sql in materialize_campaigns.sql materialize_line_items.sql materialize_insertion_orders.sql materialize_assets.sql materialize_audiences.sql materialize_creative_variety.sql; do
   bq query --use_legacy_sql=false "$(cat $sql | sed "s/__PROJECT_ID__/$(gcloud config get-value project)/g" | sed "s/__DATASET_ID__/${DATASET_ID}/g" | sed "s/__PARTNER_ID__/${PARTNER_ID}/g")"
 done
 ```
 
----
+### Why does my daily sync stop after 7 days?
 
-## Troubleshooting
+Google expires refresh tokens after **7 days** for any OAuth app whose
+publishing status is **Testing**. The sync then fails every night with
+`invalid_grant` and no new data reaches BigQuery.
 
-### `invalid_grant` on every report
+| OAuth consent screen setup | Refresh token lifetime |
+|---|---|
+| **Internal** user type | Does not expire (recommended) |
+| **External**, status *In production* | Does not expire |
+| **External**, status *Testing* | **Expires after 7 days** |
 
-This has two unrelated causes. Check which one applies before regenerating anything — a regenerated token will not fix the second.
+To fix it, either switch to **Internal** or click **PUBLISH APP**, then
+generate a new token and follow the steps in the next question.
 
-The scripts print their credential source on startup:
+- **Internal** means internal to *the organization that owns the Google Cloud
+  project*. The account you authorize with must belong to that organization,
+  otherwise authorization fails with
+  `This client is restricted to users within its organization.` Check the
+  owning organization with `gcloud projects get-ancestors <YOUR_PROJECT_ID>`.
+- **Publishing** stops the 7-day expiry even if the app is never verified. An
+  unverified app shows a "Google hasn't verified this app" screen when you
+  authorize (click **Advanced** to continue) and is capped at 100 users.
+  Neither affects the daily sync.
+
+### I get `invalid_grant` on every run. How do I replace the token?
+
+Generate a new token with `node auth.js`, then update both functions:
 
 ```
-Using refresh token from: Cloud Function dv360-dgpulse-<PARTNER_ID>.
+gcloud run services update "dv360-dgpulse-${PARTNER_ID}" \
+  --region=us-central1 \
+  --update-env-vars="REFRESH_TOKEN=<new token>"
+
+gcloud run services update "dv360-dgpulse-process-advertiser-${PARTNER_ID}" \
+  --region=us-central1 \
+  --update-env-vars="REFRESH_TOKEN=<new token>"
 ```
 
-**Cause 1 — the token expired.** Expected if your OAuth app is still in *Testing*
-publishing status (see Prerequisites). Generate a new one and write it to the
-deployed function:
+> [!WARNING]
+> Use `--update-env-vars`, **never** `--set-env-vars`. The latter replaces the
+> whole environment and removes `BUCKET_NAME`, `PARTNER_ID` and `DATASET_ID`,
+> which breaks the function in a way that looks unrelated to the token.
 
-```bash
-node auth.js   # copy the printed refresh_token
-
-gcloud functions deploy "dv360-dgpulse-${PARTNER_ID}" \
-  --region=us-central1 --gen2 \
-  --update-env-vars "REFRESH_TOKEN=<new token>"
-```
-
-> ⚠️ Use `--update-env-vars`, **never** `--set-env-vars`. The latter replaces the
-> entire environment, discarding `BUCKET_NAME`, `PARTNER_ID` and `DATASET_ID`,
-> which breaks the function in a way that looks unrelated to the token change.
-
-If you also run the scripts locally, put the same value in `dv360/.env`:
-
-```bash
-echo "REFRESH_TOKEN=<new token>" >> .env
-```
-
-**Cause 2 — the wrong credential was picked up.** Credentials are resolved in
-priority order: `REFRESH_TOKEN` in the environment, then `dv360/.env`, then the
-deployed Cloud Function `dv360-dgpulse-<PARTNER_ID>`. If a stale value is sitting
-in an earlier source it silently wins over the correct one. The startup line
-above tells you which source was used; clear whichever one is stale.
-
-Always pass the partner ID explicitly so the correct function is consulted:
-
-```bash
-node create_report.js "${PARTNER_ID}" setup   # verify report definitions only
-node create_report.js "${PARTNER_ID}" sync    # full data sync
-```
+If a new token doesn't help, the scripts may be picking up an old one. They
+look for credentials in this order: the `REFRESH_TOKEN` environment variable,
+then `dv360/.env`, then the deployed Cloud Function. The first line of the logs
+says which one was used (`Using refresh token from: ...`). Clear whichever one
+is stale.
 
 ### Report queries are recreated on every run
 
 If the logs show `Creating new DBM ... query` on every run instead of
-`Found existing DBM ... query ID`, the reuse check is failing and a new query is
-being registered each time. These accumulate against the 100-query lookup window
-and will eventually stop the other reports from finding themselves too. The
-recreation reason is logged — check whether the deployed query's dimensions still
-match the code.
+`Found existing DBM ... query ID`, a new query is being registered each time.
+These build up against the 100-query lookup limit and will eventually stop the
+other reports from being found. The logs explain why the query was recreated:
+check whether the deployed query's dimensions still match the code.
 
----
+### My dashboard shows data for the wrong project after copying the template
 
-## Demo Dataset & Walkthroughs
+The Linking API aliases in the table above are separate from the data source
+display names, and a copied report does not keep them. After copying the
+template, open the installer's link against a dataset the template is *not*
+already connected to. If the data doesn't change, the aliases were lost.
 
-To generate a synthetic demo dataset showcasing all dashboard scenarios (all 9 pacing alerts and creative varieties) without requiring active live campaigns:
+______________________________________________________________________
 
-```bash
-# Populate synthetic demo tables in dataset dv360_dgpulse_demo:
-npm run seed:demo
-# Or specify a custom dataset/project:
-node seed_demo_data.js <my_demo_dataset> <my_project_id>
-```
-The script will output a pre-configured One-Click Looker Studio linking URL that connects directly to the demo dataset.
+## Disclaimer
 
+\*\* This is not an officially supported Google product.\*\*
+
+Copyright 2026 Google LLC. This solution, including any related sample code or
+data, is made available on an “as is,” “as available,” and “with all faults”
+basis, solely for illustrative purposes, and without warranty or representation
+of any kind. This solution is experimental, unsupported and provided solely for
+your convenience. Your use of it is subject to your agreements with Google, as
+applicable, and may constitute a beta feature as defined under those agreements.
+To the extent that you make any data available to Google in connection with your
+use of the solution, you represent and warrant that you have all necessary and
+appropriate rights, consents and permissions to permit Google to use and process
+that data. By using any portion of this solution, you acknowledge, assume and
+accept all risks, known and unknown, associated with its usage, including with
+respect to your deployment of any portion of this solution in your systems, or
+usage in connection with your business, if at all.
