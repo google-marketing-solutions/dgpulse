@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /**
  * @fileoverview Fetches Demand Gen Ad Groups, Ad Group Ads, latest Insertion Orders,
  * and Creatives from DV360 API v4 and stores them in BigQuery for 1:1 parity with Google Ads DGPulse.
@@ -108,12 +124,12 @@ async function ensureTable() {
   } else {
     try {
       await bigquery.query({
-        query: `ALTER TABLE \`${DATASET_ID}.${TABLE_ID}\` 
+        query: `ALTER TABLE \`${DATASET_ID}.${TABLE_ID}\`
                 ADD COLUMN IF NOT EXISTS lineItemId STRING,
                 ADD COLUMN IF NOT EXISTS insertionOrderId STRING,
                 ADD COLUMN IF NOT EXISTS campaignId STRING,
                 ADD COLUMN IF NOT EXISTS approvalStatus STRING,
-                ADD COLUMN IF NOT EXISTS video_id STRING, 
+                ADD COLUMN IF NOT EXISTS video_id STRING,
                 ADD COLUMN IF NOT EXISTS aspect_ratio FLOAT64,
                 ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;`
       });
@@ -128,15 +144,15 @@ async function sync() {
 
   // Find Demand Gen line items and map to insertion orders & campaigns
   const [rows] = await bigquery.query({
-    query: `SELECT DISTINCT 
-              li.advertiserId, 
-              li.lineItemId, 
+    query: `SELECT DISTINCT
+              li.advertiserId,
+              li.lineItemId,
               COALESCE(NULLIF(li.insertionOrderId, ''), CAST(dbm.Insertion_Order_Id AS STRING)) AS insertionOrderId,
               COALESCE(NULLIF(li.campaignId, ''), CAST(dbm.Media_Plan_Id AS STRING)) AS campaignId
             FROM \`${DATASET_ID}.line_items\` li
-            LEFT JOIN \`${DATASET_ID}.dbm_performance\` dbm 
+            LEFT JOIN \`${DATASET_ID}.dbm_performance\` dbm
               ON CAST(li.lineItemId AS INT64) = dbm.Line_Item_Id
-            WHERE li.lineItemType = 'LINE_ITEM_TYPE_DEMAND_GEN' 
+            WHERE li.lineItemType = 'LINE_ITEM_TYPE_DEMAND_GEN'
                OR li.lineItemType LIKE '%DEMAND_GEN%'`
   });
 

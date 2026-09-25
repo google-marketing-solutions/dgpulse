@@ -339,7 +339,7 @@ SET
 WHERE account_name IS NOT NULL;
 ```
 
-### If I need to change region from default? 
+### If I need to change region from default?
 
 Edit key `GCP_REGION` in answers.json. Supported multiregions: EU, Asia and US.
 All supported regions you can find at that [list](https://cloud.google.com/workflows/docs/locations).

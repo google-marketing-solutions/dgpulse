@@ -1,3 +1,17 @@
+-- Copyright 2026 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     https://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_insertion_orders_performance` AS
 WITH demand_gen_line_items AS (
   SELECT DISTINCT campaignId, insertionOrderId, lineItemId
@@ -103,7 +117,7 @@ segment_spend AS (
 ),
 
 io_stats AS (
-  SELECT 
+  SELECT
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Insertion_Order_Id AS STRING) AS insertion_order_id,
     MAX(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
@@ -131,14 +145,14 @@ io_stats AS (
   GROUP BY 1, 2
 ),
 latest_campaigns AS (
-  SELECT 
+  SELECT
     campaignId,
     MAX(NULLIF(displayName, '')) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
   GROUP BY campaignId
 ),
 latest_ios AS (
-  SELECT 
+  SELECT
     insertionOrderId AS insertion_order_id,
     MAX(NULLIF(displayName, '')) AS insertion_order_name,
     MAX(NULLIF(advertiserId, '')) AS advertiser_id,
@@ -156,7 +170,7 @@ latest_ios AS (
   GROUP BY 1
 ),
 latest_advertisers AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(displayName, '')) AS displayName,
     MAX(NULLIF(currencyCode, '')) AS currency_code,
@@ -165,7 +179,7 @@ latest_advertisers AS (
   GROUP BY advertiserId
 ),
 latest_settings AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(gtg_status, '')) AS gtg_status,
     MAX(NULLIF(web_tag_type, '')) AS web_tag_type,
@@ -174,7 +188,7 @@ latest_settings AS (
   GROUP BY advertiserId
 ),
 advertiser_currencies AS (
-  SELECT 
+  SELECT
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SAFE_DIVIDE(SUM(NULLIF(Revenue_USD, 0)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
@@ -207,7 +221,7 @@ pacing_basis AS (
   LEFT JOIN segment_spend ss ON io.insertion_order_id = ss.insertion_order_id
   LEFT JOIN flight_spend fs ON io.insertion_order_id = fs.insertion_order_id
 )
-SELECT 
+SELECT
   COALESCE(s.date, CURRENT_DATE()) AS date,
   io.insertion_order_id,
   io.insertion_order_name,
@@ -217,7 +231,7 @@ SELECT
   io.advertiser_id,
   io.advertiser_id AS account_id,
   COALESCE(adv.displayName, io.advertiser_id) AS account_name,
-  CASE 
+  CASE
     WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
     WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
     ELSE '⚪ NOT_CONFIGURED'
@@ -225,9 +239,9 @@ SELECT
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
   COALESCE(s.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
   COALESCE(
-    s.currency_code, 
-    NULLIF(sett.currency_code, ''), 
-    NULLIF(adv.currency_code, ''), 
+    s.currency_code,
+    NULLIF(sett.currency_code, ''),
+    NULLIF(adv.currency_code, ''),
     fs.currency_code,
     ac.currency_code
   ) AS currency_code,
@@ -261,21 +275,21 @@ SELECT
   -- DATE_DIFF is exclusive of the end day, so +1 counts the segment inclusively
   -- (a Jul 1 - Sep 30 segment is 92 days, not 91).
   DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1 AS total_segment_days,
-  CASE 
+  CASE
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0
     WHEN CURRENT_DATE() > pb.pacing_end_date THEN DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1
     ELSE DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1
   END AS elapsed_segment_days,
   GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY)) AS remaining_segment_days,
-  CASE 
+  CASE
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
     WHEN CURRENT_DATE() > pb.pacing_end_date THEN 100.0
     ELSE SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)) * 100
   END AS segment_elapsed_pct,
   SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)) * 100 AS segment_budget_spent_pct,
-  
+
   -- Pacing Index % = (Budget Spent % / Segment Elapsed %)
-  CASE 
+  CASE
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
     WHEN CURRENT_DATE() > pb.pacing_end_date THEN SAFE_DIVIDE(pb.pacing_spend, NULLIF(pb.pacing_budget, 0)) * 100
     ELSE SAFE_DIVIDE(
@@ -283,30 +297,30 @@ SELECT
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
     ) * 100
   END AS pacing_index_pct,
-  
+
   -- Pacing Burn Rate & Delivery Velocity
   SAFE_DIVIDE(pb.pacing_budget, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)) AS target_daily_budget,
-  CASE 
+  CASE
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0.0
-    ELSE SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, CASE 
+    ELSE SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, CASE
       WHEN CURRENT_DATE() > pb.pacing_end_date THEN DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1
       ELSE DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1
     END), 0))
   END AS current_daily_burn_rate,
-  CASE 
+  CASE
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0.0
     WHEN CURRENT_DATE() > pb.pacing_end_date THEN 0.0
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN SAFE_DIVIDE(pb.pacing_budget, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0))
     ELSE SAFE_DIVIDE(GREATEST(0, pb.pacing_budget - pb.pacing_spend), NULLIF(GREATEST(1, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY)), 0))
   END AS required_daily_burn_rate,
-  
+
   -- Projected Spend & Budget at Risk (strictly for live, active segments currently underpacing)
   pb.pacing_spend + (
-    SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) * 
+    SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) *
     GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY))
   ) AS projected_segment_spend,
-  
-  CASE 
+
+  CASE
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
     WHEN io.budget_unit = 'BUDGET_UNIT_IMPRESSIONS' THEN 0
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0
@@ -316,14 +330,14 @@ SELECT
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
     ) < 0.85 THEN GREATEST(0, pb.pacing_budget - (
       pb.pacing_spend + (
-        SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) * 
+        SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) *
         GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY))
       )
     ))
     ELSE 0
   END AS budget_at_risk,
 
-  CASE 
+  CASE
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN 0
     WHEN io.budget_unit = 'BUDGET_UNIT_IMPRESSIONS' THEN 0
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN 0
@@ -333,7 +347,7 @@ SELECT
       NULLIF(SAFE_DIVIDE(DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1, NULLIF(DATE_DIFF(pb.pacing_end_date, pb.pacing_start_date, DAY) + 1, 0)), 0)
     ) < 0.85 THEN GREATEST(0, pb.pacing_budget - (
       pb.pacing_spend + (
-        SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) * 
+        SAFE_DIVIDE(pb.pacing_spend, NULLIF(GREATEST(1, DATE_DIFF(CURRENT_DATE(), pb.pacing_start_date, DAY) + 1), 0)) *
         GREATEST(0, DATE_DIFF(pb.pacing_end_date, CURRENT_DATE(), DAY))
       )
     )) * COALESCE(NULLIF(SAFE_DIVIDE(NULLIF(pb.pacing_spend_usd, 0), NULLIF(pb.pacing_spend, 0)), 0), NULLIF(fs.fx_rate_to_usd, 0), NULLIF(ac.fx_rate_to_usd, 0), IF(COALESCE(s.currency_code, sett.currency_code, adv.currency_code) = 'USD', 1.0, NULL))
@@ -341,7 +355,7 @@ SELECT
   END AS budget_at_risk_usd,
 
   -- Pacing Alert Status (with visual indicator markers matching UI legends)
-  CASE 
+  CASE
     WHEN io.entity_status != 'ENTITY_STATUS_ACTIVE' THEN '⚪ PAUSED'
     WHEN pb.pacing_budget IS NULL OR pb.pacing_budget = 0 THEN '⚪ NO_BUDGET_SET'
     WHEN CURRENT_DATE() < pb.pacing_start_date THEN '⚪ UPCOMING'
