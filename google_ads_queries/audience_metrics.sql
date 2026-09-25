@@ -29,7 +29,7 @@ SELECT
   metrics.conversions AS conversions,
   metrics.conversions_value AS conversions_value,
   metrics.view_through_conversions AS vt_conversions,
-  metrics.all_conversions_value_per_cost AS roas,
+  metrics.all_conversions_value AS all_conversions_value,
   ad_group_criterion.criterion_id AS criterion_id,
   ad_group_criterion.type AS audience_type,
   ad_group_criterion.display_name AS audience_name

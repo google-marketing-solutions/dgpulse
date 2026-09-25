@@ -25,39 +25,47 @@ echo "Estimated time: Less than 1 minute"
 # Artifact registry administrator
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
     --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
     --role="roles/artifactregistry.admin"
 
 # Logs Writer
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
     --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
     --role="roles/logging.logWriter"
 
 # Storage object viewer
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
     --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
     --role="roles/storage.objectViewer"
 
 # Cloud Build Editor
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
     --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
     --role="roles/cloudbuild.builds.editor"
 
 # Cloud Run Invoker
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
     --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
     --role="roles/run.invoker"
 
 # Cloud Functions invoker
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
     --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
     --role="roles/cloudfunctions.invoker"
 
 # Cloud Functions Deployment Builder
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
- --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
- --role="roles/cloudbuild.builds.builder"
+    --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
+    --role="roles/cloudbuild.builds.builder"
 
 # BigQuery Data Editor
 gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
     --member serviceAccount:$SERVICE_ACCOUNT_EMAIL \
+    --condition=None \
     --role="roles/bigquery.dataEditor"

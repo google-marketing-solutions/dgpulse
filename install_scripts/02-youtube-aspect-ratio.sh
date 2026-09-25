@@ -38,7 +38,7 @@ YOUTUBE_KEY_CREATE_LOGS=$(gcloud alpha services api-keys create \
     2>&1)
 
 # Extract the API key value from the logs.
-API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | grep -oP '"keyString":"\K[^"]+')
+API_KEY=$(echo "$YOUTUBE_KEY_CREATE_LOGS" | sed -n 's/.*"keyString":"\([^"]*\)".*/\1/p')
 
 echo "New API key created: ${API_KEY_NAME}"
 echo "API Key: ${API_KEY}"
@@ -54,7 +54,7 @@ echo "Deploying Run function for Youtube aspect ratio fetcher"
 echo "Estimated time: Less than 5 minutes"
 gcloud functions deploy dgpulse-youtube-aspect-ratio-fetcher \
   --gen2 \
-  --runtime=nodejs20 \
+  --runtime=nodejs22 \
   --region=$GCP_REGION \
   --source=. \
   --entry-point=ytarfGET \

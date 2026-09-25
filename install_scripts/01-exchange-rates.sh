@@ -48,7 +48,7 @@ echo "Deploying Run function for Exchange Rates"
 echo "Estimated time: Less than 5 minutes"
 gcloud functions deploy dgpulse-exchange-rates-fetcher \
   --gen2 \
-  --runtime=nodejs20 \
+  --runtime=nodejs22 \
   --region=$GCP_REGION \
   --source=. \
   --entry-point=exchangeRatesGET \
