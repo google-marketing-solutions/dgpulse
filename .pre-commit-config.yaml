@@ -30,7 +30,7 @@ repos:
           - "-- "
           - ""
           - --skip_pattern
-          - .*\.md|.*\.config\.js|\.pylintrc|LICENSE|.*\.toml|\.gitignore|\.git|requirements\.txt
+          - .*\.md|.*\.config\.js|\.pylintrc|LICENSE|.*\.toml|\.gitignore|\.git|requirements\.txt|.*\.json|.*\.gcloudignore|.*\.gif|.*\.DS_Store
       - id: check-google-doc-style
       - id: check-links
 
@@ -79,6 +79,7 @@ repos:
     rev: 0.7.18
     hooks:
       - id: mdformat
+        exclude: ^(README\.md|dv360/README\.md)$
         args:
           - --wrap=80
         additional_dependencies:

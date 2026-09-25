@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /**
  * @fileoverview Handles the processing of individual DV360 advertisers.
  * Triggered by Pub/Sub messages containing an advertiserId.
@@ -185,7 +201,7 @@ exports.processAdvertiser = async (event, context) => {
         let hasDdaOrSmartBidding = false;
 
         for (const li of lineItems) {
-            const isYtOrDg = li.lineItemType === 'LINE_ITEM_TYPE_YOUTUBE_AND_VIDEO' || 
+            const isYtOrDg = li.lineItemType === 'LINE_ITEM_TYPE_YOUTUBE_AND_VIDEO' ||
                              li.lineItemType === 'LINE_ITEM_TYPE_DEMAND_GEN';
             if (li.conversionCounting && Array.isArray(li.conversionCounting.floodlightActivityConfigs)) {
                 for (const flCfg of li.conversionCounting.floodlightActivityConfigs) {
@@ -319,7 +335,7 @@ exports.processAdvertiser = async (event, context) => {
 
         if (cmFloodlightConfigId) {
             const partnerId = (data && data.partnerId) || (advDetails && advDetails.partnerId);
-            
+
             // 1. Fetch Floodlight Group to inspect webTagType and lookback window
             let group = null;
             try {
@@ -404,7 +420,7 @@ exports.processAdvertiser = async (event, context) => {
 
         // 3b. Demand Gen Ad Group Ads
         console.log(`Fetching Demand Gen Ad Groups and Ads for advertiser ${advertiserId}...`);
-        const dgLineItems = lineItems.filter(li => 
+        const dgLineItems = lineItems.filter(li =>
             li.lineItemType && li.lineItemType.includes('DEMAND_GEN')
         );
 

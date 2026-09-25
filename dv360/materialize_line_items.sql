@@ -1,3 +1,17 @@
+-- Copyright 2026 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     https://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_line_items_performance` AS
 WITH demand_gen_line_items AS (
   SELECT DISTINCT campaignId, insertionOrderId, lineItemId
@@ -19,7 +33,7 @@ deduped_dbm AS (
   WHERE row_num = 1
 ),
 li_stats AS (
-  SELECT 
+  SELECT
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Line_Item_Id AS STRING) AS line_item_id,
     MAX(CAST(Advertiser_Id AS STRING)) AS advertiser_id,
@@ -52,7 +66,7 @@ li_stats AS (
   GROUP BY 1, 2
 ),
 latest_settings AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(displayName, '')) AS advertiser_name,
     MAX(NULLIF(has_crm_audience, '')) AS has_crm_audience,
@@ -65,7 +79,7 @@ latest_settings AS (
   GROUP BY advertiserId
 ),
 latest_advertisers AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(displayName, '')) AS displayName,
     MAX(NULLIF(currencyCode, '')) AS currency_code,
@@ -74,7 +88,7 @@ latest_advertisers AS (
   GROUP BY advertiserId
 ),
 advertiser_currencies AS (
-  SELECT 
+  SELECT
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SAFE_DIVIDE(SUM(NULLIF(Revenue_USD, 0)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
@@ -83,7 +97,7 @@ advertiser_currencies AS (
   GROUP BY 1
 ),
 latest_ios AS (
-  SELECT 
+  SELECT
     insertionOrderId AS insertion_order_id,
     MAX(NULLIF(displayName, '')) AS insertion_order_name,
     MAX(NULLIF(pacingType, '')) AS pacing_type,
@@ -95,7 +109,7 @@ latest_ios AS (
   GROUP BY 1
 ),
 latest_line_items AS (
-  SELECT 
+  SELECT
     lineItemId,
     MAX(NULLIF(insertionOrderId, '')) AS insertionOrderId,
     MAX(NULLIF(displayName, '')) AS displayName,
@@ -109,26 +123,26 @@ latest_line_items AS (
   GROUP BY lineItemId
 ),
 latest_campaigns AS (
-  SELECT 
+  SELECT
     campaignId,
     MAX(NULLIF(displayName, '')) AS displayName
   FROM `__PROJECT_ID__.__DATASET_ID__.campaigns`
   GROUP BY campaignId
 )
-SELECT 
+SELECT
   COALESCE(s.date, CURRENT_DATE()) AS date,
   li.lineItemId AS line_item_id,
   li.displayName AS line_item_name,
   li.lineItemType AS line_item_type,
   COALESCE(sett.has_crm_audience, 'NO') AS data_manager_crm_connected,
   COALESCE(sett.has_ga_audience, 'NO') AS data_manager_ga_connected,
-  CASE 
+  CASE
     WHEN COALESCE(sett.has_crm_audience, 'NO') = 'YES' OR COALESCE(sett.has_ga_audience, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS data_strength_status,
   COALESCE(sett.floodlight_optimization_enabled, 'NO') AS floodlight_optimization_enabled,
   COALESCE(li.conversion_tracking_enabled, 'NO') AS conversion_tracking_enabled,
-  CASE 
+  CASE
     WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
     WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
     ELSE '⚪ NOT_CONFIGURED'
@@ -141,7 +155,7 @@ SELECT
   -- It previously gated on ec_enabled AND floodlight_optimization_enabled;
   -- ec_enabled could never be YES, so every line item failed regardless of
   -- configuration. auto_tagging_enabled was a hardcoded 'YES' and never a gate.
-  CASE 
+  CASE
     WHEN COALESCE(sett.floodlight_optimization_enabled, 'NO') = 'YES'
      AND COALESCE(li.conversion_tracking_enabled, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
@@ -161,8 +175,8 @@ SELECT
   li.advertiserId AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, li.advertiserId) AS account_name,
   COALESCE(
-    s.currency_code, 
-    NULLIF(adv.currency_code, ''), 
+    s.currency_code,
+    NULLIF(adv.currency_code, ''),
     ac.currency_code
   ) AS currency_code,
   COALESCE(s.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,

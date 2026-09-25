@@ -1,7 +1,23 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /**
  * @fileoverview Scalable YouTube Aspect Ratio Fetcher for DV360 Demand Gen ads.
  * Lift-and-shift adapted from dgpulse/youtube_aspect_ratio_fetcher.
- * 
+ *
  * Fetches embed player dimensions from YouTube Data API v3 and calculates exact aspect ratio:
  * - aspectRatio < 1.0 -> Portrait / Vertical (9:16 Shorts)
  * - aspectRatio = 1.0 -> Square (1:1)
@@ -103,7 +119,7 @@ async function fetchBatchVideoAspectRatios(videoIds, apiKey) {
 /**
  * Resolves aspect ratios for an array of video IDs.
  * Utilizes BigQuery video_aspect_ratio table as a cache to prevent redundant API calls.
- * 
+ *
  * @param {string[]} videoIds
  * @param {Object} bigquery - @google-cloud/bigquery instance
  * @param {string} datasetId
@@ -130,7 +146,7 @@ async function resolveVideoAspectRatios(videoIds, bigquery, datasetId, bucketNam
   const idsInQuery = uniqueIds.map(id => `'${id}'`).join(',');
   try {
     const [cachedRows] = await bigquery.query({
-      query: `SELECT video_id, aspect_ratio 
+      query: `SELECT video_id, aspect_ratio
               FROM \`${datasetId}.video_aspect_ratio\`
               WHERE video_id IN (${idsInQuery}) AND aspect_ratio IS NOT NULL`
     });

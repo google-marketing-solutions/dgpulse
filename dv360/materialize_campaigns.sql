@@ -1,3 +1,17 @@
+-- Copyright 2026 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     https://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
 CREATE OR REPLACE TABLE `__PROJECT_ID__.__DATASET_ID__.final_campaign_performance` AS
 WITH demand_gen_line_items AS (
   SELECT DISTINCT campaignId, insertionOrderId, lineItemId
@@ -19,7 +33,7 @@ deduped_dbm AS (
   WHERE row_num = 1
 ),
 aggregated_stats AS (
-  SELECT 
+  SELECT
     COALESCE(Report_Day, CURRENT_DATE()) AS date,
     CAST(Media_Plan_Id AS STRING) AS campaign_id,
     MAX(CAST(Partner_Id AS STRING)) AS partner_id,
@@ -47,7 +61,7 @@ aggregated_stats AS (
   GROUP BY 1, 2
 ),
 line_item_counts AS (
-  SELECT 
+  SELECT
     campaignId,
     COUNT(DISTINCT lineItemId) AS line_item_count,
     IF(LOGICAL_OR(entityStatus = 'ENTITY_STATUS_PAUSED'), 'YES', 'NO') AS is_limited_by_budget
@@ -56,7 +70,7 @@ line_item_counts AS (
   GROUP BY campaignId
 ),
 latest_settings AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(displayName, '')) AS advertiser_name,
     MAX(NULLIF(has_crm_audience, '')) AS has_crm_audience,
@@ -73,7 +87,7 @@ latest_settings AS (
   GROUP BY advertiserId
 ),
 latest_campaigns AS (
-  SELECT 
+  SELECT
     campaignId,
     MAX(NULLIF(displayName, '')) AS displayName,
     MAX(NULLIF(entityStatus, '')) AS entityStatus,
@@ -83,7 +97,7 @@ latest_campaigns AS (
   GROUP BY campaignId
 ),
 latest_advertisers AS (
-  SELECT 
+  SELECT
     advertiserId,
     MAX(NULLIF(displayName, '')) AS displayName,
     MAX(NULLIF(currencyCode, '')) AS currency_code,
@@ -92,7 +106,7 @@ latest_advertisers AS (
   GROUP BY advertiserId
 ),
 advertiser_currencies AS (
-  SELECT 
+  SELECT
     CAST(Advertiser_Id AS STRING) AS advertiser_id,
     MAX(NULLIF(Advertiser_Currency, '')) AS currency_code,
     SAFE_DIVIDE(SUM(NULLIF(Revenue_USD, 0)), NULLIF(SUM(Revenue), 0)) AS fx_rate_to_usd
@@ -100,7 +114,7 @@ advertiser_currencies AS (
   WHERE Advertiser_Currency IS NOT NULL
   GROUP BY 1
 )
-SELECT 
+SELECT
   COALESCE(stats.date, CURRENT_DATE()) AS date,
   meta.campaignId AS campaign_id,
   meta.displayName AS campaign_name,
@@ -109,26 +123,26 @@ SELECT
   meta.advertiserId AS account_id,
   COALESCE(sett.advertiser_name, adv.displayName, meta.advertiserId) AS account_name,
   COALESCE(
-    stats.currency_code, 
-    NULLIF(adv.currency_code, ''), 
+    stats.currency_code,
+    NULLIF(adv.currency_code, ''),
     ac.currency_code
   ) AS currency_code,
   COALESCE(lic.is_limited_by_budget, 'NO') AS is_limited_by_budget,
   COALESCE(lic.line_item_count, 0) AS line_item_count,
   COALESCE(sett.has_crm_audience, 'NO') AS data_manager_crm_connected,
   COALESCE(sett.has_ga_audience, 'NO') AS data_manager_ga_connected,
-  CASE 
+  CASE
     WHEN sett.gtg_status = 'READY' THEN '🟢 READY'
     WHEN sett.gtg_status = 'NEEDS_TAG_UPGRADE' THEN '🔴 NEEDS_TAG_UPGRADE'
     ELSE '⚪ NOT_CONFIGURED'
   END AS gtg_status,
   COALESCE(sett.web_tag_type, 'WEB_TAG_TYPE_NONE') AS web_tag_type,
-  CASE 
+  CASE
     WHEN COALESCE(sett.has_crm_audience, 'NO') = 'YES' OR COALESCE(sett.has_ga_audience, 'NO') = 'YES' THEN 'PASSED'
     ELSE 'NEEDS_ACTION'
   END AS data_strength_status,
   COALESCE(stats.partner_id, adv.partnerId, '__PARTNER_ID__') AS partner_id,
-  
+
   -- Delivery & Cost
   COALESCE(stats.impressions, 0) AS impressions,
   COALESCE(stats.clicks, 0) AS clicks,
