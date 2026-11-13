@@ -26,62 +26,78 @@ const bigquery = new BigQuery({
   projectId,
 });
 
-async function executeQuery(query) {
+// UPDATED: Now supports passing parameters to BigQuery safely
+async function executeQuery(query, params = null) {
   const options = {
-    configuration: {
-      query: {
-        query,
-        useLegacySql: false,
-      },
-    },
+    query: query,
+    useLegacySql: false,
   };
 
-  // Run the query as a job
-  const response = await bigquery.createJob(options);
-  const job = response[0];
-  const [rows] = await job.getQueryResults(job);
+  if (params) {
+    options.params = params;
+  }
 
+  // Use bigquery.query() which natively supports parameterization
+  const [rows] = await bigquery.query(options);
   return rows;
 }
 
 function getInsertQueryForExchangeRates(exchangeRates) {
   const { date } = exchangeRates;
-  let finalUpdateQuery = `INSERT INTO
-      \`${projectId}.${datasetId}.exchange_rates\`
-      (base_currency, target_currency, rate, date)
-    VALUES`;
+
+  // STRICT VALIDATION 1: Validate date format strictly (YYYY-MM-DD)
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`Security Exception: Invalid date format received: ${date}`);
+  }
+
+  let valuesClauses = [];
+  let params = {
+    baseCurrency: baseCurrency.toUpperCase(),
+    date: date
+  };
+
+  let paramIndex = 0;
 
   for (let targetCurrency in exchangeRates[baseCurrency]) {
-    // skips non ISO three-letter currency codes:
-    if (targetCurrency.length > 3) continue;
+    // STRICT VALIDATION 2: Currency keys must strictly be 3 alphabetical characters
+    if (!/^[A-Za-z]{3}$/.test(targetCurrency)) continue;
+
     const rate = exchangeRates[baseCurrency][targetCurrency];
-    finalUpdateQuery += `
-      (
-        "${baseCurrency.toUpperCase()}",
-        "${targetCurrency.toUpperCase()}",
-        ${rate},
-        "${date}"
-      ),`;
+
+    // STRICT VALIDATION 3: Rate must be a number
+    if (typeof rate !== 'number' || isNaN(rate)) {
+      console.warn(`Skipping invalid rate for ${targetCurrency}: ${rate}`);
+      continue;
+    }
+
+    // Prepare parameterized placeholders to prevent SQL injection
+    valuesClauses.push(`(@baseCurrency, @targetCurrency${paramIndex}, @rate${paramIndex}, @date)`);
+    params[`targetCurrency${paramIndex}`] = targetCurrency.toUpperCase();
+    params[`rate${paramIndex}`] = rate;
+    
+    paramIndex++;
   }
-  return finalUpdateQuery.substring(0, finalUpdateQuery.length - 1);
+
+  if (valuesClauses.length === 0) {
+    throw new Error("Security Exception: No valid exchange rates found to insert after validation.");
+  }
+
+  // Use parameterized values securely instead of raw string concatenation
+  const query = `INSERT INTO \`${projectId}.${datasetId}.exchange_rates\` (base_currency, target_currency, rate, date) VALUES ${valuesClauses.join(', ')}`;
+
+  return { query, params };
 }
 
 async function deleteExchangeRates() {
-  const query = `DELETE
-      \`${projectId}.${datasetId}.exchange_rates\`
-      WHERE target_currency IS NOT NULL`;
+  const query = `DELETE \`${projectId}.${datasetId}.exchange_rates\` WHERE target_currency IS NOT NULL`;
   console.log(`Deleting from BQ: exchange_rates`);
   return await executeQuery(query);
 }
 
 async function insertExchangeRates(exchangeRates) {
-  const query = getInsertQueryForExchangeRates(exchangeRates);
-  console.log(
-    `Inserting into BQ: exchange_rates: ${JSON.stringify(
-      exchangeRates[baseCurrency]
-    )}`
-  );
-  return await executeQuery(query);
+  const { query, params } = getInsertQueryForExchangeRates(exchangeRates);
+  console.log(`Inserting into BQ: exchange_rates for date ${exchangeRates.date}`);
+  return await executeQuery(query, params);
 }
 
 module.exports = {
@@ -89,3 +105,4 @@ module.exports = {
   getInsertQueryForExchangeRates,
   deleteExchangeRates,
 };
+
