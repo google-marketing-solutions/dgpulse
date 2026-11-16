@@ -135,7 +135,8 @@ solution is used and improve it.
   DG Pulse under.
 - One `SOLUTION_USAGE` event per Demand Gen account found under that MCC,
   containing the Google Ads account ID (formatted `XXX-XXX-XXXX`), the solution
-  name (`demand_gen_pulse`) and, for Google-assisted deployments only, the
+  name (`Demand Gen Pulse`), a random event ID and, for Google-assisted
+  deployments only, the
   Connect Sales opportunity ID provided by the Googler.
 
 No campaign, asset, audience or performance data and no personal data is

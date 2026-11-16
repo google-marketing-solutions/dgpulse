@@ -48,6 +48,7 @@ import logging
 import os
 import re
 import sys
+import uuid
 from collections.abc import Iterable
 
 try:
@@ -57,8 +58,17 @@ except ImportError:  # pragma: no cover - fail open if tadau is missing.
 
 _LOGGER = logging.getLogger(__name__)
 
-APP_NAME = 'demand_gen_pulse'
+# Must match one of the `app_names` registered for the solution in
+# Telemetry Hub drops events whose `app` does not map to a registration.
+APP_NAME = 'Demand Gen Pulse'
 SOLUTION_USAGE_EVENT = 'SOLUTION_USAGE'
+
+# Dimensions required by Telemetry Hub
+FIXED_DIMENSIONS = {
+    'app': APP_NAME,
+    'is_agent_event': False,
+    'non_personalized_ads': False,
+}
 
 _API_SECRET_ENV = 'TELEMETRY_HUB_API_SECRET'
 _MEASUREMENT_ID_ENV = 'TELEMETRY_HUB_MEASUREMENT_ID'
@@ -168,7 +178,8 @@ def build_tadau_client() -> Tadau | None:
         api_secret=api_secret,
         measurement_id=measurement_id,
         opt_in=True,
-        fixed_dimensions={'app': APP_NAME},
+        # Copy: Tadau merges event params into this dict in place.
+        fixed_dimensions=dict(FIXED_DIMENSIONS),
     )
   except Exception:  # pylint: disable=broad-exception-caught
     _LOGGER.exception('Telemetry Hub: failed to initialise Tadau client.')
@@ -202,6 +213,8 @@ def send_solution_usage(
 
     event: dict[str, str] = {
         'name': SOLUTION_USAGE_EVENT,
+        # Required by Telemetry Hub: random, PII-free per-event ID.
+        'external_event_id': str(uuid.uuid4()),
         'th_google_ads_customer_id': external_customer_id,
     }
     if opportunity_id:
@@ -287,22 +300,28 @@ def fetch_demand_gen_accounts(
 
 
 def main(argv: list[str]) -> int:
-  """CLI entry point; accounts are discovered unless given as arguments."""
-  logging.basicConfig(level=logging.INFO)
-  customer_ids: list[str] = [arg for arg in argv[1:] if arg.strip()]
-  if not customer_ids:
-    customer_ids = fetch_demand_gen_accounts()
-  if not customer_ids:
-    _LOGGER.warning('Telemetry Hub: no customer IDs found; nothing to send.')
-    return 0
-  sent = send_solution_usage_for_accounts(customer_ids)
-  _LOGGER.info(
-      'Telemetry Hub: %d/%d %s events sent.',
-      sent,
-      len(customer_ids),
-      SOLUTION_USAGE_EVENT,
-  )
-  return 0  # Always succeed: telemetry must not fail the installer.
+  """CLI entry point; accounts are discovered unless given as arguments.
+
+  Always returns 0: telemetry must never fail the installer.
+  """
+  try:
+    logging.basicConfig(level=logging.INFO)
+    customer_ids: list[str] = [arg for arg in argv[1:] if arg.strip()]
+    if not customer_ids:
+      customer_ids = fetch_demand_gen_accounts()
+    if not customer_ids:
+      _LOGGER.warning('Telemetry Hub: no customer IDs found; nothing to send.')
+      return 0
+    sent = send_solution_usage_for_accounts(customer_ids)
+    _LOGGER.info(
+        'Telemetry Hub: %d/%d %s events sent.',
+        sent,
+        len(customer_ids),
+        SOLUTION_USAGE_EVENT,
+    )
+  except Exception:  # pylint: disable=broad-exception-caught
+    _LOGGER.exception('Telemetry Hub: unexpected failure; ignoring.')
+  return 0
 
 
 if __name__ == '__main__':

@@ -116,12 +116,31 @@ def test_send_solution_usage_payload(monkeypatch, sent):
   assert len(sent) == 1
   event = sent[0]['events'][0]
   assert event['name'] == 'SOLUTION_USAGE'
-  assert event['params'] == {
-      'app': 'demand_gen_pulse',
+  params = dict(event['params'])
+  # Required by Telemetry Hub: random per-event ID (UUID4, 36 chars).
+  external_event_id = params.pop('external_event_id')
+  assert len(external_event_id) == 36
+  assert params == {
+      # Must match a registered app_name in Telemetry Hub
+      'app': 'Demand Gen Pulse',
+      'is_agent_event': False,
+      'non_personalized_ads': False,
       'th_google_ads_customer_id': '123-456-7890',
       'th_opportunity_id': '123456789',
   }
   assert sent[0]['non_personalized_ads'] is True
+
+
+def test_external_event_id_is_unique_per_event(monkeypatch, sent):
+  for key, value in _ENV.items():
+    monkeypatch.setenv(key, value)
+  client = telemetry_hub.build_tadau_client()
+
+  telemetry_hub.send_solution_usage(client, 1234567890)
+  telemetry_hub.send_solution_usage(client, 1234567890)
+
+  ids = {p['events'][0]['params']['external_event_id'] for p in sent}
+  assert len(ids) == 2
 
 
 def test_send_solution_usage_without_opportunity(monkeypatch, sent):
@@ -195,3 +214,20 @@ def test_fetch_demand_gen_accounts_is_fail_open(tmp_path):
   assert not telemetry_hub.fetch_demand_gen_accounts(
       str(tmp_path / 'missing.yaml'), str(tmp_path / 'missing.sql')
   )
+
+
+def test_main_always_exits_zero(monkeypatch):
+  # Discovery and sending both explode: the installer must still see 0.
+  monkeypatch.setattr(
+      telemetry_hub,
+      'fetch_demand_gen_accounts',
+      mock.Mock(side_effect=RuntimeError('boom')),
+  )
+  assert telemetry_hub.main(['telemetry_hub.py']) == 0
+
+  monkeypatch.setattr(
+      telemetry_hub,
+      'send_solution_usage_for_accounts',
+      mock.Mock(side_effect=RuntimeError('boom')),
+  )
+  assert telemetry_hub.main(['telemetry_hub.py', '1234567890']) == 0
