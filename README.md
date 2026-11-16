@@ -123,6 +123,40 @@ make a copy of it and point the data sources to your own GCP's BigQuery.
 ![What happens daily post installation](https://services.google.com/fh/files/misc/dgpulse-arch-7.jpeg)
 https://services.google.com/fh/files/misc/dgpulse-arch-7.jpeg
 
+### Privacy notice: usage data collection (optional)
+
+During installation and upgrade you are asked whether you allow us to collect
+**anonymous usage data**. This helps the DG Pulse team understand how the
+solution is used and improve it.
+
+**What is collected, only if you answer "yes":**
+
+- An `installation_completed` event with the Google Ads MCC ID you install
+  DG Pulse under.
+- One `SOLUTION_USAGE` event per Demand Gen account found under that MCC,
+  containing the Google Ads account ID (formatted `XXX-XXX-XXXX`), the solution
+  name (`demand_gen_pulse`) and, for Google-assisted deployments only, the
+  Connect Sales opportunity ID provided by the Googler.
+
+No campaign, asset, audience or performance data and no personal data is
+collected. Events are sent to Google Analytics via the open-source
+[tadau](https://pypi.org/project/tadau/) library (see `telemetry_hub.py`) and
+are used in aggregate by Google. Sending is best-effort: a telemetry failure
+never affects the installation or the dashboard.
+
+**How to opt out:** answer `n` at the prompt. Nothing is sent and no tracking
+component is installed. You can change your answer at any time by re-running
+`./install-or-upgrade.sh`. To force telemetry off regardless of the prompt,
+run the installer with `TELEMETRY_HUB_OPT_IN=false`.
+
+For Google-assisted deployments, the Googler can attach the Connect Sales
+opportunity before running the installer:
+
+```shell
+export ROPPS_URL="https://.../opportunity/123456789"  # or OPPORTUNITY_ID=123456789
+./install-or-upgrade.sh
+```
+
 ## Troubleshooting
 
 ### How to use Service Accounts during installation?

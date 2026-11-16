@@ -1,3 +1,5 @@
 .DS_Store
 ads-api-fetcher
 node_modules
+env/
+__pycache__/
