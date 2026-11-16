@@ -140,7 +140,7 @@ solution is used and improve it.
   Connect Sales opportunity ID provided by the Googler.
 
 No campaign, asset, audience or performance data and no personal data is
-collected. Events are sent to Google Analytics via the open-source
+collected. Events are sent to Google Analytics using the open-source
 [tadau](https://pypi.org/project/tadau/) library (see `telemetry_hub.py`) and
 are used in aggregate by Google. Sending is best-effort: a telemetry failure
 never affects the installation or the dashboard.

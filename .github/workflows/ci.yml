@@ -9,5 +9,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version-file: "pyproject.toml"
+          # pytype (see .pre-commit-config.yaml) supports Python 3.12 at most.
+          python-version: "3.12"
+      # The pytype hook is `language: system`: it needs pytype and the
+      # project's dependencies installed in the environment pre-commit runs in.
+      - name: Install pytype and project dependencies
+        run: python -m pip install pytype==2024.10.11 pytest -r requirements.txt
       - uses: pre-commit/action@v3.0.1
