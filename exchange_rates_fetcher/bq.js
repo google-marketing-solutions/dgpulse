@@ -74,7 +74,7 @@ function getInsertQueryForExchangeRates(exchangeRates) {
     valuesClauses.push(`(@baseCurrency, @targetCurrency${paramIndex}, @rate${paramIndex}, @date)`);
     params[`targetCurrency${paramIndex}`] = targetCurrency.toUpperCase();
     params[`rate${paramIndex}`] = rate;
-    
+
     paramIndex++;
   }
 
@@ -105,4 +105,3 @@ module.exports = {
   getInsertQueryForExchangeRates,
   deleteExchangeRates,
 };
-
