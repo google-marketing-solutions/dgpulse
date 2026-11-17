@@ -45,7 +45,9 @@ def _sent_fixture():
     return types.SimpleNamespace(raise_for_status=lambda: None)
 
   with mock.patch(
-      'tadau.measurement_protocol.requests.post', side_effect=fake_post
+      'tadau.measurement_protocol.requests.post',
+      autospec=True,
+      side_effect=fake_post,
   ):
     yield payloads
 
@@ -163,6 +165,7 @@ def test_send_solution_usage_is_fail_open(monkeypatch):
   client = telemetry_hub.build_tadau_client()
   with mock.patch(
       'tadau.measurement_protocol.requests.post',
+      autospec=True,
       side_effect=RuntimeError('network down'),
   ):
     # Tadau logs and swallows; our wrapper must not raise either.
@@ -210,10 +213,11 @@ def test_fetch_demand_gen_accounts_uses_gaarf(tmp_path):
   query.write_text('SELECT customer.id FROM campaign')
 
   with (
-      mock.patch.object(api_clients, 'GoogleAdsApiClient'),
+      mock.patch.object(api_clients, 'GoogleAdsApiClient', autospec=True),
       mock.patch.object(
           report_fetcher.AdsReportFetcher,
           'expand_mcc',
+          autospec=True,
           return_value=[2222222222, 1111111111, 2222222222],
       ) as expand_mcc,
   ):
@@ -222,8 +226,9 @@ def test_fetch_demand_gen_accounts_uses_gaarf(tmp_path):
     )
 
   assert accounts == ['1111111111', '2222222222']
+  # With autospec, the patched method also records the instance (``self``).
   expand_mcc.assert_called_once_with(
-      '1234567890', 'SELECT customer.id FROM campaign'
+      mock.ANY, '1234567890', 'SELECT customer.id FROM campaign'
   )
 
 
