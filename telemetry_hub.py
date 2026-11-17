@@ -49,7 +49,7 @@ import os
 import re
 import sys
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 try:
@@ -309,7 +309,9 @@ def fetch_demand_gen_accounts(
   try:
     # Imported lazily: gaarf is heavy and only needed for discovery.
     # pylint: disable-next=import-outside-toplevel
-    from gaarf import api_clients, report_fetcher
+    from gaarf import api_clients
+    # pylint: disable-next=import-outside-toplevel
+    from gaarf import report_fetcher
 
     login_customer_id = _read_login_customer_id(ads_config_path)
     if not login_customer_id:
@@ -331,7 +333,7 @@ def fetch_demand_gen_accounts(
     return []
 
 
-def main(argv: list[str]) -> int:
+def main(argv: Sequence[str]) -> int:
   """CLI entry point; accounts are discovered unless given as arguments.
 
   Always returns 0: telemetry must never fail the installer.

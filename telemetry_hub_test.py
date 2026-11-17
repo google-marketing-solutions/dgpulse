@@ -23,6 +23,8 @@ import types
 from unittest import mock
 
 import pytest
+from gaarf import api_clients
+from gaarf import report_fetcher
 
 import telemetry_hub
 
@@ -139,7 +141,9 @@ def test_external_event_id_is_unique_per_event(monkeypatch, sent):
   telemetry_hub.send_solution_usage(client, 1234567890)
   telemetry_hub.send_solution_usage(client, 1234567890)
 
-  ids = {p['events'][0]['params']['external_event_id'] for p in sent}
+  ids = {
+      payload['events'][0]['params']['external_event_id'] for payload in sent
+  }
   assert len(ids) == 2
 
 
@@ -179,7 +183,8 @@ def test_send_for_accounts_counts_and_uses_env_opportunity(monkeypatch, sent):
 
   assert count == 2
   assert all(
-      p['events'][0]['params']['th_opportunity_id'] == '123456789' for p in sent
+      payload['events'][0]['params']['th_opportunity_id'] == '123456789'
+      for payload in sent
   )
 
 
@@ -199,9 +204,6 @@ def test_send_for_accounts_exits_early_without_client(monkeypatch, sent):
 
 
 def test_fetch_demand_gen_accounts_uses_gaarf(tmp_path):
-  # pylint: disable-next=import-outside-toplevel
-  from gaarf import api_clients, report_fetcher
-
   ads_config = tmp_path / 'google-ads.yaml'
   ads_config.write_text('# comment\nlogin_customer_id: 123-456-7890\n')
   query = tmp_path / 'get-accounts.sql'
