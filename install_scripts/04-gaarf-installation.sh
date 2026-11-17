@@ -27,5 +27,8 @@ echo "Estimated time: 10 minutes"
 npm init gaarf-wf@latest -- --answers=answers.json
 
 if [[ "$yn" == "y"  || "$yn" == "Y" ]]; then
+    # Explicit consent for telemetry_hub.py (it defaults to off). A value set
+    # before running the installer (e.g. TELEMETRY_HUB_OPT_IN=false) wins.
+    export TELEMETRY_HUB_OPT_IN="${TELEMETRY_HUB_OPT_IN:-true}"
     ./install_scripts/04-1-installation-completed-tracking.sh
 fi

@@ -47,3 +47,18 @@ curl -s -X POST \
   "${COLLECT_BASE_URL}?measurement_id=${MEASUREMENT_ID}&api_secret=${API_SECRET}" \
   -H "Content-Type: application/json" \
   -d "${PAYLOAD}"
+
+# --- Telemetry Hub: one SOLUTION_USAGE event per Demand Gen account, sent
+# with the tadau library (see telemetry_hub.py). Accounts are discovered with
+# get-accounts.sql via gaarf, exactly like the data pipeline. Fail-open: any
+# failure below is logged and ignored so it can never break the installation.
+echo "Tracking Telemetry Hub 'SOLUTION_USAGE'..."
+export TELEMETRY_HUB_API_SECRET="${TELEMETRY_HUB_API_SECRET:-S7toNnNZQPWzViq44q_8gg}"
+export TELEMETRY_HUB_MEASUREMENT_ID="${TELEMETRY_HUB_MEASUREMENT_ID:-G-Z2TKLQZ79K}"
+# Optional, Googler-assisted deployments only: export ROPPS_URL (Connect Sales
+# opportunity URL) or OPPORTUNITY_ID before running the installer.
+(
+  set +e
+  python3 -m pip install --quiet --user -r requirements.txt
+  python3 telemetry_hub.py
+) || echo "Telemetry Hub tracking skipped (non-fatal)."
