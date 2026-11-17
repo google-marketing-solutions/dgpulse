@@ -131,7 +131,14 @@ def parse_opportunity_id(ropps_url: str | None) -> str | None:
 
 
 def resolve_opportunity_id() -> str | None:
-  """Opportunity ID from ``OPPORTUNITY_ID``, else parsed from ``ROPPS_URL``."""
+  """Resolves the Connect Sales Opportunity ID from environment variables.
+
+  Checks ``OPPORTUNITY_ID`` first, falling back to parsing ``ROPPS_URL``.
+
+  Returns:
+    The 8-10 digit Opportunity ID, or ``None`` if neither environment variable
+    contains a valid ID.
+  """
   explicit = parse_opportunity_id(os.environ.get(_OPPORTUNITY_ID_ENV))
   if explicit:
     return explicit
@@ -241,7 +248,19 @@ def send_solution_usage_for_accounts(
     customer_ids: Iterable[str | int],
     opportunity_id: str | None = None,
 ) -> int:
-  """One client, one event per account. Returns the number of events sent."""
+  """Sends one ``SOLUTION_USAGE`` event per account using a single client.
+
+  Args:
+    customer_ids: Google Ads customer IDs, with or without hyphens.
+    opportunity_id: Connect Sales Opportunity ID to attach to every event. If
+      ``None``, it is resolved from the environment with
+      ``resolve_opportunity_id``; if that finds none either, the events are
+      sent without an Opportunity ID.
+
+  Returns:
+    The number of events handed to Tadau. 0 if telemetry is disabled or the
+    client could not be created.
+  """
   tadau_client = build_tadau_client()
   if tadau_client is None:
     return 0
@@ -275,7 +294,17 @@ def fetch_demand_gen_accounts(
 
   Expands the MCC from ``google-ads.yaml`` with ``get-accounts.sql`` using
   the gaarf library (``google-ads-api-report-fetcher`` in requirements.txt).
-  Fail-open: returns an empty list on any error.
+
+  Args:
+    ads_config_path: Path to the ``google-ads.yaml`` file. Its
+      ``login_customer_id`` is the MCC that gets expanded.
+    customer_ids_query_path: Path to the query file that selects the accounts
+      to keep (``get-accounts.sql``).
+
+  Returns:
+    The sorted, de-duplicated customer IDs of the matching accounts. An empty
+    list if the config has no ``login_customer_id`` or on any error
+    (fail-open).
   """
   try:
     # Imported lazily: gaarf is heavy and only needed for discovery.
