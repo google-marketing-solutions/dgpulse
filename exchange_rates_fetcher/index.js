@@ -18,10 +18,12 @@ const exchangeApi = require("./exchangeApi");
 const bq = require("./bq");
 
 functions.http("exchangeRatesGET", async (req, res) => {
-  const exchangeRates = await exchangeApi.getExchangeRatesFromAPI();
-  await bq.deleteExchangeRates();
-  const insertQueryForExchangeRates = bq.insertExchangeRates(exchangeRates);
-  res.send(
-    "BigQuery INSERTs queued for execution and should complete in seconds."
-  );
+  try {
+    const exchangeRates = await exchangeApi.getExchangeRatesFromAPI();
+    await bq.replaceExchangeRates(exchangeRates);
+    res.status(200).send("BigQuery exchange rates updated successfully.");
+  } catch (error) {
+    console.error("Failed to refresh BigQuery exchange rates:", error);
+    res.status(500).send("Failed to refresh exchange rates.");
+  }
 });
