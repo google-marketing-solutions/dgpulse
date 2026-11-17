@@ -50,11 +50,12 @@ import re
 import sys
 import uuid
 from collections.abc import Iterable
+from typing import Any
 
 try:
-  from tadau import Tadau
+  import tadau
 except ImportError:  # pragma: no cover - fail open if tadau is missing.
-  Tadau = None  # type: ignore[assignment,misc]
+  tadau = None  # type: ignore[assignment]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ def _is_opt_in() -> bool:
   )
 
 
-def build_tadau_client() -> Tadau | None:
+def build_tadau_client() -> Any:
   """Initialises the Tadau client from environment variables.
 
   Returns:
@@ -157,7 +158,7 @@ def build_tadau_client() -> Tadau | None:
     ``None`` as "telemetry off" and continue normally.
   """
   try:
-    if Tadau is None:
+    if tadau is None:
       _LOGGER.warning('Telemetry Hub: tadau is not installed; skipping.')
       return None
     if not _is_opt_in():
@@ -174,7 +175,7 @@ def build_tadau_client() -> Tadau | None:
       )
       return None
 
-    return Tadau(
+    return tadau.Tadau(
         api_secret=api_secret,
         measurement_id=measurement_id,
         opt_in=True,
@@ -187,7 +188,7 @@ def build_tadau_client() -> Tadau | None:
 
 
 def send_solution_usage(
-    tadau_client: Tadau | None,
+    tadau_client: Any,
     customer_id: str | int,
     opportunity_id: str | None = None,
 ) -> bool:
