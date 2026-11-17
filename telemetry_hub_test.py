@@ -183,6 +183,21 @@ def test_send_for_accounts_counts_and_uses_env_opportunity(monkeypatch, sent):
   )
 
 
+def test_send_for_accounts_exits_early_without_client(monkeypatch, sent):
+  for key, value in _ENV.items():
+    monkeypatch.setenv(key, value)
+  monkeypatch.setenv('TELEMETRY_HUB_OPT_IN', 'false')
+
+  with mock.patch.object(
+      telemetry_hub, 'resolve_opportunity_id', autospec=True
+  ) as resolve_opportunity_id:
+    count = telemetry_hub.send_solution_usage_for_accounts(['1234567890'])
+
+  assert count == 0
+  assert not sent
+  resolve_opportunity_id.assert_not_called()
+
+
 def test_fetch_demand_gen_accounts_uses_gaarf(tmp_path):
   # pylint: disable-next=import-outside-toplevel
   from gaarf import api_clients, report_fetcher

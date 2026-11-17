@@ -243,6 +243,8 @@ def send_solution_usage_for_accounts(
 ) -> int:
   """One client, one event per account. Returns the number of events sent."""
   tadau_client = build_tadau_client()
+  if tadau_client is None:
+    return 0
   if opportunity_id is None:
     opportunity_id = resolve_opportunity_id()
   return sum(
