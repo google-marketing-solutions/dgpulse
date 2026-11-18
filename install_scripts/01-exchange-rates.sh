@@ -13,11 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Ensure strict mode and error handling
-set -euo pipefail
+set -e
 
-source config.sh
-gcloud config set project $GCP_PROJECT_ID
+DEFAULT_MULTI_REGION=$1
+GCP_REGION=$2
+GCP_PROJECT_ID=$3
+SERVICE_ACCOUNT_EMAIL=$4
+
 
 echo "----"
 echo "Creating Dataset for reference data and Table for Exchange Rates"
@@ -101,7 +103,7 @@ EXCHANGE_RATES_FUNCTION_URL=$(gcloud functions describe \
   --format='value(serviceConfig.uri)'\
 )
 
-
+# install dgpulse-exchange-rates-fetcher scheduler that calls function.
 echo "----"
 echo "Deploying Scheduler job for dgpulse-exchange-rates-fetcher"
 echo "Estimated time: 5 seconds"
