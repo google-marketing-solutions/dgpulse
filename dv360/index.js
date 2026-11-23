@@ -23,6 +23,7 @@ const { Storage } = require('@google-cloud/storage');
 const { BigQuery } = require('@google-cloud/bigquery');
 const DV360Client = require('./dv360');
 const { PubSub } = require('@google-cloud/pubsub');
+const { sendPartnerSyncUsage } = require('./telemetry');
 
 const storage = new Storage();
 const pubsub = new PubSub();
@@ -218,6 +219,10 @@ exports.fetchAdvertisers = async (req, res) => {
         } catch (dbmErr) {
             console.warn('Warning syncing DBM reports:', dbmErr.message);
         }
+
+        // Best-effort, opt-in Telemetry Hub usage event for the completed
+        // partner sync (see telemetry.js). Never throws.
+        await sendPartnerSyncUsage(partnerId);
 
         res.json({
             success: true,

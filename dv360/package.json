@@ -6,6 +6,7 @@
   },
   "scripts": {
     "start": "node index.js",
+    "test": "node --test",
     "seed:demo": "node seed_demo_data.js"
   },
   "dependencies": {

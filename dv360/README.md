@@ -152,7 +152,7 @@ cd dv360 && ./install.sh
 ```
 
 The installer reuses your existing refresh token, so you only need to confirm
-the Partner ID.
+the Partner ID and answer the usage data question again.
 
 Notice that this will **not** change the Data Studio template. Only the code.
 In order to get the latest version of the template, open the link the
@@ -202,6 +202,40 @@ a YouTube Data API key used to read video aspect ratios.
 | DV360 Asset Performance | `assets_performance` | `final_assets_performance` |
 | DV360 Creative Variety | `creative_variety` | `final_creative_variety` |
 | DV360 Audiences Performance | `audiences_performance` | `final_audiences_performance` |
+
+### Privacy notice: usage data collection (optional)
+
+During installation and upgrade the installer asks whether you allow DG Pulse
+to send **non-personal usage data** (DV360 Partner/Advertiser IDs and, for
+Google-assisted deployments, a Connect Sales opportunity ID) to Google.
+This helps the DG Pulse team understand how the solution is used and improve it.
+
+**What is collected, only if you answer "yes":** `SOLUTION_USAGE` events, sent
+at the end of each sync (daily, plus the initial sync during installation):
+
+- One event per completed partner sync, containing your DV360 Partner ID.
+- One event per advertiser that has Demand Gen line items, containing your
+  DV360 Partner ID and the Advertiser ID.
+
+Every event also carries the solution name (`Demand Gen Pulse 360`), a random
+event ID, and—for Google-assisted deployments only—the Connect Sales
+opportunity ID provided by the Googler. No campaign, creative, audience,
+performance, or personal data is collected. Events are sent to Google Analytics
+through the Measurement Protocol (see `telemetry.js`). Sending is best-effort:
+a telemetry failure never affects the sync or the dashboard.
+
+**How to opt out:** answer `n` at the prompt. Nothing is sent. You can change
+your answer at any time by re-running `./install.sh`. To skip the question, set
+`TELEMETRY_HUB_OPT_IN=false` (or `true`) before running the installer.
+
+For Google-assisted deployments, the Googler can attach the Connect Sales
+opportunity before running the installer (preserved automatically across
+upgrades; set `OPPORTUNITY_ID=OPT_OUT` to clear it):
+
+```shell
+export ROPPS_URL="https://sales.connect.corp.google.com/opportunities/93382720"  # or OPPORTUNITY_ID=93382720
+./install.sh
+```
 
 ## Troubleshooting
 
