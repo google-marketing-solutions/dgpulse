@@ -32,7 +32,8 @@
  * Keep the wire fields below in sync with upstream `tadau/ts/src/tadau.ts`,
  * `tadau_extract.sql`, `tadau_import.sql`, and `demand-gen-pulse-360.gcl`:
  * - Endpoint: `https://www.google-analytics.com/mp/collect`
- * - Top-level payload: `client_id` (UUID), `non_personalized_ads: true`, `events`
+ * - Top-level payload: `client_id` (UUID), `non_personalized_ads: true`,
+ *   `events`
  * - Fixed event params: `app` (`app_names[0]`), `is_agent_event: false`,
  *   `non_personalized_ads: false`, `external_event_id` (UUID, no PII)
  * - Account params: allowlisted `th_*` keys (`th_dv360_partner_id`,
@@ -64,7 +65,7 @@ const REQUEST_TIMEOUT_MS = 5000;
 
 // Product account parameter keys allowlisted by Telemetry Hub's Tadau extract
 // pipeline (`tadau_extract.sql`). At least one must be present on every event.
-const ALLOWED_PRODUCT_ACCOUNT_KEYS = new Set([
+const allowedProductAccountKeys = new Set([
     'th_google_ads_customer_id',
     'th_google_ads_mcc_id',
     'th_connect_sales_division_id',
@@ -75,10 +76,10 @@ const ALLOWED_PRODUCT_ACCOUNT_KEYS = new Set([
     'th_container_id',
     'th_opportunity_id',
     'th_dv360_advertiser_id',
-    'th_dv360_partner_id'
+    'th_dv360_partner_id',
 ]);
 
-const RESERVED_PARAM_KEYS = new Set([
+const reservedParamKeys = new Set([
     'name',
     'client_id',
     'user_id',
@@ -90,21 +91,22 @@ const RESERVED_PARAM_KEYS = new Set([
     'app',
     'is_agent_event',
     'non_personalized_ads',
-    'external_event_id'
+    'external_event_id',
 ]);
 
-const OPT_IN_TRUE_VALUES = new Set(['true', 'y', 'yes', '1']);
+const optInTrueValues = new Set(['true', 'y', 'yes', '1']);
 const OPPORTUNITY_OPT_OUT_VALUE = 'OPT_OUT';
 const OPPORTUNITY_ID_FORMAT_RE = /^\d{8,10}$/;
-const OPPORTUNITY_PATH_RE = /(?:^|\/)opportunit(?:ies|y)\/(\d{8,10})(?:[/?#]|$)/i;
-const OPPORTUNITY_QUERY_PARAM_KEYS = [
+const OPPORTUNITY_PATH_RE =
+    /(?:^|\/)opportunit(?:ies|y)\/(\d{8,10})(?:[/?#]|$)/i;
+const OPPORTUNITY_QUERY_PARAM_KEYS = Object.freeze([
     'opportunity_id',
     'opportunityId',
     'opp_id',
-    'oppId'
-];
+    'oppId',
+]);
 const REPEATED_DIGITS_RE = /^(\d)\1+$/;
-const SEQUENTIAL_JUNK_OPPORTUNITY_IDS = new Set([
+const placeholderOpportunityIds = new Set([
     '01234567',
     '012345678',
     '0123456789',
@@ -114,7 +116,7 @@ const SEQUENTIAL_JUNK_OPPORTUNITY_IDS = new Set([
     '87654321',
     '98765432',
     '987654321',
-    '9876543210'
+    '9876543210',
 ]);
 
 /**
@@ -128,7 +130,7 @@ function isOptIn(env = process.env) {
     if (typeof raw !== 'string') {
         return false;
     }
-    return OPT_IN_TRUE_VALUES.has(raw.trim().toLowerCase());
+    return optInTrueValues.has(raw.trim().toLowerCase());
 }
 
 /**
@@ -208,7 +210,7 @@ function parseOpportunityId(rawValue) {
     if (
         !candidate ||
         REPEATED_DIGITS_RE.test(candidate) ||
-        SEQUENTIAL_JUNK_OPPORTUNITY_IDS.has(candidate)
+        placeholderOpportunityIds.has(candidate)
     ) {
         return null;
     }
@@ -220,7 +222,8 @@ function parseOpportunityId(rawValue) {
  * `OPPORTUNITY_ID` takes precedence over `ROPPS_URL` (including `OPT_OUT`).
  *
  * @param {Object<string, string|undefined>} [env=process.env] Environment map.
- * @return {string|null} The 8-10 digit Opportunity ID, or null if absent/invalid.
+ * @return {string|null} The 8-10 digit Opportunity ID, or null if absent or
+ *     invalid.
  */
 function resolveOpportunityId(env = process.env) {
     if (!env) {
@@ -255,7 +258,8 @@ function formatEventName(name) {
  * (Tadau wire format). Never throws.
  *
  * @param {string} eventName Telemetry Hub Event.Type (e.g. `SOLUTION_USAGE`).
- * @param {Object<string, string|number|boolean|null|undefined>} [eventParams={}]
+ * @param {Object<string, string|number|boolean|null|undefined>}
+ *     [eventParams={}]
  *     Event-specific parameters (must include at least one allowlisted `th_*`
  *     product account parameter).
  * @param {Object} [options={}] Optional dependency overrides for testing.
@@ -291,9 +295,9 @@ async function sendTelemetryEvent(eventName, eventParams = {}, options = {}) {
             return false;
         }
 
-        const fetchImpl = Object.prototype.hasOwnProperty.call(opts, 'fetchImpl')
-            ? opts.fetchImpl
-            : globalThis.fetch;
+        const hasFetchOverride =
+            Object.prototype.hasOwnProperty.call(opts, 'fetchImpl');
+        const fetchImpl = hasFetchOverride ? opts.fetchImpl : globalThis.fetch;
         if (typeof fetchImpl !== 'function') {
             console.warn('Telemetry Hub: fetch is unavailable; skipping.');
             return false;
@@ -306,14 +310,14 @@ async function sendTelemetryEvent(eventName, eventParams = {}, options = {}) {
             app: APP_NAME,
             is_agent_event: false,
             non_personalized_ads: false,
-            external_event_id: randomUUID()
+            external_event_id: randomUUID(),
         };
 
         let hasProductAccount = false;
         let explicitOpportunityOptOut = false;
         if (eventParams && typeof eventParams === 'object') {
             for (const [key, value] of Object.entries(eventParams)) {
-                if (RESERVED_PARAM_KEYS.has(key)) {
+                if (reservedParamKeys.has(key)) {
                     continue;
                 }
                 if (value === null || value === undefined || value === '') {
@@ -327,7 +331,8 @@ async function sendTelemetryEvent(eventName, eventParams = {}, options = {}) {
                 if (key === 'th_opportunity_id') {
                     if (
                         typeof normalizedValue === 'string' &&
-                        normalizedValue.toUpperCase() === OPPORTUNITY_OPT_OUT_VALUE
+                        normalizedValue.toUpperCase() ===
+                            OPPORTUNITY_OPT_OUT_VALUE
                     ) {
                         explicitOpportunityOptOut = true;
                         continue;
@@ -338,7 +343,7 @@ async function sendTelemetryEvent(eventName, eventParams = {}, options = {}) {
                     }
                 }
                 params[key] = normalizedValue;
-                if (ALLOWED_PRODUCT_ACCOUNT_KEYS.has(key)) {
+                if (allowedProductAccountKeys.has(key)) {
                     hasProductAccount = true;
                 }
             }
@@ -366,20 +371,21 @@ async function sendTelemetryEvent(eventName, eventParams = {}, options = {}) {
             events: [
                 {
                     name: sanitizedName,
-                    params
-                }
-            ]
+                    params,
+                },
+            ],
         };
 
         const url =
-            `${GA_COLLECT_URL}?measurement_id=${encodeURIComponent(measurementId)}` +
+            `${GA_COLLECT_URL}` +
+            `?measurement_id=${encodeURIComponent(measurementId)}` +
             `&api_secret=${encodeURIComponent(apiSecret)}`;
 
         const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
         const fetchOptions = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
         };
         if (
             typeof AbortSignal !== 'undefined' &&
@@ -393,7 +399,8 @@ async function sendTelemetryEvent(eventName, eventParams = {}, options = {}) {
         if (!response || !response.ok) {
             const status = response ? response.status : 'unknown';
             console.warn(
-                `Telemetry Hub: GA4 returned HTTP ${status} for ${sanitizedName}.`
+                `Telemetry Hub: GA4 returned HTTP ${status} ` +
+                    `for ${sanitizedName}.`
             );
             return false;
         }
@@ -425,7 +432,7 @@ async function sendPartnerSyncUsage(partnerId, options = {}) {
             SOLUTION_USAGE_EVENT,
             {
                 label: 'partner_sync',
-                th_dv360_partner_id: normalizedPartnerId
+                th_dv360_partner_id: normalizedPartnerId,
             },
             options
         );
@@ -439,7 +446,8 @@ async function sendPartnerSyncUsage(partnerId, options = {}) {
 }
 
 /**
- * Reports a `SOLUTION_USAGE` event for an advertiser with Demand Gen line items.
+ * Reports a `SOLUTION_USAGE` event for an advertiser with Demand Gen line
+ * items.
  *
  * @param {Object|null|undefined} ids Account identifiers.
  * @param {string|number} [ids.advertiserId] DV360 Advertiser ID.
@@ -454,12 +462,13 @@ async function sendAdvertiserSyncUsage(ids, options = {}) {
         const normalizedPartnerId = normalizeNumericId(partnerId);
         if (!normalizedAdvertiserId && !normalizedPartnerId) {
             console.warn(
-                'Telemetry Hub: invalid DV360 advertiserId and partnerId; skipping.'
+                'Telemetry Hub: invalid DV360 advertiserId and partnerId; ' +
+                    'skipping.'
             );
             return false;
         }
         const params = {
-            label: 'advertiser_dg_sync'
+            label: 'advertiser_dg_sync',
         };
         if (normalizedPartnerId) {
             params.th_dv360_partner_id = normalizedPartnerId;
@@ -488,5 +497,5 @@ module.exports = {
     resolveOpportunityId,
     sendAdvertiserSyncUsage,
     sendPartnerSyncUsage,
-    sendTelemetryEvent
+    sendTelemetryEvent,
 };

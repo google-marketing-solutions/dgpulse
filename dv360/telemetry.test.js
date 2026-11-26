@@ -25,14 +25,14 @@ const {
     resolveOpportunityId,
     sendAdvertiserSyncUsage,
     sendPartnerSyncUsage,
-    sendTelemetryEvent
+    sendTelemetryEvent,
 } = require('./telemetry');
 
-const BASE_ENV = {
+const BASE_ENV = Object.freeze({
     TELEMETRY_HUB_OPT_IN: 'true',
     TELEMETRY_HUB_MEASUREMENT_ID: 'G-TEST12345',
-    TELEMETRY_HUB_API_SECRET: 'test-secret'
-};
+    TELEMETRY_HUB_API_SECRET: 'test-secret',
+});
 
 function createStubFetch(response = { ok: true, status: 204 }) {
     const calls = [];
@@ -51,7 +51,7 @@ describe('isOptIn', () => {
     }
 
     for (const value of [undefined, '', 'false', 'n', 'no', '0', 'maybe']) {
-        it(`returns false for non-truthy value ${JSON.stringify(value)}`, () => {
+        it(`returns false for value ${JSON.stringify(value)}`, () => {
             assert.equal(isOptIn({ TELEMETRY_HUB_OPT_IN: value }), false);
         });
     }
@@ -74,7 +74,9 @@ describe('normalizeNumericId', () => {
         assert.equal(normalizeNumericId(987654), '987654');
     });
 
-    for (const value of [null, undefined, '', '   ', 'abc', '123-456', 'unknown']) {
+    for (const value of [
+        null, undefined, '', '   ', 'abc', '123-456', 'unknown',
+    ]) {
         it(`rejects invalid value ${JSON.stringify(value)}`, () => {
             assert.equal(normalizeNumericId(value), null);
         });
@@ -88,43 +90,43 @@ describe('Opportunity ID parsing', () => {
         [
             'Connect Sales /opportunities/ URL with unrelated query ID',
             'https://sales.connect.corp.google.com/opportunities/93382720?divisionId=999888777',
-            '93382720'
+            '93382720',
         ],
         [
             'Connect Sales hash route /#/opportunities/<id>/details',
             'https://sales.connect.corp.google.com/#/opportunities/1029384756/details',
-            '1029384756'
+            '1029384756',
         ],
         [
             'singular /opportunity/<id> path',
             'https://connect.example.com/opportunity/555666777',
-            '555666777'
+            '555666777',
         ],
         [
             'opportunity_id query parameter',
             'https://sales.connect.corp.google.com/home?opportunity_id=847291034',
-            '847291034'
+            '847291034',
         ],
         [
             'oppId query parameter',
             'https://sales.connect.corp.google.com/home?oppId=847291034',
-            '847291034'
+            '847291034',
         ],
         [
             'nested /opportunities/<id> path inside query parameter',
             'https://sales.connect.corp.google.com/redirect?opportunity_id=%2Fopportunities%2F93382720',
-            '93382720'
+            '93382720',
         ],
         [
             'malformed URL containing :// falling back to path match',
             'https://[invalid-host/opportunities/93382720',
-            '93382720'
+            '93382720',
         ],
         [
             'relative /opportunities/<id> path',
             '/opportunities/93382720',
-            '93382720'
-        ]
+            '93382720',
+        ],
     ]) {
         it(`extracts ID from ${label}`, () => {
             assert.equal(parseOpportunityId(input), expected);
@@ -144,7 +146,7 @@ describe('Opportunity ID parsing', () => {
         '111111111',
         '12345678',
         '123456789',
-        '987654321'
+        '987654321',
     ]) {
         it(`rejects ${JSON.stringify(value)}`, () => {
             assert.equal(parseOpportunityId(value), null);
@@ -155,7 +157,7 @@ describe('Opportunity ID parsing', () => {
         assert.equal(
             resolveOpportunityId({
                 OPPORTUNITY_ID: '847291034',
-                ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/93382720'
+                ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/93382720',
             }),
             '847291034'
         );
@@ -164,7 +166,7 @@ describe('Opportunity ID parsing', () => {
     it('falls back to ROPPS_URL when OPPORTUNITY_ID is unset', () => {
         assert.equal(
             resolveOpportunityId({
-                ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/93382720'
+                ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/93382720',
             }),
             '93382720'
         );
@@ -174,7 +176,7 @@ describe('Opportunity ID parsing', () => {
         assert.equal(
             resolveOpportunityId({
                 OPPORTUNITY_ID: 'OPT_OUT',
-                ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/93382720'
+                ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/93382720',
             }),
             null
         );
@@ -183,9 +185,17 @@ describe('Opportunity ID parsing', () => {
 
 describe('formatEventName', () => {
     for (const [label, input, expected] of [
-        ['preserves alphanumeric and underscore characters', 'SOLUTION_USAGE', 'SOLUTION_USAGE'],
-        ['strips punctuation and whitespace', 'bad-event! name', 'badeventname'],
-        ['returns empty string for non-string input', null, '']
+        [
+            'preserves alphanumeric and underscore characters',
+            'SOLUTION_USAGE',
+            'SOLUTION_USAGE',
+        ],
+        [
+            'strips punctuation and whitespace',
+            'bad-event! name',
+            'badeventname',
+        ],
+        ['returns empty string for non-string input', null, ''],
     ]) {
         it(label, () => {
             assert.equal(formatEventName(input), expected);
@@ -209,12 +219,18 @@ describe('sendTelemetryEvent', () => {
         ['both credentials missing', { TELEMETRY_HUB_OPT_IN: 'true' }],
         [
             'only API secret missing',
-            { TELEMETRY_HUB_OPT_IN: 'true', TELEMETRY_HUB_MEASUREMENT_ID: 'G-TEST12345' }
+            {
+                TELEMETRY_HUB_OPT_IN: 'true',
+                TELEMETRY_HUB_MEASUREMENT_ID: 'G-TEST12345',
+            },
         ],
         [
             'only measurement ID missing',
-            { TELEMETRY_HUB_OPT_IN: 'true', TELEMETRY_HUB_API_SECRET: 'test-secret' }
-        ]
+            {
+                TELEMETRY_HUB_OPT_IN: 'true',
+                TELEMETRY_HUB_API_SECRET: 'test-secret',
+            },
+        ],
     ]) {
         it(`does nothing when ${label}`, async () => {
             const { calls, fetchImpl } = createStubFetch();
@@ -248,7 +264,7 @@ describe('sendTelemetryEvent', () => {
         assert.equal(sent, false);
     });
 
-    it('skips sending when no allowlisted th_* account ID is present', async () => {
+    it('skips sending without an allowlisted th_* account ID', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -259,7 +275,7 @@ describe('sendTelemetryEvent', () => {
         assert.equal(calls.length, 0);
     });
 
-    it('ignores whitespace-only th_* values when checking for product accounts', async () => {
+    it('ignores whitespace-only th_* account values', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -270,7 +286,7 @@ describe('sendTelemetryEvent', () => {
         assert.equal(calls.length, 0);
     });
 
-    it('strips reserved parameter keys and fixed dimensions from eventParams', async () => {
+    it('strips reserved keys and fixed dimensions', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -287,7 +303,7 @@ describe('sendTelemetryEvent', () => {
                 is_agent_event: true,
                 non_personalized_ads: true,
                 external_event_id: 'forged-event-id',
-                th_dv360_partner_id: '998877'
+                th_dv360_partner_id: '998877',
             },
             { env: BASE_ENV, fetchImpl, randomUUID: () => 'fixed-uuid' }
         );
@@ -299,7 +315,7 @@ describe('sendTelemetryEvent', () => {
             is_agent_event: false,
             non_personalized_ads: false,
             external_event_id: 'fixed-uuid',
-            th_dv360_partner_id: '998877'
+            th_dv360_partner_id: '998877',
         });
     });
 
@@ -313,7 +329,7 @@ describe('sendTelemetryEvent', () => {
                 empty_str: '',
                 blank_str: '   ',
                 null_val: null,
-                undef_val: undefined
+                undef_val: undefined,
             },
             { env: BASE_ENV, fetchImpl, randomUUID: () => 'fixed-uuid' }
         );
@@ -326,11 +342,11 @@ describe('sendTelemetryEvent', () => {
             non_personalized_ads: false,
             external_event_id: 'fixed-uuid',
             th_dv360_partner_id: '998877',
-            label: 'partner_sync'
+            label: 'partner_sync',
         });
     });
 
-    it('sets JSON Content-Type header and URL-encodes query credentials', async () => {
+    it('sets JSON Content-Type and URL-encodes credentials', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -339,9 +355,9 @@ describe('sendTelemetryEvent', () => {
                 env: {
                     TELEMETRY_HUB_OPT_IN: 'true',
                     TELEMETRY_HUB_MEASUREMENT_ID: 'G-TEST&1',
-                    TELEMETRY_HUB_API_SECRET: 'sec+ret/='
+                    TELEMETRY_HUB_API_SECRET: 'sec+ret/=',
                 },
-                fetchImpl
+                fetchImpl,
             }
         );
 
@@ -352,26 +368,29 @@ describe('sendTelemetryEvent', () => {
             'https://www.google-analytics.com/mp/collect?measurement_id=G-TEST%261&api_secret=sec%2Bret%2F%3D'
         );
         assert.deepEqual(calls[0].init.headers, {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
         });
     });
 
-    it('normalizes Connect Sales URL passed in eventParams.th_opportunity_id', async () => {
+    it('normalizes a Connect Sales URL in th_opportunity_id', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
             {
                 th_opportunity_id:
-                    'https://sales.connect.corp.google.com/opportunities/93382720'
+                    'https://sales.connect.corp.google.com/opportunities/93382720',
             },
             { env: BASE_ENV, fetchImpl, randomUUID: () => 'fixed-uuid' }
         );
         assert.equal(sent, true);
         assert.equal(calls.length, 1);
-        assert.equal(calls[0].payload.events[0].params.th_opportunity_id, '93382720');
+        assert.equal(
+            calls[0].payload.events[0].params.th_opportunity_id,
+            '93382720'
+        );
     });
 
-    it('omits th_opportunity_id when eventParams passes OPT_OUT even if env sets OPPORTUNITY_ID', async () => {
+    it('omits th_opportunity_id on OPT_OUT despite env value', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -379,15 +398,18 @@ describe('sendTelemetryEvent', () => {
             {
                 env: { ...BASE_ENV, OPPORTUNITY_ID: '555666777' },
                 fetchImpl,
-                randomUUID: () => 'fixed-uuid'
+                randomUUID: () => 'fixed-uuid',
             }
         );
         assert.equal(sent, true);
         assert.equal(calls.length, 1);
-        assert.equal('th_opportunity_id' in calls[0].payload.events[0].params, false);
+        assert.equal(
+            'th_opportunity_id' in calls[0].payload.events[0].params,
+            false
+        );
     });
 
-    it('skips sending when eventParams only supplies th_opportunity_id OPT_OUT', async () => {
+    it('skips sending when the only account ID is OPT_OUT', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -398,7 +420,7 @@ describe('sendTelemetryEvent', () => {
         assert.equal(calls.length, 0);
     });
 
-    it('allows env OPPORTUNITY_ID alone to satisfy product account requirement', async () => {
+    it('accepts env OPPORTUNITY_ID as the only account ID', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -406,16 +428,19 @@ describe('sendTelemetryEvent', () => {
             {
                 env: { ...BASE_ENV, OPPORTUNITY_ID: '555666777' },
                 fetchImpl,
-                randomUUID: () => 'fixed-uuid'
+                randomUUID: () => 'fixed-uuid',
             }
         );
 
         assert.equal(sent, true);
         assert.equal(calls.length, 1);
-        assert.equal(calls[0].payload.events[0].params.th_opportunity_id, '555666777');
+        assert.equal(
+            calls[0].payload.events[0].params.th_opportunity_id,
+            '555666777'
+        );
     });
 
-    it('prefers explicit eventParams.th_opportunity_id over env OPPORTUNITY_ID', async () => {
+    it('prefers eventParams opportunity ID over env value', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
@@ -423,13 +448,16 @@ describe('sendTelemetryEvent', () => {
             {
                 env: { ...BASE_ENV, OPPORTUNITY_ID: '555666777' },
                 fetchImpl,
-                randomUUID: () => 'fixed-uuid'
+                randomUUID: () => 'fixed-uuid',
             }
         );
 
         assert.equal(sent, true);
         assert.equal(calls.length, 1);
-        assert.equal(calls[0].payload.events[0].params.th_opportunity_id, '847291034');
+        assert.equal(
+            calls[0].payload.events[0].params.th_opportunity_id,
+            '847291034'
+        );
     });
 
     it('attaches an AbortSignal timeout by default', async () => {
@@ -457,7 +485,10 @@ describe('sendTelemetryEvent', () => {
     });
 
     it('fails open on non-2xx HTTP responses', async () => {
-        const { calls, fetchImpl } = createStubFetch({ ok: false, status: 500 });
+        const { calls, fetchImpl } = createStubFetch({
+            ok: false,
+            status: 500,
+        });
         const sent = await sendTelemetryEvent(
             'SOLUTION_USAGE',
             { th_dv360_partner_id: '12345' },
@@ -475,7 +506,7 @@ describe('sendTelemetryEvent', () => {
                 env: BASE_ENV,
                 fetchImpl: async () => {
                     throw new Error('network down');
-                }
+                },
             }
         );
         assert.equal(sent, false);
@@ -483,7 +514,7 @@ describe('sendTelemetryEvent', () => {
 });
 
 describe('sendPartnerSyncUsage', () => {
-    it('sends a valid partner sync SOLUTION_USAGE event in Tadau wire format', async () => {
+    it('sends a partner sync event in Tadau wire format', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const uuids = ['event-uuid-1', 'client-uuid-1'];
         let idx = 0;
@@ -491,7 +522,7 @@ describe('sendPartnerSyncUsage', () => {
         const sent = await sendPartnerSyncUsage(998877, {
             env: BASE_ENV,
             fetchImpl,
-            randomUUID: () => uuids[idx++]
+            randomUUID: () => uuids[idx++],
         });
 
         assert.equal(sent, true);
@@ -513,19 +544,19 @@ describe('sendPartnerSyncUsage', () => {
                         non_personalized_ads: false,
                         external_event_id: 'event-uuid-1',
                         label: 'partner_sync',
-                        th_dv360_partner_id: '998877'
-                    }
-                }
-            ]
+                        th_dv360_partner_id: '998877',
+                    },
+                },
+            ],
         });
     });
 
     for (const invalidId of ['', 'not-a-number', null, undefined]) {
-        it(`skips partner sync usage when partnerId is ${JSON.stringify(invalidId)}`, async () => {
+        it(`skips when partnerId is ${JSON.stringify(invalidId)}`, async () => {
             const { calls, fetchImpl } = createStubFetch();
             const sent = await sendPartnerSyncUsage(invalidId, {
                 env: BASE_ENV,
-                fetchImpl
+                fetchImpl,
             });
             assert.equal(sent, false);
             assert.equal(calls.length, 0);
@@ -534,7 +565,7 @@ describe('sendPartnerSyncUsage', () => {
 });
 
 describe('sendAdvertiserSyncUsage', () => {
-    it('sends advertiser sync usage with partner, advertiser, and optional opportunity ID', async () => {
+    it('sends partner, advertiser and opportunity IDs', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const uuids = ['event-uuid-2', 'client-uuid-2'];
         let idx = 0;
@@ -544,10 +575,10 @@ describe('sendAdvertiserSyncUsage', () => {
             {
                 env: {
                     ...BASE_ENV,
-                    ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/555666777'
+                    ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/555666777',
                 },
                 fetchImpl,
-                randomUUID: () => uuids[idx++]
+                randomUUID: () => uuids[idx++],
             }
         );
 
@@ -567,14 +598,14 @@ describe('sendAdvertiserSyncUsage', () => {
                         label: 'advertiser_dg_sync',
                         th_dv360_partner_id: '111222',
                         th_dv360_advertiser_id: '333444',
-                        th_opportunity_id: '555666777'
-                    }
-                }
-            ]
+                        th_opportunity_id: '555666777',
+                    },
+                },
+            ],
         });
     });
 
-    it('sends advertiser sync usage with advertiserId only when partnerId is absent', async () => {
+    it('sends advertiserId only when partnerId is absent', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendAdvertiserSyncUsage(
             { advertiserId: '333444' },
@@ -589,11 +620,11 @@ describe('sendAdvertiserSyncUsage', () => {
             non_personalized_ads: false,
             external_event_id: 'fixed-uuid',
             label: 'advertiser_dg_sync',
-            th_dv360_advertiser_id: '333444'
+            th_dv360_advertiser_id: '333444',
         });
     });
 
-    it('sends advertiser sync usage with partnerId only when advertiserId is invalid', async () => {
+    it('sends partnerId only when advertiserId is invalid', async () => {
         const { calls, fetchImpl } = createStubFetch();
         const sent = await sendAdvertiserSyncUsage(
             { partnerId: '111222', advertiserId: 'not-a-number' },
@@ -608,7 +639,7 @@ describe('sendAdvertiserSyncUsage', () => {
             non_personalized_ads: false,
             external_event_id: 'fixed-uuid',
             label: 'advertiser_dg_sync',
-            th_dv360_partner_id: '111222'
+            th_dv360_partner_id: '111222',
         });
     });
 
@@ -620,15 +651,18 @@ describe('sendAdvertiserSyncUsage', () => {
                 env: {
                     ...BASE_ENV,
                     OPPORTUNITY_ID: 'OPT_OUT',
-                    ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/555666777'
+                    ROPPS_URL: 'https://sales.connect.corp.google.com/opportunities/555666777',
                 },
                 fetchImpl,
-                randomUUID: () => 'fixed-uuid'
+                randomUUID: () => 'fixed-uuid',
             }
         );
         assert.equal(sent, true);
         assert.equal(calls.length, 1);
-        assert.equal('th_opportunity_id' in calls[0].payload.events[0].params, false);
+        assert.equal(
+            'th_opportunity_id' in calls[0].payload.events[0].params,
+            false
+        );
     });
 
     it('skips when advertiserId and partnerId are both invalid', async () => {
@@ -646,7 +680,7 @@ describe('sendAdvertiserSyncUsage', () => {
             const { calls, fetchImpl } = createStubFetch();
             const sent = await sendAdvertiserSyncUsage(emptyIds, {
                 env: BASE_ENV,
-                fetchImpl
+                fetchImpl,
             });
             assert.equal(sent, false);
             assert.equal(calls.length, 0);

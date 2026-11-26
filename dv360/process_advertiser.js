@@ -521,8 +521,9 @@ exports.processAdvertiser = async (event, context) => {
         }
 
         // Best-effort, opt-in Telemetry Hub usage event for advertisers with
-        // Demand Gen line items (see telemetry.js). Sent after all work
-        // succeeds so partial or failed runs are not reported.
+        // Demand Gen line items (see telemetry.js). Sent only when no
+        // unhandled error aborted the run; steps above that log a warning
+        // and continue still count.
         if (dgLineItems.length > 0) {
             await sendAdvertiserSyncUsage({
                 partnerId: partnerId || (advDetails && advDetails.partnerId),
