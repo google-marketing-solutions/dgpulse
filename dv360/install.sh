@@ -93,6 +93,75 @@ while [ -z "$REFRESH_TOKEN" ]; do
   read -p "Enter a valid Refresh Token: " REFRESH_TOKEN
 done
 
+# Usage reporting is opt-in (see the privacy notice in README.md). Export
+# TELEMETRY_HUB_OPT_IN=true or TELEMETRY_HUB_OPT_IN=false before running the
+# installer to skip the prompt.
+if [ -z "$TELEMETRY_HUB_OPT_IN" ]; then
+  echo "DG Pulse can report non-personal usage data to Google on each sync (daily):"
+  echo "your DV360 Partner ID, the IDs of advertisers with Demand Gen line items,"
+  echo "and (Google-assisted deployments only) a Connect Sales opportunity ID."
+  echo "No campaign, audience, creative, performance, or personal data is sent."
+  echo "Details: README.md."
+  TELEMETRY_ANSWER=""
+  until [[ "$TELEMETRY_ANSWER" == [YyNn] ]]; do
+    if ! read -p "Allow usage reporting? (y/n): " TELEMETRY_ANSWER; then
+      echo "No answer received; usage reporting disabled."
+      TELEMETRY_ANSWER="n"
+    fi
+  done
+  if [[ "$TELEMETRY_ANSWER" == [Yy] ]]; then
+    TELEMETRY_HUB_OPT_IN="true"
+  else
+    TELEMETRY_HUB_OPT_IN="false"
+  fi
+fi
+NORMALIZED_OPT_IN=$(TELEMETRY_HUB_OPT_IN="${TELEMETRY_HUB_OPT_IN}" node -e "const { isOptIn } = require('./telemetry'); console.log(isOptIn() ? 'true' : 'false');" 2>/dev/null || true)
+if [ "${NORMALIZED_OPT_IN}" = "true" ] || [ "${NORMALIZED_OPT_IN}" = "false" ]; then
+  TELEMETRY_HUB_OPT_IN="${NORMALIZED_OPT_IN}"
+else
+  case "$(printf '%s' "${TELEMETRY_HUB_OPT_IN}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+    true|y|yes|1) TELEMETRY_HUB_OPT_IN="true" ;;
+    *) TELEMETRY_HUB_OPT_IN="false" ;;
+  esac
+fi
+if [ "${TELEMETRY_HUB_OPT_IN}" = "true" ]; then
+  # Telemetry Hub's shared, publicly documented Tadau GA4 ingestion credentials
+  # (write-only; see Telemetry Hub external-tools docs). Not a user secret.
+  TELEMETRY_HUB_API_SECRET="${TELEMETRY_HUB_API_SECRET:-S7toNnNZQPWzViq44q_8gg}"
+  TELEMETRY_HUB_MEASUREMENT_ID="${TELEMETRY_HUB_MEASUREMENT_ID:-G-Z2TKLQZ79K}"
+  # Optional, Googler-assisted deployments only: resolve Connect Sales
+  # Opportunity ID from OPPORTUNITY_ID or ROPPS_URL. On upgrade, preserve any
+  # previously deployed OPPORTUNITY_ID for this partner unless overridden (or
+  # cleared with OPPORTUNITY_ID=OPT_OUT).
+  OPPORTUNITY_OPT_OUT="false"
+  if [ "$(printf '%s' "${OPPORTUNITY_ID}" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]')" = "OPT_OUT" ]; then
+    OPPORTUNITY_OPT_OUT="true"
+  fi
+  RESOLVED_OPPORTUNITY_ID=$(OPPORTUNITY_ID="${OPPORTUNITY_ID}" ROPPS_URL="${ROPPS_URL}" node -e "const { resolveOpportunityId } = require('./telemetry'); console.log(resolveOpportunityId() || '');" 2>/dev/null || true)
+  if [ -z "${RESOLVED_OPPORTUNITY_ID}" ] && [ "${OPPORTUNITY_OPT_OUT}" != "true" ] && { [ -n "${OPPORTUNITY_ID}" ] || [ -n "${ROPPS_URL}" ]; }; then
+    echo "Warning: could not parse a Connect Sales Opportunity ID from OPPORTUNITY_ID/ROPPS_URL; none will be deployed (any existing one is removed)."
+  fi
+  if [ -z "${RESOLVED_OPPORTUNITY_ID}" ] && [ -z "${OPPORTUNITY_ID}" ] && [ -z "${ROPPS_URL}" ]; then
+    EXISTING_TELEMETRY_ENV="${EXISTING_ENV}"
+    if [ -z "${EXISTING_TELEMETRY_ENV}" ]; then
+      EXISTING_TELEMETRY_ENV=$(gcloud functions describe "dv360-dgpulse-${PARTNER_ID}" --region=us-central1 --format="json(serviceConfig.environmentVariables)" 2>/dev/null || true)
+    fi
+    if [ -n "${EXISTING_TELEMETRY_ENV}" ]; then
+      DETECTED_OPPORTUNITY_ID=$(EXISTING_ENV_JSON="${EXISTING_TELEMETRY_ENV}" CUR_PARTNER_ID="${PARTNER_ID}" node -e "try { const d = JSON.parse(process.env.EXISTING_ENV_JSON); const vars = (d.serviceConfig && d.serviceConfig.environmentVariables) || d.environmentVariables || {}; const { parseOpportunityId } = require('./telemetry'); console.log(String(vars.PARTNER_ID || '') === process.env.CUR_PARTNER_ID ? (parseOpportunityId(vars.OPPORTUNITY_ID) || '') : ''); } catch (e) {}" 2>/dev/null || true)
+      if [ -n "${DETECTED_OPPORTUNITY_ID}" ]; then
+        RESOLVED_OPPORTUNITY_ID="${DETECTED_OPPORTUNITY_ID}"
+        echo "Preserved existing Connect Sales Opportunity ID from deployed Cloud Function."
+      fi
+    fi
+  fi
+  TELEMETRY_ENV_VARS="TELEMETRY_HUB_OPT_IN=true@TELEMETRY_HUB_API_SECRET=${TELEMETRY_HUB_API_SECRET}@TELEMETRY_HUB_MEASUREMENT_ID=${TELEMETRY_HUB_MEASUREMENT_ID}"
+  if [ -n "${RESOLVED_OPPORTUNITY_ID}" ]; then
+    TELEMETRY_ENV_VARS="${TELEMETRY_ENV_VARS}@OPPORTUNITY_ID=${RESOLVED_OPPORTUNITY_ID}"
+  fi
+else
+  TELEMETRY_ENV_VARS="TELEMETRY_HUB_OPT_IN=false"
+fi
+
 # 2. Infer project ID and region
 PROJECT_ID=$(gcloud config get-value project)
 REGION="us-central1"
@@ -113,6 +182,7 @@ echo "Using BigQuery Dataset: ${DATASET_ID}"
 echo "Using Pub/Sub Topic: ${TOPIC_NAME}"
 echo "Using Cloud Functions: ${FUNCTION_NAME} & ${PROCESS_FUNCTION_NAME}"
 echo "Using Cloud Scheduler Job: ${JOB_NAME}"
+echo "Usage reporting enabled: ${TELEMETRY_HUB_OPT_IN}"
 
 # Enable necessary APIs
 echo "Enabling necessary APIs..."
@@ -285,7 +355,7 @@ gcloud functions deploy ${FUNCTION_NAME} \
   --cpu=2 \
   --memory=4Gi \
   --timeout=540s \
-  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},PARTNER_ID=${PARTNER_ID},TOPIC_NAME=${TOPIC_NAME},DATASET_ID=${DATASET_ID},NODE_OPTIONS=--max-old-space-size=3584
+  --set-env-vars "^@^BUCKET_NAME=${BUCKET_NAME}@REFRESH_TOKEN=${REFRESH_TOKEN}@PARTNER_ID=${PARTNER_ID}@TOPIC_NAME=${TOPIC_NAME}@DATASET_ID=${DATASET_ID}@NODE_OPTIONS=--max-old-space-size=3584@${TELEMETRY_ENV_VARS}"
 
 # 6. Get the service URL
 SERVICE_URL=$(gcloud functions describe ${FUNCTION_NAME} --region=${REGION} --gen2 --format='value(serviceConfig.uri)')
@@ -339,7 +409,7 @@ gcloud functions deploy ${PROCESS_FUNCTION_NAME} \
   --memory=1Gi \
   --max-instances=8 \
   --timeout=540s \
-  --set-env-vars BUCKET_NAME=${BUCKET_NAME},REFRESH_TOKEN=${REFRESH_TOKEN},DATASET_ID=${DATASET_ID},TABLE_ID=${TABLE_ID},YOUTUBE_API_KEY=${YOUTUBE_API_KEY},PARTNER_ID=${PARTNER_ID}
+  --set-env-vars "^@^BUCKET_NAME=${BUCKET_NAME}@REFRESH_TOKEN=${REFRESH_TOKEN}@DATASET_ID=${DATASET_ID}@TABLE_ID=${TABLE_ID}@YOUTUBE_API_KEY=${YOUTUBE_API_KEY}@PARTNER_ID=${PARTNER_ID}@${TELEMETRY_ENV_VARS}"
 
 # 7. Create Cloud Scheduler job
 echo "Creating Cloud Scheduler job: ${JOB_NAME}..."

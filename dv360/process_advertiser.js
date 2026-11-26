@@ -23,6 +23,7 @@ const { Storage } = require('@google-cloud/storage');
 const { BigQuery } = require('@google-cloud/bigquery');
 const DV360Client = require('./dv360');
 const { resolveVideoAspectRatios } = require('./youtube_fetcher');
+const { sendAdvertiserSyncUsage } = require('./telemetry');
 
 const storage = new Storage();
 const bigquery = new BigQuery();
@@ -517,6 +518,17 @@ exports.processAdvertiser = async (event, context) => {
                 }
                 console.log(`Successfully inserted ${adRows.length} ad group ads into BigQuery.`);
             }
+        }
+
+        // Best-effort, opt-in Telemetry Hub usage event for advertisers with
+        // Demand Gen line items (see telemetry.js). Sent only when no
+        // unhandled error aborted the run; steps above that log a warning
+        // and continue still count.
+        if (dgLineItems.length > 0) {
+            await sendAdvertiserSyncUsage({
+                partnerId: partnerId || (advDetails && advDetails.partnerId),
+                advertiserId
+            });
         }
 
     } catch (error) {
